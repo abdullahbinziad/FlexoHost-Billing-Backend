@@ -1,0 +1,64 @@
+{
+    "product_id": "standard_plan_bdix",
+    "product_name": "Standard Plan BDIX",
+    "tagline": "Perfect for a simple site or blog",
+    "category": "BDIX Hosting",
+    "features": [
+        "5 GB NVMe SSD",
+        "Free .Shop Domain (1st Year)",
+        "5 Websites",
+        "8 Sub-Domains",
+        "Daily cPanel Backup",
+        "100X BDIX Server",
+        "LiteSpeed Web Server",
+        "15 E-mail Account",
+        "8 Database",
+        "Unlimited GB Bandwidth",
+        "Free cPanel Control Panel",
+        "Free SSL",
+        "1 GB RAM Limit",
+        "1 Cores CPU Limit",
+        "1 Gbit/s Port Speed",
+        "HTTP/2 Support",
+        "Free Site Migration",
+        "Imunify 360 (Antivirus)",
+        "Softaculous Auto Installer",
+        "TeamViewer Support",
+        "24/7 Instant Support",
+        "Money Back Guarantee",
+        "CloudLinux Powered",
+        "File (Inode) Limit - No Limit"
+    ],
+    "pricing": {
+        "currency": "USD",
+        "billing_cycles": {
+            "monthly": {
+                "regular_price": 2.75,
+                "offer_price": 2.20,
+                "renew_price": 2.20,
+                "enabled": true
+            },
+            "annually": {
+                "regular_price": 33.00,
+                "offer_price": 26.40,
+                "renew_price": 26.40,
+                "enabled": true
+            }
+        }
+    },
+    "module": {
+        "module_name": "cPanel",
+        "server_group": "BDIX",
+        "whm_package_name": "Standard_BDIX_5GB"
+    },
+    "free_domain": {
+        "enabled": true,
+        "tlds": [
+            ".shop"
+        ],
+        "payment_terms": [
+            "annually"
+        ]
+    },
+    "status": "active"
+}

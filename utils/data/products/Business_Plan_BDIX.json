@@ -1,0 +1,65 @@
+{
+    "product_id": "business_plan_bdix",
+    "product_name": "Business Plan BDIX",
+    "badge": "Most Popular",
+    "tagline": "Perfect for Mid-Level Websites",
+    "category": "BDIX Hosting",
+    "features": [
+        "10 GB NVMe SSD",
+        "Free .COM Domain (1st Year)",
+        "10 Websites",
+        "Unlimited Sub-Domains",
+        "Daily cPanel Backup",
+        "100X BDIX Server",
+        "LiteSpeed Web Server",
+        "Unlimited E-mail Account",
+        "Unlimited Database",
+        "Unlimited GB Bandwidth",
+        "Free cPanel Control Panel",
+        "Free SSL",
+        "2 GB RAM Limit",
+        "2 Cores CPU Limit",
+        "1 Gbit/s Port Speed",
+        "HTTP/2 Support",
+        "Free Site Migration",
+        "Imunify 360 (Antivirus)",
+        "Softaculous Auto Installer",
+        "TeamViewer Support",
+        "24/7 Instant Support",
+        "Money Back Guarantee",
+        "CloudLinux Powered",
+        "File (Inode) Limit - No Limit"
+    ],
+    "pricing": {
+        "currency": "USD",
+        "billing_cycles": {
+            "monthly": {
+                "regular_price": 4.00,
+                "offer_price": 3.20,
+                "renew_price": 3.20,
+                "enabled": true
+            },
+            "annually": {
+                "regular_price": 48.00,
+                "offer_price": 38.40,
+                "renew_price": 38.40,
+                "enabled": true
+            }
+        }
+    },
+    "module": {
+        "module_name": "cPanel",
+        "server_group": "BDIX",
+        "whm_package_name": "Business_BDIX_10GB"
+    },
+    "free_domain": {
+        "enabled": true,
+        "tlds": [
+            ".com"
+        ],
+        "payment_terms": [
+            "annually"
+        ]
+    },
+    "status": "active"
+}

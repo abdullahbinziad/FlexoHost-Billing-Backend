@@ -1,0 +1,1197 @@
+{
+    "info": {
+        "name": "Billing Software Authentication API",
+        "description": "Complete authentication API collection for frontend integration testing",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "version": "1.0.0"
+    },
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:5001/api/v1",
+            "type": "string"
+        },
+        {
+            "key": "accessToken",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "refreshToken",
+            "value": "",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "Authentication",
+            "item": [
+                {
+                    "name": "Register User",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                                    "    pm.environment.set('accessToken', jsonData.data.accessToken);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\",\n  \"password\": \"Test123456\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/register",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "register"
+                            ]
+                        },
+                        "description": "Register a new user account"
+                    }
+                },
+                {
+                    "name": "Login",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                                    "    pm.environment.set('accessToken', jsonData.data.accessToken);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"Test123456\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "login"
+                            ]
+                        },
+                        "description": "Login with email and password"
+                    }
+                },
+                {
+                    "name": "Get Current User",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "me"
+                            ]
+                        },
+                        "description": "Get currently authenticated user"
+                    }
+                },
+                {
+                    "name": "Refresh Token",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                                    "    pm.environment.set('accessToken', jsonData.data.accessToken);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/refresh-token",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "refresh-token"
+                            ]
+                        },
+                        "description": "Refresh access token using refresh token"
+                    }
+                },
+                {
+                    "name": "Change Password",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"currentPassword\": \"Test123456\",\n  \"newPassword\": \"NewPass123\",\n  \"confirmPassword\": \"NewPass123\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/change-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "change-password"
+                            ]
+                        },
+                        "description": "Change password for authenticated user"
+                    }
+                },
+                {
+                    "name": "Forgot Password",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    if (jsonData.data && jsonData.data.resetToken) {",
+                                    "        pm.collectionVariables.set('resetToken', jsonData.data.resetToken);",
+                                    "    }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"test@example.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/forgot-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "forgot-password"
+                            ]
+                        },
+                        "description": "Request password reset token"
+                    }
+                },
+                {
+                    "name": "Reset Password",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"password\": \"NewPassword123\",\n  \"confirmPassword\": \"NewPassword123\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/reset-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "reset-password"
+                            ]
+                        },
+                        "description": "Reset password using reset token"
+                    }
+                },
+                {
+                    "name": "Verify Email",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/verify-email/:token",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "verify-email",
+                                ":token"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "token",
+                                    "value": "verification_token_here"
+                                }
+                            ]
+                        },
+                        "description": "Verify email address using verification token"
+                    }
+                },
+                {
+                    "name": "Logout",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/logout",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "logout"
+                            ]
+                        },
+                        "description": "Logout current user"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Client Management",
+            "item": [
+                {
+                    "name": "Register Client",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                                    "    pm.environment.set('accessToken', jsonData.data.accessToken);",
+                                    "    pm.collectionVariables.set('clientId', jsonData.data.client._id);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userData\": {\n    \"email\": \"client@example.com\",\n    \"password\": \"Client123456\",\n    \"username\": \"client123\"\n  },\n  \"clientData\": {\n    \"firstName\": \"Jane\",\n    \"lastName\": \"Smith\",\n    \"companyName\": \"Acme Corp\",\n    \"contactEmail\": \"jane@acmecorp.com\",\n    \"address\": {\n      \"street\": \"456 Business Ave\",\n      \"city\": \"San Francisco\",\n      \"state\": \"CA\",\n      \"postCode\": \"94102\",\n      \"country\": \"USA\"\n    }\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/clients/register",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "clients",
+                                "register"
+                            ]
+                        },
+                        "description": "Register a new client (customer) account"
+                    }
+                },
+                {
+                    "name": "Get My Client Profile",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/clients/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "clients",
+                                "me"
+                            ]
+                        },
+                        "description": "Get current client's profile (requires client role)"
+                    }
+                },
+                {
+                    "name": "Update My Client Profile",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"companyName\": \"Updated Company\",\n  \"contactEmail\": \"newemail@company.com\",\n  \"address\": {\n    \"street\": \"789 New Street\",\n    \"city\": \"Los Angeles\",\n    \"state\": \"CA\",\n    \"postCode\": \"90001\",\n    \"country\": \"USA\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/clients/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "clients",
+                                "me"
+                            ]
+                        },
+                        "description": "Update current client's profile"
+                    }
+                },
+                {
+                    "name": "Get All Clients (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/clients?page=1&limit=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "clients"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                }
+                            ]
+                        },
+                        "description": "Get all clients (requires admin/staff role)"
+                    }
+                },
+                {
+                    "name": "Get Client by ID (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/clients/:id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "clients",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "{{clientId}}"
+                                }
+                            ]
+                        },
+                        "description": "Get specific client by ID (requires admin/staff role)"
+                    }
+                },
+                {
+                    "name": "Get Client by Client ID (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/clients/by-client-id/:clientId",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "clients",
+                                "by-client-id",
+                                ":clientId"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "clientId",
+                                    "value": "1001"
+                                }
+                            ]
+                        },
+                        "description": "Get client by numeric client ID (requires admin/staff role)"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "User Management",
+            "item": [
+                {
+                    "name": "Get My Profile",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/users/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "me"
+                            ]
+                        },
+                        "description": "Get current user's profile"
+                    }
+                },
+                {
+                    "name": "Update My Profile",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Updated Name\",\n  \"phone\": \"+1234567890\",\n  \"address\": {\n    \"street\": \"123 Main St\",\n    \"city\": \"New York\",\n    \"state\": \"NY\",\n    \"country\": \"USA\",\n    \"zipCode\": \"10001\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/users/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "me"
+                            ]
+                        },
+                        "description": "Update current user's profile"
+                    }
+                },
+                {
+                    "name": "Get All Users (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/users?page=1&limit=10&role=user",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                },
+                                {
+                                    "key": "role",
+                                    "value": "user",
+                                    "disabled": true
+                                }
+                            ]
+                        },
+                        "description": "Get all users (requires admin role)"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "WHM Management",
+            "item": [
+                {
+                    "name": "Create Account",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"username\": \"newuser\",\n  \"domain\": \"example.com\",\n  \"plan\": \"default\",\n  \"email\": \"user@example.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/whm/create",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whm",
+                                "create"
+                            ]
+                        },
+                        "description": "Create a new cPanel account (Admin only)"
+                    }
+                },
+                {
+                    "name": "Suspend Account",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"Overdue Invoice\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/whm/suspend/:username",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whm",
+                                "suspend",
+                                ":username"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "username",
+                                    "value": "newuser"
+                                }
+                            ]
+                        },
+                        "description": "Suspend a cPanel account (Admin only)"
+                    }
+                },
+                {
+                    "name": "Unsuspend Account",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/whm/unsuspend/:username",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whm",
+                                "unsuspend",
+                                ":username"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "username",
+                                    "value": "newuser"
+                                }
+                            ]
+                        },
+                        "description": "Unsuspend a cPanel account (Admin only)"
+                    }
+                },
+                {
+                    "name": "Terminate Account",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/whm/terminate/:username",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whm",
+                                "terminate",
+                                ":username"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "username",
+                                    "value": "newuser"
+                                }
+                            ]
+                        },
+                        "description": "Terminate a cPanel account (Admin only)"
+                    }
+                },
+                {
+                    "name": "Change Password",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"password\": \"NewStrongPassword123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/whm/change-password/:username",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whm",
+                                "change-password",
+                                ":username"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "username",
+                                    "value": "newuser"
+                                }
+                            ]
+                        },
+                        "description": "Change cPanel account password (Admin only)"
+                    }
+                },
+                {
+                    "name": "Change Package",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"plan\": \"new_plan_name\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/whm/change-package/:username",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whm",
+                                "change-package",
+                                ":username"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "username",
+                                    "value": "newuser"
+                                }
+                            ]
+                        },
+                        "description": "Change cPanel account package/plan (Admin only)"
+                    }
+                },
+                {
+                    "name": "Account Summary",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/whm/summary/:username",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whm",
+                                "summary",
+                                ":username"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "username",
+                                    "value": "newuser"
+                                }
+                            ]
+                        },
+                        "description": "Get cPanel account summary (Admin only)"
+                    }
+                },
+                {
+                    "name": "Verify Username",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/whm/verify/:username",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whm",
+                                "verify",
+                                ":username"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "username",
+                                    "value": "newuser"
+                                }
+                            ]
+                        },
+                        "description": "Verify cPanel username availability (Admin only)"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Domain Management",
+            "item": [
+                {
+                    "name": "Search Domain",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/domains/search?domain=example.com",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "domains",
+                                "search"
+                            ],
+                            "query": [
+                                {
+                                    "key": "domain",
+                                    "value": "example.com"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Register Domain",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"domain\": \"example.com\",\n  \"years\": 1,\n  \"regType\": \"new\",\n  \"contacts\": {\n    \"registrant\": {\n      \"name\": \"John Doe\",\n      \"organization\": \"Example Corp\",\n      \"email\": \"john@example.com\",\n      \"phone\": \"+1.5555555555\",\n      \"address1\": \"123 Main St\",\n      \"city\": \"Anytown\",\n      \"state\": \"NY\",\n      \"zip\": \"10001\",\n      \"country\": \"US\"\n    },\n    \"admin\": {\n      \"name\": \"John Doe\",\n      \"organization\": \"Example Corp\",\n      \"email\": \"john@example.com\",\n      \"phone\": \"+1.5555555555\",\n      \"address1\": \"123 Main St\",\n      \"city\": \"Anytown\",\n      \"state\": \"NY\",\n      \"zip\": \"10001\",\n      \"country\": \"US\"\n    },\n    \"tech\": {\n      \"name\": \"John Doe\",\n      \"organization\": \"Example Corp\",\n      \"email\": \"john@example.com\",\n      \"phone\": \"+1.5555555555\",\n      \"address1\": \"123 Main St\",\n      \"city\": \"Anytown\",\n      \"state\": \"NY\",\n      \"zip\": \"10001\",\n      \"country\": \"US\"\n    },\n    \"billing\": {\n      \"name\": \"John Doe\",\n      \"organization\": \"Example Corp\",\n      \"email\": \"john@example.com\",\n      \"phone\": \"+1.5555555555\",\n      \"address1\": \"123 Main St\",\n      \"city\": \"Anytown\",\n      \"state\": \"NY\",\n      \"zip\": \"10001\",\n      \"country\": \"US\"\n    }\n  },\n  \"nameservers\": [\n    \"ns1.dynadot.com\",\n    \"ns2.dynadot.com\"\n  ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/domains/register",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "domains",
+                                "register"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Transfer Domain",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"domain\": \"example.com\",\n  \"authCode\": \"AUTH-CODE-123\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/domains/transfer",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "domains",
+                                "transfer"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Domain Details",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/domains/:domain",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "domains",
+                                ":domain"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "domain",
+                                    "value": "example.com"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Renew Domain",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"duration\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/domains/:domain/renew",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "domains",
+                                ":domain",
+                                "renew"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "domain",
+                                    "value": "example.com"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Nameservers",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"nameservers\": [\n    \"ns1.example.com\",\n    \"ns2.example.com\"\n  ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/domains/:domain/nameservers",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "domains",
+                                ":domain",
+                                "nameservers"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "domain",
+                                    "value": "example.com"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Payment Management",
+            "item": [
+                {
+                    "name": "Initiate Payment",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"total_amount\": 1200,\n  \"currency\": \"BDT\",\n  \"tran_id\": \"REF12345678\",\n  \"cus_name\": \"Customer Name\",\n  \"cus_email\": \"customer@example.com\",\n  \"cus_add1\": \"Dhaka\",\n  \"cus_add2\": \"Dhaka\",\n  \"cus_city\": \"Dhaka\",\n  \"cus_state\": \"Dhaka\",\n  \"cus_postcode\": \"1212\",\n  \"cus_country\": \"Bangladesh\",\n  \"cus_phone\": \"01700000000\",\n  \"shipping_method\": \"NO\",\n  \"product_name\": \"Hosting Plan\",\n  \"product_category\": \"Hosting\",\n  \"product_profile\": \"general\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/init",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "init"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Payment Success Callback",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": ""
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/success",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "success"
+                            ]
+                        },
+                        "description": "Simulated call for success handling"
+                    }
+                },
+                {
+                    "name": "Payment Fail Callback",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": ""
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/fail",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "fail"
+                            ]
+                        },
+                        "description": "Simulated call for failure handling"
+                    }
+                },
+                {
+                    "name": "Payment Cancel Callback",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": ""
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/cancel",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "cancel"
+                            ]
+                        },
+                        "description": "Simulated call for cancel handling"
+                    }
+                },
+                {
+                    "name": "IPN Callback",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": ""
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/ipn",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "ipn"
+                            ]
+                        },
+                        "description": "Simulated IPN call"
+                    }
+                }
+            ]
+        }
+    ]
+}

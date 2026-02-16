@@ -1,0 +1,53 @@
+{
+    "product_id": "business_plan_wh",
+    "product_name": "Business Plan WH",
+    "badge": "Most Popular",
+    "tagline": "Perfect for Mid-Level Websites",
+    "category": "Shared Hosting",
+    "features": [
+        "10GB NVMe SSD",
+        "Free .COM Domain (1st Year)",
+        "5 Websites",
+        "Unlimited Sub-Domains",
+        "Daily cPanel Backup",
+        "100X LiteSpeed Server",
+        "LiteSpeed Web Server",
+        "Unlimited Email Accounts",
+        "Unlimited Databases",
+        "Unlimited Bandwidth",
+        "Free cPanel Control Panel",
+        "Free SSL"
+    ],
+    "pricing": {
+        "currency": "USD",
+        "billing_cycles": {
+            "monthly": {
+                "regular_price": 3.90,
+                "offer_price": 3.12,
+                "renew_price": 3.12,
+                "enabled": true
+            },
+            "annually": {
+                "regular_price": 36.50,
+                "offer_price": 29.20,
+                "renew_price": 29.20,
+                "enabled": true
+            }
+        }
+    },
+    "module": {
+        "module_name": "cPanel",
+        "server_group": "Default",
+        "whm_package_name": "Business_WH_10GB"
+    },
+    "free_domain": {
+        "enabled": true,
+        "tlds": [
+            ".com"
+        ],
+        "payment_terms": [
+            "annually"
+        ]
+    },
+    "status": "active"
+}

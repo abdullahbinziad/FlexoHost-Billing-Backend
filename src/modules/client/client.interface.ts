@@ -1,0 +1,47 @@
+import { Document, Types } from 'mongoose';
+
+export interface IAddress {
+    street?: string;
+    city?: string;
+    state?: string;
+    postCode?: string;
+    country?: string;
+}
+
+export interface IClient extends Document {
+    _id: Types.ObjectId;
+    user: Types.ObjectId;
+    clientId: number;
+    firstName: string;
+    lastName: string;
+    companyName?: string;
+    contactEmail?: string;
+    address?: IAddress;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface IClientCreate {
+    firstName: string;
+    lastName: string;
+    companyName?: string;
+    contactEmail?: string;
+    address?: IAddress;
+}
+
+export interface IClientUpdate {
+    firstName?: string;
+    lastName?: string;
+    companyName?: string;
+    contactEmail?: string;
+    address?: IAddress;
+}
+
+export interface IRegisterClientData {
+    userData: {
+        email: string;
+        password: string;
+        username?: string;
+    };
+    clientData: IClientCreate;
+}

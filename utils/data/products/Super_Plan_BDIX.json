@@ -1,0 +1,64 @@
+{
+    "product_id": "super_plan_bdix",
+    "product_name": "Super Plan BDIX",
+    "tagline": "Best for Enterprise Solutions",
+    "category": "BDIX Hosting",
+    "features": [
+        "50 GB NVMe SSD",
+        "Free .COM Domain",
+        "20 Websites",
+        "Unlimited Sub-Domains",
+        "Daily cPanel Backup",
+        "200X BDIX Server",
+        "LiteSpeed Web Server",
+        "Unlimited E-mail Account",
+        "Unlimited Database",
+        "Unlimited GB Bandwidth",
+        "Free cPanel Control Panel",
+        "Free SSL",
+        "6 GB RAM Limit",
+        "6 Cores CPU Limit",
+        "1 Gbit/s Port Speed",
+        "HTTP/2 Support",
+        "Free Site Migration",
+        "Imunify 360 (Antivirus)",
+        "Softaculous Auto Installer",
+        "TeamViewer Support",
+        "24/7 Instant Support",
+        "Money Back Guarantee",
+        "CloudLinux Powered",
+        "File (Inode) Limit - No Limit"
+    ],
+    "pricing": {
+        "currency": "USD",
+        "billing_cycles": {
+            "monthly": {
+                "regular_price": 9.00,
+                "offer_price": 7.20,
+                "renew_price": 7.20,
+                "enabled": true
+            },
+            "annually": {
+                "regular_price": 108.00,
+                "offer_price": 86.40,
+                "renew_price": 86.40,
+                "enabled": true
+            }
+        }
+    },
+    "module": {
+        "module_name": "cPanel",
+        "server_group": "BDIX",
+        "whm_package_name": "Super_BDIX_50GB"
+    },
+    "free_domain": {
+        "enabled": true,
+        "tlds": [
+            ".com"
+        ],
+        "payment_terms": [
+            "annually"
+        ]
+    },
+    "status": "active"
+}

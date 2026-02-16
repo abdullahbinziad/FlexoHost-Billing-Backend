@@ -1,0 +1,210 @@
+┌─────────────────────────────────────────────────────────────────┐
+│                    DATABASE SEEDING SYSTEM                      │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                         NPM COMMANDS                            │
+├─────────────────────────────────────────────────────────────────┤
+│  npm run seed              → Seed all data (skip if exists)     │
+│  npm run seed:force        → Clear & reseed all data            │
+│  npm run seed:clear        → Clear all data only                │
+│  npm run seed:users        → Seed users only                    │
+│  npm run seed:users:force  → Clear & reseed users only          │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    src/seeders/index.ts                         │
+│                    (Main Orchestrator)                          │
+├─────────────────────────────────────────────────────────────────┤
+│  • Parse command-line arguments (--force, --clear)              │
+│  • Connect to MongoDB                                           │
+│  • Coordinate all seeders                                       │
+│  • Handle errors and cleanup                                    │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+        ┌─────────────────────┴─────────────────────┐
+        ↓                                           ↓
+┌──────────────────────┐                  ┌──────────────────────┐
+│  user.seeder.ts      │                  │  [future seeders]    │
+│  (User Seeder)       │                  │  • product.seeder.ts │
+├──────────────────────┤                  │  • order.seeder.ts   │
+│  • seedUsers()       │                  │  • config.seeder.ts  │
+│  • clearUsers()      │                  │  • etc...            │
+│  • Check existing    │                  └──────────────────────┘
+│  • Insert/Delete     │
+└──────────────────────┘
+        ↓
+┌──────────────────────┐
+│  data/users.seed.ts  │
+│  (Seed Data)         │
+├──────────────────────┤
+│  defaultUsers = [    │
+│    Admin User,       │
+│    Moderator User,   │
+│    Test User,        │
+│    John Doe,         │
+│    Jane Smith        │
+│  ]                   │
+└──────────────────────┘
+        ↓
+┌──────────────────────┐
+│  user.model.ts       │
+│  (Mongoose Model)    │
+├──────────────────────┤
+│  • Schema definition │
+│  • Password hashing  │
+│  • Validation        │
+│  • Methods           │
+└──────────────────────┘
+        ↓
+┌──────────────────────┐
+│     MongoDB          │
+│  (Database)          │
+├──────────────────────┤
+│  Users Collection:   │
+│  • admin@...         │
+│  • moderator@...     │
+│  • user@...          │
+│  • john.doe@...      │
+│  • jane.smith@...    │
+└──────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                         FLOW DIAGRAM                            │
+└─────────────────────────────────────────────────────────────────┘
+
+START
+  │
+  ├─→ Parse CLI Arguments
+  │   ├─→ --force flag?
+  │   ├─→ --clear flag?
+  │   └─→ No flags (normal)
+  │
+  ├─→ Connect to MongoDB
+  │   ├─→ Success ✅
+  │   └─→ Failure ❌ → Exit(1)
+  │
+  ├─→ Execute Command
+  │   │
+  │   ├─→ [--clear]
+  │   │   └─→ clearAll() → Delete all data → Exit(0)
+  │   │
+  │   ├─→ [--force]
+  │   │   ├─→ clearAll() → Delete all data
+  │   │   └─→ seedAll() → Insert fresh data → Exit(0)
+  │   │
+  │   └─→ [normal]
+  │       └─→ seedAll()
+  │           ├─→ Check if data exists
+  │           │   ├─→ Yes → Skip ⚠️ → Exit(0)
+  │           │   └─→ No → Continue
+  │           │
+  │           ├─→ seedUsers()
+  │           │   └─→ Insert 5 users ✅
+  │           │
+  │           ├─→ seedProducts() [future]
+  │           ├─→ seedOrders() [future]
+  │           └─→ ... more seeders
+  │
+  └─→ Close MongoDB Connection → Exit(0)
+
+┌─────────────────────────────────────────────────────────────────┐
+│                      DEFAULT USERS                              │
+└─────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ 👤 Admin User                                                │
+├──────────────────────────────────────────────────────────────┤
+│ Email:    admin@example.com                                  │
+│ Password: Admin@123456                                       │
+│ Role:     admin                                              │
+│ Status:   ✅ Verified, ✅ Active                             │
+│ Access:   Full system access, user management               │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ 👤 Moderator User                                            │
+├──────────────────────────────────────────────────────────────┤
+│ Email:    moderator@example.com                              │
+│ Password: Moderator@123456                                   │
+│ Role:     moderator                                          │
+│ Status:   ✅ Verified, ✅ Active                             │
+│ Access:   Moderate content, limited admin features          │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ 👤 Test User                                                 │
+├──────────────────────────────────────────────────────────────┤
+│ Email:    user@example.com                                   │
+│ Password: User@123456                                        │
+│ Role:     user                                               │
+│ Status:   ✅ Verified, ✅ Active                             │
+│ Access:   Standard user features                            │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ 👤 John Doe                                                  │
+├──────────────────────────────────────────────────────────────┤
+│ Email:    john.doe@example.com                               │
+│ Password: JohnDoe@123456                                     │
+│ Role:     user                                               │
+│ Status:   ❌ Unverified, ✅ Active                           │
+│ Access:   Limited (needs email verification)                │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ 👤 Jane Smith                                                │
+├──────────────────────────────────────────────────────────────┤
+│ Email:    jane.smith@example.com                             │
+│ Password: JaneSmith@123456                                   │
+│ Role:     user                                               │
+│ Status:   ✅ Verified, ✅ Active                             │
+│ Access:   Standard user features                            │
+└──────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    EXTENSIBILITY GUIDE                          │
+└─────────────────────────────────────────────────────────────────┘
+
+To add a new seeder (e.g., Products):
+
+1. Create: src/seeders/data/products.seed.ts
+   ┌────────────────────────────────────────────────┐
+   │ export const defaultProducts = [               │
+   │   { name: 'Product 1', price: 99.99, ... },   │
+   │   { name: 'Product 2', price: 149.99, ... },  │
+   │ ];                                             │
+   └────────────────────────────────────────────────┘
+
+2. Create: src/seeders/product.seeder.ts
+   ┌────────────────────────────────────────────────┐
+   │ export const seedProducts = async () => {      │
+   │   await Product.insertMany(defaultProducts);   │
+   │ };                                             │
+   │                                                │
+   │ export const clearProducts = async () => {     │
+   │   await Product.deleteMany({});                │
+   │ };                                             │
+   └────────────────────────────────────────────────┘
+
+3. Update: src/seeders/index.ts
+   ┌────────────────────────────────────────────────┐
+   │ import { seedProducts, clearProducts }         │
+   │   from './product.seeder';                     │
+   │                                                │
+   │ // In seedAll():                               │
+   │ await seedProducts();                          │
+   │                                                │
+   │ // In clearAll():                              │
+   │ await clearProducts();                         │
+   └────────────────────────────────────────────────┘
+
+4. Add scripts to package.json:
+   ┌────────────────────────────────────────────────┐
+   │ "seed:products": "ts-node src/seeders/         │
+   │                   product.seeder.ts",          │
+   │ "seed:products:force": "ts-node src/seeders/   │
+   │                         product.seeder.ts -f"  │
+   └────────────────────────────────────────────────┘
+
+Done! 🎉

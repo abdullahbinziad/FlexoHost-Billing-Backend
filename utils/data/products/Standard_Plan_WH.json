@@ -1,0 +1,48 @@
+{
+  "product_id": "standard_plan_wh",
+  "product_name": "Standard Plan WH",
+  "tagline": "Perfect for a simple site or blog",
+  "category": "Shared Hosting",
+  "features": [
+    "5GB NVMe SSD",
+    "Free .XYZ Domain (1st Year)",
+    "3 Websites",
+    "8 Sub-Domains",
+    "Daily cPanel Backup",
+    "50X LiteSpeed Server",
+    "LiteSpeed Web Server",
+    "10 Email Accounts",
+    "8 Databases",
+    "Unlimited Bandwidth",
+    "Free cPanel Control Panel",
+    "Free SSL"
+  ],
+  "pricing": {
+    "currency": "USD",
+    "billing_cycles": {
+      "monthly": {
+        "regular_price": 2.20,
+        "offer_price": 1.76,
+        "renew_price": 1.76,
+        "enabled": true
+      },
+      "annually": {
+        "regular_price": 19.50,
+        "offer_price": 15.60,
+        "renew_price": 15.60,
+        "enabled": true
+      }
+    }
+  },
+  "module": {
+    "module_name": "cPanel",
+    "server_group": "Default",
+    "whm_package_name": "Standard_WH_5GB"
+  },
+  "free_domain": {
+    "enabled": true,
+    "tlds": [".xyz"],
+    "payment_terms": ["annually"]
+  },
+  "status": "active"
+}

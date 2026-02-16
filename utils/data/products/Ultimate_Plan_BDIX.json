@@ -1,0 +1,64 @@
+{
+    "product_id": "ultimate_plan_bdix",
+    "product_name": "Ultimate Plan BDIX",
+    "tagline": "Ideal for Growing Businesses",
+    "category": "BDIX Hosting",
+    "features": [
+        "20 GB NVMe SSD",
+        "Free .COM Domain (1st Year)",
+        "8 Websites",
+        "Unlimited Sub-Domains",
+        "Daily cPanel Backup",
+        "200X BDIX Server",
+        "LiteSpeed Web Server",
+        "Unlimited E-mail Account",
+        "Unlimited Database",
+        "Unlimited GB Bandwidth",
+        "Free cPanel Control Panel",
+        "Free SSL",
+        "4 GB RAM Limit",
+        "4 Cores CPU Limit",
+        "1 Gbit/s Port Speed",
+        "HTTP/2 Support",
+        "Free Site Migration",
+        "Imunify 360 (Antivirus)",
+        "Softaculous Auto Installer",
+        "TeamViewer Support",
+        "24/7 Instant Support",
+        "Money Back Guarantee",
+        "CloudLinux Powered",
+        "File (Inode) Limit - No Limit"
+    ],
+    "pricing": {
+        "currency": "USD",
+        "billing_cycles": {
+            "monthly": {
+                "regular_price": 4.45,
+                "offer_price": 3.56,
+                "renew_price": 3.56,
+                "enabled": true
+            },
+            "annually": {
+                "regular_price": 65.40,
+                "offer_price": 52.32,
+                "renew_price": 52.32,
+                "enabled": true
+            }
+        }
+    },
+    "module": {
+        "module_name": "cPanel",
+        "server_group": "BDIX",
+        "whm_package_name": "Ultimate_BDIX_20GB"
+    },
+    "free_domain": {
+        "enabled": true,
+        "tlds": [
+            ".com"
+        ],
+        "payment_terms": [
+            "annually"
+        ]
+    },
+    "status": "active"
+}

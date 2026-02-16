@@ -1,0 +1,52 @@
+{
+    "product_id": "lite_plan_wh",
+    "product_name": "Lite Plan WH",
+    "tagline": "Best for Enterprise Solutions",
+    "category": "Shared Hosting",
+    "features": [
+        "2GB NVMe SSD",
+        "Free .XYZ Domain (1st Year)",
+        "1 Website",
+        "4 Sub-Domains",
+        "Daily cPanel Backup",
+        "50X LiteSpeed Server",
+        "LiteSpeed Web Server",
+        "4 Email Accounts",
+        "4 Databases",
+        "Unlimited Bandwidth",
+        "Free cPanel Control Panel",
+        "Free SSL"
+    ],
+    "pricing": {
+        "currency": "USD",
+        "billing_cycles": {
+            "monthly": {
+                "regular_price": 1.65,
+                "offer_price": 1.32,
+                "renew_price": 1.32,
+                "enabled": true
+            },
+            "annually": {
+                "regular_price": 10.00,
+                "offer_price": 10.00,
+                "renew_price": 10.00,
+                "enabled": true
+            }
+        }
+    },
+    "module": {
+        "module_name": "cPanel",
+        "server_group": "Default",
+        "whm_package_name": "Lite_WH_2GB"
+    },
+    "free_domain": {
+        "enabled": true,
+        "tlds": [
+            ".xyz"
+        ],
+        "payment_terms": [
+            "annually"
+        ]
+    },
+    "status": "active"
+}
