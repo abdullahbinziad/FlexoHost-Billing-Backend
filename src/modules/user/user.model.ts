@@ -7,13 +7,6 @@ import { USER_ROLES, MAX_LOGIN_ATTEMPTS, LOCK_TIME } from './user.const';
 
 const userSchema = new Schema<IUser>(
     {
-        name: {
-            type: String,
-            required: [true, 'Name is required'],
-            trim: true,
-            minlength: [2, 'Name must be at least 2 characters'],
-            maxlength: [50, 'Name cannot exceed 50 characters'],
-        },
         email: {
             type: String,
             required: [true, 'Email is required'],
@@ -35,21 +28,6 @@ const userSchema = new Schema<IUser>(
             type: String,
             enum: Object.values(USER_ROLES),
             default: USER_ROLES.USER,
-        },
-        avatar: {
-            type: String,
-            default: null,
-        },
-        phone: {
-            type: String,
-            default: null,
-        },
-        address: {
-            street: String,
-            city: String,
-            state: String,
-            country: String,
-            zipCode: String,
         },
         active: {
             type: Boolean,

@@ -58,7 +58,7 @@ export class NamelyRegistrar implements IDomainRegistrar {
         // endpoint: POST /domains/check
         try {
             const result = await this.request('/domains/check', 'POST', { domain });
-            return {
+            const availabilityData: any = {
                 domain: domain,
                 // Docs say: { "available": true }
                 available: result.available === true,
@@ -66,6 +66,10 @@ export class NamelyRegistrar implements IDomainRegistrar {
                 // but might be available in /pricing/tlds. 
                 // For now, we return without price or user should call pricing API separately.
                 // We'll leave price undefined.
+            };
+            return {
+                ...availabilityData,
+                data: availabilityData as any,
             };
         } catch (error) {
             throw error;

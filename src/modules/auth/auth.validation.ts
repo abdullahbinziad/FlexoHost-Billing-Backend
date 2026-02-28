@@ -1,12 +1,19 @@
 import { body, param } from 'express-validator';
 
 export const registerValidation = [
-    body('name')
+    body('firstName')
         .trim()
         .notEmpty()
-        .withMessage('Name is required')
+        .withMessage('First Name is required')
         .isLength({ min: 2, max: 50 })
-        .withMessage('Name must be between 2 and 50 characters'),
+        .withMessage('First Name must be between 2 and 50 characters'),
+
+    body('lastName')
+        .trim()
+        .notEmpty()
+        .withMessage('Last Name is required')
+        .isLength({ min: 2, max: 50 })
+        .withMessage('Last Name must be between 2 and 50 characters'),
 
     body('email')
         .trim()
@@ -30,6 +37,12 @@ export const registerValidation = [
         .optional()
         .isMobilePhone('any')
         .withMessage('Please provide a valid phone number'),
+
+    body('companyName')
+        .optional()
+        .trim()
+        .isLength({ max: 100 })
+        .withMessage('Company name cannot exceed 100 characters'),
 
     // Prevent privilege escalation / sensitive fields on public registration
     body('role')

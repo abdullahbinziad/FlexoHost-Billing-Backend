@@ -39,7 +39,6 @@ class ClientService {
                 // Create new user
                 isNewUser = true;
                 const newUserData = {
-                    name: `${clientData.firstName} ${clientData.lastName}`,
                     email: userData.email,
                     password: userData.password,
                     role: USER_ROLES.CLIENT,
@@ -62,6 +61,8 @@ class ClientService {
                 lastName: clientData.lastName,
                 companyName: clientData.companyName,
                 contactEmail: clientData.contactEmail,
+                phoneNumber: clientData.phoneNumber,
+                avatar: clientData.avatar,
                 address: clientData.address,
             };
 

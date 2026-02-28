@@ -1,0 +1,273 @@
+{
+    "info": {
+        "name": "FlexoHost - Product API",
+        "description": "Complete API collection for Product/Hosting Package management",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_postman_id": "product-api-collection",
+        "version": "1.0.0"
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "string"
+            }
+        ]
+    },
+    "variable": [
+        {
+            "key": "BASE_URL",
+            "value": "http://localhost:5000/api/v1",
+            "type": "string"
+        },
+        {
+            "key": "ADMIN_TOKEN",
+            "value": "YOUR_ADMIN_JWT_TOKEN",
+            "type": "string"
+        },
+        {
+            "key": "PRODUCT_ID",
+            "value": "",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "1. Create Product",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"name\": \"Business Hosting Plan\",\n  \"type\": \"hosting\",\n  \"group\": \"Web Hosting\",\n  \"description\": \"Perfect for small to medium businesses\",\n  \"paymentType\": \"recurring\",\n  \"pricing\": [\n    {\n      \"currency\": \"BDT\",\n      \"monthly\": {\n        \"price\": 500,\n        \"setupFee\": 0,\n        \"renewPrice\": 500,\n        \"enable\": true\n      },\n      \"quarterly\": {\n        \"price\": 1400,\n        \"setupFee\": 0,\n        \"renewPrice\": 1400,\n        \"enable\": true\n      },\n      \"semiAnnually\": {\n        \"price\": 2700,\n        \"setupFee\": 0,\n        \"renewPrice\": 2700,\n        \"enable\": true\n      },\n      \"annually\": {\n        \"price\": 5000,\n        \"setupFee\": 0,\n        \"renewPrice\": 5000,\n        \"enable\": true\n      },\n      \"biennially\": {\n        \"price\": 9500,\n        \"setupFee\": 0,\n        \"renewPrice\": 9500,\n        \"enable\": true\n      },\n      \"triennially\": {\n        \"price\": 13500,\n        \"setupFee\": 0,\n        \"renewPrice\": 13500,\n        \"enable\": true\n      }\n    },\n    {\n      \"currency\": \"USD\",\n      \"monthly\": {\n        \"price\": 5.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 5.99,\n        \"enable\": true\n      },\n      \"quarterly\": {\n        \"price\": 16.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 16.99,\n        \"enable\": true\n      },\n      \"semiAnnually\": {\n        \"price\": 32.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 32.99,\n        \"enable\": true\n      },\n      \"annually\": {\n        \"price\": 59.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 59.99,\n        \"enable\": true\n      },\n      \"biennially\": {\n        \"price\": 114.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 114.99,\n        \"enable\": true\n      },\n      \"triennially\": {\n        \"price\": 164.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 164.99,\n        \"enable\": true\n      }\n    }\n  ],\n  \"features\": [\n    \"10 GB SSD Storage\",\n    \"Unlimited Bandwidth\",\n    \"Free SSL Certificate\",\n    \"cPanel Control Panel\",\n    \"Daily Backups\",\n    \"24/7 Support\"\n  ],\n  \"stock\": null,\n  \"module\": {\n    \"name\": \"cpanel\",\n    \"serverGroup\": \"BDIX-01\",\n    \"packageName\": \"business_plan_10gb\"\n  },\n  \"freeDomain\": {\n    \"enabled\": true,\n    \"type\": \"once\",\n    \"paymentTerms\": [\"Annually\", \"Biennially\", \"Triennially\"],\n    \"tlds\": [\".com\", \".net\", \".org\"]\n  },\n  \"isHidden\": false\n}"
+                },
+                "url": {
+                    "raw": "{{BASE_URL}}/admin/products",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "admin",
+                        "products"
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "2. Get All Products",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{BASE_URL}}/admin/products?page=1&limit=10",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "admin",
+                        "products"
+                    ],
+                    "query": [
+                        {
+                            "key": "page",
+                            "value": "1"
+                        },
+                        {
+                            "key": "limit",
+                            "value": "10"
+                        },
+                        {
+                            "key": "type",
+                            "value": "hosting",
+                            "disabled": true
+                        },
+                        {
+                            "key": "group",
+                            "value": "Web Hosting",
+                            "disabled": true
+                        },
+                        {
+                            "key": "isHidden",
+                            "value": "false",
+                            "disabled": true
+                        },
+                        {
+                            "key": "sort",
+                            "value": "-createdAt",
+                            "disabled": true
+                        }
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "3. Get Single Product",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{BASE_URL}}/admin/products/{{PRODUCT_ID}}",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "admin",
+                        "products",
+                        "{{PRODUCT_ID}}"
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "4. Update Product",
+            "request": {
+                "method": "PUT",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"name\": \"Business Hosting Plan Pro\",\n  \"description\": \"Updated description with enhanced features\",\n  \"features\": [\n    \"20 GB SSD Storage\",\n    \"Unlimited Bandwidth\",\n    \"Free SSL Certificate\",\n    \"cPanel Control Panel\",\n    \"Daily Backups\",\n    \"24/7 Priority Support\",\n    \"Free CDN\"\n  ]\n}"
+                },
+                "url": {
+                    "raw": "{{BASE_URL}}/admin/products/{{PRODUCT_ID}}",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "admin",
+                        "products",
+                        "{{PRODUCT_ID}}"
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "5. Delete Product",
+            "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                    "raw": "{{BASE_URL}}/admin/products/{{PRODUCT_ID}}",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "admin",
+                        "products",
+                        "{{PRODUCT_ID}}"
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "6. Toggle Product Visibility",
+            "request": {
+                "method": "PATCH",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"isHidden\": true\n}"
+                },
+                "url": {
+                    "raw": "{{BASE_URL}}/admin/products/{{PRODUCT_ID}}/visibility",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "admin",
+                        "products",
+                        "{{PRODUCT_ID}}",
+                        "visibility"
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "7. Search Products",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{BASE_URL}}/admin/products/search?q=business",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "admin",
+                        "products",
+                        "search"
+                    ],
+                    "query": [
+                        {
+                            "key": "q",
+                            "value": "business"
+                        }
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "8. Get Products by Type",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{BASE_URL}}/admin/products/type/hosting",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "admin",
+                        "products",
+                        "type",
+                        "hosting"
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "9. Get Products by Group",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{BASE_URL}}/admin/products/group/Web Hosting",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "admin",
+                        "products",
+                        "group",
+                        "Web Hosting"
+                    ]
+                }
+            },
+            "response": []
+        }
+    ]
+}

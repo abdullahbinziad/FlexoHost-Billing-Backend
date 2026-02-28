@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import config from '../config';
 import User from '../modules/user/user.model';
+import Client from '../modules/client/client.model';
 import { defaultUsers } from './data/users.seed';
 import logger from '../utils/logger';
 
@@ -35,13 +36,33 @@ export const seedUsers = async (): Promise<void> => {
             return;
         }
 
-        // Create users (using create() to trigger pre-save middleware for password hashing)
-        const createdUsers = await User.create(defaultUsers);
+        // Create users
+        const createdUsers = [];
 
-        logger.info(`✅ Successfully seeded ${createdUsers.length} users:`);
-        createdUsers.forEach((user) => {
-            logger.info(`   - ${user.name} (${user.email}) - Role: ${user.role}`);
-        });
+        for (const defaultUser of defaultUsers) {
+            const [user] = await User.create([{
+                email: defaultUser.email,
+                password: defaultUser.password,
+                role: defaultUser.role,
+                verified: defaultUser.verified,
+                active: defaultUser.active
+            }]);
+
+            await Client.create({
+                user: user._id,
+                firstName: defaultUser.firstName,
+                lastName: defaultUser.lastName,
+                phone: defaultUser.phone,
+                address: defaultUser.address || undefined
+            });
+
+            createdUsers.push(user);
+        }
+
+        logger.info(`✅ Successfully seeded ${createdUsers.length} users and clients:`);
+        for (let i = 0; i < createdUsers.length; i++) {
+            logger.info(`   - ${defaultUsers[i].firstName} ${defaultUsers[i].lastName} (${createdUsers[i].email}) - Role: ${createdUsers[i].role}`);
+        }
     } catch (error: any) {
         logger.error('❌ Error seeding users:', error.message);
         throw error;
@@ -53,9 +74,10 @@ export const seedUsers = async (): Promise<void> => {
  */
 export const clearUsers = async (): Promise<void> => {
     try {
-        logger.info('🗑️  Clearing existing users...');
-        const result = await User.deleteMany({});
-        logger.info(`✅ Deleted ${result.deletedCount} user(s)`);
+        logger.info('🗑️  Clearing existing users and clients...');
+        const userResult = await User.deleteMany({});
+        const clientResult = await Client.deleteMany({});
+        logger.info(`✅ Deleted ${userResult.deletedCount} user(s) and ${clientResult.deletedCount} client(s)`);
     } catch (error: any) {
         logger.error('❌ Error clearing users:', error.message);
         throw error;

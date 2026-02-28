@@ -16,21 +16,31 @@ const tldSchema = new Schema<ITLD>({
     label: {
         type: String
     },
-    register: {
-        type: String,
-        required: true,
-        trim: true
-    },
     serial: {
         type: Number,
         default: 0
     },
     pricing: [{
         _id: false,
-        year: { type: Number, required: true },
-        register: { type: Number, required: true },
-        renew: { type: Number, required: true },
-        transfer: { type: Number, default: 0 }
+        currency: { type: String, required: true },
+        "1": {
+            register: { type: Number, required: true },
+            renew: { type: Number, required: true },
+            transfer: { type: Number, required: true },
+            enable: { type: Boolean, default: true }
+        },
+        "2": {
+            register: { type: Number, required: true },
+            renew: { type: Number, required: true },
+            transfer: { type: Number, required: true },
+            enable: { type: Boolean, default: true }
+        },
+        "3": {
+            register: { type: Number, required: true },
+            renew: { type: Number, required: true },
+            transfer: { type: Number, required: true },
+            enable: { type: Boolean, default: false }
+        }
     }],
     features: {
         dnsManagement: { type: Boolean, default: false },

@@ -65,3 +65,36 @@ export const restrictTo = (...roles: string[]) => {
         next();
     };
 };
+
+export const optionalAuth = catchAsync(
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+        void res;
+        let token: string | undefined;
+
+        if (
+            req.headers.authorization &&
+            req.headers.authorization.startsWith('Bearer')
+        ) {
+            token = req.headers.authorization.split(' ')[1];
+        } else if (req.cookies?.jwt) {
+            token = req.cookies.jwt;
+        }
+
+        if (!token) {
+            return next();
+        }
+
+        try {
+            const decoded = jwt.verify(token, config.jwt.secret) as { id: string; iat: number };
+            const currentUser = await User.findById(decoded.id).select('+active');
+
+            if (currentUser && currentUser.active && !currentUser.changedPasswordAfter(decoded.iat)) {
+                req.user = currentUser;
+            }
+        } catch (error) {
+            // Ignore token verification errors for optional auth
+        }
+
+        next();
+    }
+);

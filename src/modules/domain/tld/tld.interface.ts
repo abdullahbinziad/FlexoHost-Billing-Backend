@@ -1,9 +1,17 @@
 import { Document } from 'mongoose';
 
-export interface ITLDPcingTier {
+export interface ITLDPricingDetail {
     register: number;
+    renew: number;
     transfer: number;
-    renewal: number;
+    enable: boolean;
+}
+
+export interface ITLDCurrencyPricing {
+    currency: string;
+    "1": ITLDPricingDetail;
+    "2": ITLDPricingDetail;
+    "3": ITLDPricingDetail;
 }
 
 export interface ITLDAutoRegistration {
@@ -21,14 +29,8 @@ export interface ITLD extends Document {
     tld: string;
     isSpotlight: boolean;
     label?: string;
-    register: string;
     serial: number;
-    pricing: {
-        year: number;
-        register: number;
-        renew: number;
-        transfer: number;
-    }[];
+    pricing: ITLDCurrencyPricing[];
     features: ITLDFeatures;
     autoRegistration: ITLDAutoRegistration;
     status: string;

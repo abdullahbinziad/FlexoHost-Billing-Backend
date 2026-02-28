@@ -56,6 +56,16 @@ export const registerClientValidation = [
     body('clientData.address.state').optional().trim(),
     body('clientData.address.postCode').optional().trim(),
     body('clientData.address.country').optional().trim(),
+
+    body('clientData.phoneNumber')
+        .optional()
+        .isMobilePhone('any')
+        .withMessage('Please provide a valid phone number'),
+
+    body('clientData.avatar')
+        .optional()
+        .isString()
+        .withMessage('Avatar must be a string'),
 ];
 
 export const updateClientValidation = [
@@ -89,6 +99,16 @@ export const updateClientValidation = [
     body('address.state').optional().trim(),
     body('address.postCode').optional().trim(),
     body('address.country').optional().trim(),
+
+    body('phoneNumber')
+        .optional()
+        .isMobilePhone('any')
+        .withMessage('Please provide a valid phone number'),
+
+    body('avatar')
+        .optional()
+        .isString()
+        .withMessage('Avatar must be a string'),
 ];
 
 export const getClientByIdValidation = [
@@ -114,3 +134,4 @@ export const getAllClientsValidation = [
 
     query('lastName').optional().trim(),
 ];
+

@@ -16,6 +16,8 @@ export interface IClient extends Document {
     lastName: string;
     companyName?: string;
     contactEmail?: string;
+    phoneNumber?: string;
+    avatar?: string;
     address?: IAddress;
     createdAt: Date;
     updatedAt: Date;
@@ -26,6 +28,8 @@ export interface IClientCreate {
     lastName: string;
     companyName?: string;
     contactEmail?: string;
+    phoneNumber?: string;
+    avatar?: string;
     address?: IAddress;
 }
 
@@ -34,6 +38,8 @@ export interface IClientUpdate {
     lastName?: string;
     companyName?: string;
     contactEmail?: string;
+    phoneNumber?: string;
+    avatar?: string;
     address?: IAddress;
 }
 

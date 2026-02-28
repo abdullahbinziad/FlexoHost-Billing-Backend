@@ -20,6 +20,16 @@
             "key": "refreshToken",
             "value": "",
             "type": "string"
+        },
+        {
+            "key": "productId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "tldId",
+            "value": "",
+            "type": "string"
         }
     ],
     "item": [
@@ -881,195 +891,395 @@
             ]
         },
         {
-            "name": "Domain Management",
+            "name": "Domain & TLD Management",
             "item": [
                 {
-                    "name": "Search Domain",
-                    "request": {
-                        "method": "GET",
-                        "header": [],
-                        "url": {
-                            "raw": "{{baseUrl}}/domains/search?domain=example.com",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "domains",
-                                "search"
-                            ],
-                            "query": [
-                                {
-                                    "key": "domain",
-                                    "value": "example.com"
-                                }
-                            ]
-                        }
-                    }
-                },
-                {
-                    "name": "Register Domain",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
+                    "name": "TLD Management",
+                    "item": [
+                        {
+                            "name": "Get All TLDs",
+                            "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/tld",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        "tld"
+                                    ]
+                                },
+                                "description": "Retrieve all configured Top-Level Domains (TLDs) with their features and full pricing matrix across multiple currencies (USD, BDT, etc.)."
                             }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"domain\": \"example.com\",\n  \"years\": 1,\n  \"regType\": \"new\",\n  \"contacts\": {\n    \"registrant\": {\n      \"name\": \"John Doe\",\n      \"organization\": \"Example Corp\",\n      \"email\": \"john@example.com\",\n      \"phone\": \"+1.5555555555\",\n      \"address1\": \"123 Main St\",\n      \"city\": \"Anytown\",\n      \"state\": \"NY\",\n      \"zip\": \"10001\",\n      \"country\": \"US\"\n    },\n    \"admin\": {\n      \"name\": \"John Doe\",\n      \"organization\": \"Example Corp\",\n      \"email\": \"john@example.com\",\n      \"phone\": \"+1.5555555555\",\n      \"address1\": \"123 Main St\",\n      \"city\": \"Anytown\",\n      \"state\": \"NY\",\n      \"zip\": \"10001\",\n      \"country\": \"US\"\n    },\n    \"tech\": {\n      \"name\": \"John Doe\",\n      \"organization\": \"Example Corp\",\n      \"email\": \"john@example.com\",\n      \"phone\": \"+1.5555555555\",\n      \"address1\": \"123 Main St\",\n      \"city\": \"Anytown\",\n      \"state\": \"NY\",\n      \"zip\": \"10001\",\n      \"country\": \"US\"\n    },\n    \"billing\": {\n      \"name\": \"John Doe\",\n      \"organization\": \"Example Corp\",\n      \"email\": \"john@example.com\",\n      \"phone\": \"+1.5555555555\",\n      \"address1\": \"123 Main St\",\n      \"city\": \"Anytown\",\n      \"state\": \"NY\",\n      \"zip\": \"10001\",\n      \"country\": \"US\"\n    }\n  },\n  \"nameservers\": [\n    \"ns1.dynadot.com\",\n    \"ns2.dynadot.com\"\n  ]\n}"
                         },
-                        "url": {
-                            "raw": "{{baseUrl}}/domains/register",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "domains",
-                                "register"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "name": "Transfer Domain",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"domain\": \"example.com\",\n  \"authCode\": \"AUTH-CODE-123\"\n}"
-                        },
-                        "url": {
-                            "raw": "{{baseUrl}}/domains/transfer",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "domains",
-                                "transfer"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "name": "Get Domain Details",
-                    "request": {
-                        "method": "GET",
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            }
-                        ],
-                        "url": {
-                            "raw": "{{baseUrl}}/domains/:domain",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "domains",
-                                ":domain"
-                            ],
-                            "variable": [
+                        {
+                            "name": "Create TLD",
+                            "event": [
                                 {
-                                    "key": "domain",
-                                    "value": "example.com"
+                                    "listen": "test",
+                                    "script": {
+                                        "exec": [
+                                            "if (pm.response.code === 201) {\n    const jsonData = pm.response.json();\n    pm.collectionVariables.set('tldId', jsonData.data._id || jsonData.data.id);\n}"
+                                        ]
+                                    }
                                 }
-                            ]
+                            ],
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{accessToken}}"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"tld\": \".com\",\n  \"isSpotlight\": true,\n  \"label\": \"Hot\",\n  \"serial\": 1,\n  \"pricing\": [\n    {\n      \"currency\": \"BDT\",\n      \"1\": {\n        \"register\": 1200,\n        \"renew\": 1200,\n        \"transfer\": 1100,\n        \"enable\": true\n      },\n      \"2\": {\n        \"register\": 2300,\n        \"renew\": 2300,\n        \"transfer\": 2200,\n        \"enable\": true\n      },\n      \"3\": {\n        \"register\": 3400,\n        \"renew\": 3400,\n        \"transfer\": 3300,\n        \"enable\": true\n      }\n    },\n    {\n      \"currency\": \"USD\",\n      \"1\": {\n        \"register\": 12.99,\n        \"renew\": 12.99,\n        \"transfer\": 11.99,\n        \"enable\": true\n      },\n      \"2\": {\n        \"register\": 24.99,\n        \"renew\": 24.99,\n        \"transfer\": 23.99,\n        \"enable\": true\n      },\n      \"3\": {\n        \"register\": 36.99,\n        \"renew\": 36.99,\n        \"transfer\": 35.99,\n        \"enable\": true\n      }\n    }\n  ],\n  \"features\": {\n    \"dnsManagement\": true,\n    \"emailForwarding\": true,\n    \"idProtection\": true\n  },\n  \"autoRegistration\": {\n    \"enabled\": true,\n    \"provider\": \"dynadot\"\n  },\n  \"status\": \"active\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/tld",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        "tld"
+                                    ]
+                                },
+                                "description": "Configure a new TLD with pricing Detail for different durations (1-3 years) and multiple currencies (USD, BDT). (Admin only)"
+                            }
+                        },
+                        {
+                            "name": "Get TLD by Extension",
+                            "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/tld/:extension",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        "tld",
+                                        ":extension"
+                                    ],
+                                    "variable": [
+                                        {
+                                            "key": "extension",
+                                            "value": ".com"
+                                        }
+                                    ]
+                                },
+                                "description": "Get detailed configuration for a specific TLD using its extension (e.g., .com, .net)."
+                            }
+                        },
+                        {
+                            "name": "Get TLD by ID (Admin)",
+                            "request": {
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{accessToken}}"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/tld/id/:id",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        "tld",
+                                        "id",
+                                        ":id"
+                                    ],
+                                    "variable": [
+                                        {
+                                            "key": "id",
+                                            "value": "{{tldId}}"
+                                        }
+                                    ]
+                                },
+                                "description": "Retrieve TLD details using its MongoDB internal ID. (Admin only)"
+                            }
+                        },
+                        {
+                            "name": "Update TLD",
+                            "request": {
+                                "method": "PATCH",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{accessToken}}"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"isSpotlight\": false,\n  \"status\": \"maintenance\",\n  \"pricing\": [\n    {\n      \"currency\": \"BDT\",\n      \"1\": {\n        \"register\": 1350,\n        \"enable\": true\n      }\n    }\n  ]\n}"
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/tld/:id",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        "tld",
+                                        ":id"
+                                    ],
+                                    "variable": [
+                                        {
+                                            "key": "id",
+                                            "value": "{{tldId}}"
+                                        }
+                                    ]
+                                },
+                                "description": "Update TLD settings, status, or pricing Detail. (Admin only)"
+                            }
+                        },
+                        {
+                            "name": "Delete TLD",
+                            "request": {
+                                "method": "DELETE",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{accessToken}}"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/tld/:id",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        "tld",
+                                        ":id"
+                                    ],
+                                    "variable": [
+                                        {
+                                            "key": "id",
+                                            "value": "{{tldId}}"
+                                        }
+                                    ]
+                                },
+                                "description": "Permanently remove a TLD configuration. (Admin only)"
+                            }
                         }
-                    }
+                    ]
                 },
                 {
-                    "name": "Renew Domain",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
+                    "name": "Domain Operations",
+                    "item": [
+                        {
+                            "name": "Search Domain Availability",
+                            "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/search?domain=testdomain.com",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        "search"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "domain",
+                                            "value": "testdomain.com"
+                                        }
+                                    ]
+                                },
+                                "description": "Check if a domain name is available for registration. Returns pricing in configured currencies if available."
                             }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"duration\": 1\n}"
                         },
-                        "url": {
-                            "raw": "{{baseUrl}}/domains/:domain/renew",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "domains",
-                                ":domain",
-                                "renew"
-                            ],
-                            "variable": [
-                                {
-                                    "key": "domain",
-                                    "value": "example.com"
-                                }
-                            ]
-                        }
-                    }
-                },
-                {
-                    "name": "Update Nameservers",
-                    "request": {
-                        "method": "PUT",
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
+                        {
+                            "name": "Register Domain",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{accessToken}}"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"domain\": \"example.com\",\n  \"duration\": 1,\n  \"nameservers\": [\"ns1.flexohost.com\", \"ns2.flexohost.com\"]\n}"
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/register",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        "register"
+                                    ]
+                                },
+                                "description": "Initiate domain registration. Requires authenticated client session."
                             }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"nameservers\": [\n    \"ns1.example.com\",\n    \"ns2.example.com\"\n  ]\n}"
                         },
-                        "url": {
-                            "raw": "{{baseUrl}}/domains/:domain/nameservers",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "domains",
-                                ":domain",
-                                "nameservers"
-                            ],
-                            "variable": [
-                                {
-                                    "key": "domain",
-                                    "value": "example.com"
-                                }
-                            ]
+                        {
+                            "name": "Transfer Domain",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{accessToken}}"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"domain\": \"example.com\",\n  \"authCode\": \"YOUR_SECRET_AUTH_CODE\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/transfer",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        "transfer"
+                                    ]
+                                },
+                                "description": "Initiate domain transfer from another registrar using an Auth/EPP code."
+                            }
+                        },
+                        {
+                            "name": "Get Domain Details",
+                            "request": {
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{accessToken}}"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/:domain",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        ":domain"
+                                    ],
+                                    "variable": [
+                                        {
+                                            "key": "domain",
+                                            "value": "example.com"
+                                        }
+                                    ]
+                                },
+                                "description": "Retrieve comprehensive Information about a registered domain, including expiry, nameservers, and locks."
+                            }
+                        },
+                        {
+                            "name": "Renew Domain",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{accessToken}}"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"duration\": 1\n}"
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/:domain/renew",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        ":domain",
+                                        "renew"
+                                    ],
+                                    "variable": [
+                                        {
+                                            "key": "domain",
+                                            "value": "example.com"
+                                        }
+                                    ]
+                                },
+                                "description": "Extend the registration period of an existing domain."
+                            }
+                        },
+                        {
+                            "name": "Update Nameservers",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{accessToken}}"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"nameservers\": [\"ns1.newprovider.com\", \"ns2.newprovider.com\"]\n}"
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/domains/:domain/nameservers",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "domains",
+                                        ":domain",
+                                        "nameservers"
+                                    ],
+                                    "variable": [
+                                        {
+                                            "key": "domain",
+                                            "value": "example.com"
+                                        }
+                                    ]
+                                },
+                                "description": "Modify the nameservers (NS records) for a registered domain."
+                            }
                         }
-                    }
+                    ]
                 }
             ]
-        },
+        }
+,
         {
             "name": "Payment Management",
             "item": [
@@ -1189,6 +1399,339 @@
                             ]
                         },
                         "description": "Simulated IPN call"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Product Management",
+            "item": [
+                {
+                    "name": "Create Product",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.collectionVariables.set('productId', jsonData.data.id || jsonData.data._id);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Business Hosting Plan\",\n  \"type\": \"hosting\",\n  \"group\": \"Web Hosting\",\n  \"description\": \"Perfect for small to medium businesses\",\n  \"paymentType\": \"recurring\",\n  \"pricing\": [\n    {\n      \"currency\": \"BDT\",\n      \"monthly\": {\n        \"price\": 500,\n        \"setupFee\": 0,\n        \"renewPrice\": 500,\n        \"enable\": true\n      },\n      \"quarterly\": {\n        \"price\": 1400,\n        \"setupFee\": 0,\n        \"renewPrice\": 1400,\n        \"enable\": true\n      },\n      \"semiAnnually\": {\n        \"price\": 2700,\n        \"setupFee\": 0,\n        \"renewPrice\": 2700,\n        \"enable\": true\n      },\n      \"annually\": {\n        \"price\": 5000,\n        \"setupFee\": 0,\n        \"renewPrice\": 5000,\n        \"enable\": true\n      },\n      \"biennially\": {\n        \"price\": 9500,\n        \"setupFee\": 0,\n        \"renewPrice\": 9500,\n        \"enable\": true\n      },\n      \"triennially\": {\n        \"price\": 13500,\n        \"setupFee\": 0,\n        \"renewPrice\": 13500,\n        \"enable\": true\n      }\n    },\n    {\n      \"currency\": \"USD\",\n      \"monthly\": {\n        \"price\": 5.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 5.99,\n        \"enable\": true\n      },\n      \"quarterly\": {\n        \"price\": 16.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 16.99,\n        \"enable\": true\n      },\n      \"semiAnnually\": {\n        \"price\": 32.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 32.99,\n        \"enable\": true\n      },\n      \"annually\": {\n        \"price\": 59.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 59.99,\n        \"enable\": true\n      },\n      \"biennially\": {\n        \"price\": 114.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 114.99,\n        \"enable\": true\n      },\n      \"triennially\": {\n        \"price\": 164.99,\n        \"setupFee\": 0,\n        \"renewPrice\": 164.99,\n        \"enable\": true\n      }\n    }\n  ],\n  \"features\": [\n    \"10 GB SSD Storage\",\n    \"Unlimited Bandwidth\",\n    \"Free SSL Certificate\",\n    \"cPanel Control Panel\",\n    \"Daily Backups\",\n    \"24/7 Support\"\n  ],\n  \"stock\": null,\n  \"module\": {\n    \"name\": \"cpanel\",\n    \"serverGroup\": \"BDIX-01\",\n    \"packageName\": \"business_plan_10gb\"\n  },\n  \"freeDomain\": {\n    \"enabled\": true,\n    \"type\": \"once\",\n    \"paymentTerms\": [\"Annually\", \"Biennially\", \"Triennially\"],\n    \"tlds\": [\".com\", \".net\", \".org\"]\n  },\n  \"isHidden\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products"
+                            ]
+                        },
+                        "description": "Create a new product/hosting package (Admin only)"
+                    }
+                },
+                {
+                    "name": "Get All Products",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products?page=1&limit=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                },
+                                {
+                                    "key": "type",
+                                    "value": "hosting",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "group",
+                                    "value": "Web Hosting",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "isHidden",
+                                    "value": "false",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "sort",
+                                    "value": "-createdAt",
+                                    "disabled": true
+                                }
+                            ]
+                        },
+                        "description": "Get all products with optional filtering and pagination (Admin only)"
+                    }
+                },
+                {
+                    "name": "Get Single Product",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products/:id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "{{productId}}"
+                                }
+                            ]
+                        },
+                        "description": "Get a specific product by ID (Admin only)"
+                    }
+                },
+                {
+                    "name": "Update Product",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Business Hosting Plan Pro\",\n  \"description\": \"Updated description with enhanced features\",\n  \"features\": [\n    \"20 GB SSD Storage\",\n    \"Unlimited Bandwidth\",\n    \"Free SSL Certificate\",\n    \"cPanel Control Panel\",\n    \"Daily Backups\",\n    \"24/7 Priority Support\",\n    \"Free CDN\"\n  ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products/:id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "{{productId}}"
+                                }
+                            ]
+                        },
+                        "description": "Update an existing product (Admin only)"
+                    }
+                },
+                {
+                    "name": "Delete Product",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products/:id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "{{productId}}"
+                                }
+                            ]
+                        },
+                        "description": "Delete a product (Admin only)"
+                    }
+                },
+                {
+                    "name": "Toggle Product Visibility",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"isHidden\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products/:id/visibility",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products",
+                                ":id",
+                                "visibility"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "{{productId}}"
+                                }
+                            ]
+                        },
+                        "description": "Show/hide product from customers (Admin only)"
+                    }
+                },
+                {
+                    "name": "Search Products",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products/search?q=business",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products",
+                                "search"
+                            ],
+                            "query": [
+                                {
+                                    "key": "q",
+                                    "value": "business"
+                                }
+                            ]
+                        },
+                        "description": "Search products by name or description (Admin only)"
+                    }
+                },
+                {
+                    "name": "Get Products by Type",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products/type/:type",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products",
+                                "type",
+                                ":type"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "type",
+                                    "value": "hosting",
+                                    "description": "Product type: hosting, vps, domain, ssl"
+                                }
+                            ]
+                        },
+                        "description": "Get all products of a specific type (Admin only)"
+                    }
+                },
+                {
+                    "name": "Get Products by Group",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products/group/:group",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products",
+                                "group",
+                                ":group"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "group",
+                                    "value": "Web Hosting",
+                                    "description": "Product group/category"
+                                }
+                            ]
+                        },
+                        "description": "Get all products in a specific group (Admin only)"
                     }
                 }
             ]

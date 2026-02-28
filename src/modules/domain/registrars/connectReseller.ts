@@ -11,11 +11,13 @@ export class ConnectResellerRegistrar implements IDomainRegistrar {
 
     async searchDomain(domain: string): Promise<IDomainSearchResult> {
         // Implement ConnectReseller search API
-        return {
+        const result = {
             domain,
             available: false, // Placeholder
-            price: 0,
-            currency: 'USD'
+        };
+        return {
+            ...result,
+            data: result as any, // Self-reference to satisfy interface or structure required
         };
     }
 

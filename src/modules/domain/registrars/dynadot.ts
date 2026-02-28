@@ -104,13 +104,7 @@ export class DynadotRegistrar implements IDomainRegistrar {
             const result = await this.request(`/domains/${domain}/search`);
             // Map Dynadot result to our interface
             // Structure depends on actual response, assuming standard fields based on docs summary
-            return {
-                domain: domain,
-                available: result.available === 'yes' || result.available === true,
-                price: result.price,
-                currency: result.currency,
-                premium: result.premium === 'yes',
-            };
+            return result;
         } catch (error) {
             // If api returns 404 or specific error for taken, handle it.
             // But usually search returns 200 with available=no
@@ -165,3 +159,11 @@ export class DynadotRegistrar implements IDomainRegistrar {
         await this.request(`/domains/${domain}/nameservers`, 'PUT', body);
     }
 }
+
+// Create single instance
+const dynadotRegistrar = new DynadotRegistrar();
+
+// Export only search function
+export const searchDynadotDomain = (domain: string) => {
+    return dynadotRegistrar.searchDomain(domain);
+};

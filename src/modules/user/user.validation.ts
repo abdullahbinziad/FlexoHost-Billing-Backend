@@ -1,12 +1,19 @@
 import { body, param, query } from 'express-validator';
 
 export const registerValidation = [
-    body('name')
+    body('firstName')
         .trim()
         .notEmpty()
-        .withMessage('Name is required')
+        .withMessage('First Name is required')
         .isLength({ min: 2, max: 50 })
-        .withMessage('Name must be between 2 and 50 characters'),
+        .withMessage('First Name must be between 2 and 50 characters'),
+
+    body('lastName')
+        .trim()
+        .notEmpty()
+        .withMessage('Last Name is required')
+        .isLength({ min: 2, max: 50 })
+        .withMessage('Last Name must be between 2 and 50 characters'),
 
     body('email')
         .trim()
@@ -59,11 +66,17 @@ export const loginValidation = [
 ];
 
 export const updateUserValidation = [
-    body('name')
+    body('firstName')
         .optional()
         .trim()
         .isLength({ min: 2, max: 50 })
-        .withMessage('Name must be between 2 and 50 characters'),
+        .withMessage('First Name must be between 2 and 50 characters'),
+
+    body('lastName')
+        .optional()
+        .trim()
+        .isLength({ min: 2, max: 50 })
+        .withMessage('Last Name must be between 2 and 50 characters'),
 
     body('phone')
         .optional()
@@ -98,11 +111,17 @@ export const adminUpdateUserValidation = [
         .isMongoId()
         .withMessage('Invalid user ID'),
 
-    body('name')
+    body('firstName')
         .optional()
         .trim()
         .isLength({ min: 2, max: 50 })
-        .withMessage('Name must be between 2 and 50 characters'),
+        .withMessage('First Name must be between 2 and 50 characters'),
+
+    body('lastName')
+        .optional()
+        .trim()
+        .isLength({ min: 2, max: 50 })
+        .withMessage('Last Name must be between 2 and 50 characters'),
 
     body('email')
         .optional()

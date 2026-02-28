@@ -72,6 +72,10 @@ const invoiceSchema = new Schema<IInvoiceDocument, IInvoiceModel>(
             required: true,
             min: 0,
         },
+        orderId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Order',
+        },
     },
     {
         timestamps: true,

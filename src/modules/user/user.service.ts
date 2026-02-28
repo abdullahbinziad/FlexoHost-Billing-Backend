@@ -1,5 +1,7 @@
+import mongoose from 'mongoose';
 import crypto from 'crypto';
 import User from './user.model';
+import Client from '../client/client.model';
 import ApiError from '../../utils/apiError';
 import {
     IUserCreate,
@@ -8,42 +10,70 @@ import {
     IAuthTokens,
 } from './user.interface';
 import { generateAuthTokens, verifyRefreshToken, sanitizeUser } from './user.helper';
+import emailService from '../email/email.service';
+import logger from '../../utils/logger';
 
 class UserService {
     // Register new user
     async register(userData: IUserCreate): Promise<{ user: any; tokens: IAuthTokens }> {
-        // Check if user already exists
-        const existingUser = await User.findOne({ email: userData.email });
-        if (existingUser) {
-            throw ApiError.conflict('Email already registered');
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            // Check if user already exists
+            const existingUser = await User.findOne({ email: userData.email }).session(session);
+            if (existingUser) {
+                throw ApiError.conflict('Email already registered');
+            }
+
+            // Create user (only auth fields)
+            const [user] = await User.create([{
+                email: userData.email,
+                password: userData.password,
+            }], { session });
+
+            // Generate verification token
+            const rawVerificationToken = user.createVerificationToken();
+            await user.save({ session, validateBeforeSave: false });
+
+            // Create Client Profile
+            await Client.create([{
+                user: user._id,
+                firstName: userData.firstName,
+                lastName: userData.lastName,
+                companyName: userData.companyName,
+                address: userData.address,
+            }], { session });
+
+            // Send emails (non-blocking)
+            try {
+                await emailService.sendWelcomeEmail(user.email, userData.firstName + ' ' + userData.lastName);
+                if (rawVerificationToken) {
+                    await emailService.sendVerificationEmail(user.email, userData.firstName + ' ' + userData.lastName, rawVerificationToken);
+                }
+            } catch (emailError) {
+                logger.error('Failed to send registration emails:', emailError);
+            }
+
+            // Generate auth tokens
+            const tokens = generateAuthTokens(user._id.toString());
+
+            // Save refresh token
+            user.refreshToken = tokens.refreshToken;
+            await user.save({ session, validateBeforeSave: false });
+
+            await session.commitTransaction();
+
+            return {
+                user: sanitizeUser(user),
+                tokens,
+            };
+        } catch (error) {
+            await session.abortTransaction();
+            throw error;
+        } finally {
+            session.endSession();
         }
-
-        // Create user (only allow safe fields from public registration)
-        const user = await User.create({
-            name: userData.name,
-            email: userData.email,
-            password: userData.password,
-            phone: userData.phone,
-            address: userData.address,
-        });
-
-        // Generate verification token
-        user.createVerificationToken();
-        await user.save({ validateBeforeSave: false });
-
-        // TODO: Send verification email with token
-
-        // Generate auth tokens
-        const tokens = generateAuthTokens(user._id.toString());
-
-        // Save refresh token
-        user.refreshToken = tokens.refreshToken;
-        await user.save({ validateBeforeSave: false });
-
-        return {
-            user: sanitizeUser(user),
-            tokens,
-        };
     }
 
     // Login user
@@ -78,6 +108,9 @@ class UserService {
             throw ApiError.unauthorized('Invalid email or password');
         }
 
+        // Fetch Client Profile to include in payload
+        const clientProfile = await Client.findOne({ user: user._id }).lean();
+
         // Reset login attempts on successful login (DISABLED FOR NOW)
         // if (user.loginAttempts > 0) {
         //     await user.resetLoginAttempts();
@@ -90,8 +123,10 @@ class UserService {
         user.refreshToken = tokens.refreshToken;
         await user.save({ validateBeforeSave: false });
 
+        const sanitizedUser = sanitizeUser(user);
+
         return {
-            user: sanitizeUser(user),
+            user: { ...sanitizedUser, client: clientProfile },
             tokens,
         };
     }
@@ -149,20 +184,23 @@ class UserService {
             throw ApiError.notFound('User not found');
         }
 
-        return sanitizeUser(user);
+        const clientProfile = await Client.findOne({ user: user._id }).lean();
+        const sanitizedUser = sanitizeUser(user);
+
+        return { ...sanitizedUser, client: clientProfile };
     }
 
     // Update user
     async updateUser(userId: string, updateData: IUserUpdate): Promise<any> {
         // Prevent updating sensitive fields
-        const allowedUpdates = ['name', 'phone', 'avatar', 'address'];
+        const allowedUpdates = ['email'];
         const updates = Object.keys(updateData);
         const isValidOperation = updates.every((update) =>
             allowedUpdates.includes(update)
         );
 
         if (!isValidOperation) {
-            throw ApiError.badRequest('Invalid updates');
+            throw ApiError.badRequest('Invalid updates. Profile updates like name and address must be done through the Client profile.');
         }
 
         const user = await User.findByIdAndUpdate(userId, updateData, {
@@ -180,11 +218,7 @@ class UserService {
     // Update user (admin only)
     async updateUserByAdmin(userId: string, updateData: any): Promise<any> {
         const allowedUpdates = [
-            'name',
             'email',
-            'phone',
-            'avatar',
-            'address',
             'role',
             'active',
             'verified',
@@ -194,7 +228,7 @@ class UserService {
         const isValidOperation = updates.every((update) => allowedUpdates.includes(update));
 
         if (!isValidOperation) {
-            throw ApiError.badRequest('Invalid updates');
+            throw ApiError.badRequest('Invalid updates. Contact information updates must go through the Client service.');
         }
 
         if (updateData.email) {

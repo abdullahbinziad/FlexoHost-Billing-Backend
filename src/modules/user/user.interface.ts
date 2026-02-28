@@ -1,19 +1,9 @@
 import { Document } from 'mongoose';
 
 export interface IUser extends Document {
-    name: string;
     email: string;
     password: string;
     role: 'admin' | 'user' | 'moderator';
-    avatar?: string;
-    phone?: string;
-    address?: {
-        street?: string;
-        city?: string;
-        state?: string;
-        country?: string;
-        zipCode?: string;
-    };
     active: boolean;
     verified: boolean;
     verificationToken?: string;
@@ -38,32 +28,24 @@ export interface IUser extends Document {
 }
 
 export interface IUserCreate {
-    name: string;
+    firstName: string;
+    lastName: string;
     email: string;
     password: string;
     role?: 'admin' | 'user' | 'moderator';
     phone?: string;
+    companyName?: string;
     address?: {
         street?: string;
         city?: string;
         state?: string;
         country?: string;
-        zipCode?: string;
+        postCode?: string;
     };
 }
 
 export interface IUserUpdate {
-    name?: string;
     email?: string;
-    phone?: string;
-    avatar?: string;
-    address?: {
-        street?: string;
-        city?: string;
-        state?: string;
-        country?: string;
-        zipCode?: string;
-    };
 }
 
 export interface IUserLogin {
@@ -73,12 +55,8 @@ export interface IUserLogin {
 
 export interface IUserResponse {
     _id: string;
-    name: string;
     email: string;
     role: string;
-    avatar?: string;
-    phone?: string;
-    address?: any;
     verified: boolean;
     active: boolean;
     createdAt: Date;

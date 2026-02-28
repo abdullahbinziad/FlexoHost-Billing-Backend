@@ -1,4 +1,4 @@
-import { Document, Model } from 'mongoose';
+import { Document, Model, Types } from 'mongoose';
 
 export enum InvoiceStatus {
     UNPAID = 'UNPAID',
@@ -41,6 +41,7 @@ export interface IInvoice {
     credit: number;
     total: number;
     balanceDue: number;
+    orderId?: Types.ObjectId;
     createdAt?: Date;
     updatedAt?: Date;
 }

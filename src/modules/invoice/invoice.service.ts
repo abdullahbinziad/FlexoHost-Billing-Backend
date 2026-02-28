@@ -2,6 +2,10 @@ import Invoice from './invoice.model';
 import { IInvoice, IInvoiceDocument, InvoiceStatus } from './invoice.interface';
 import ApiError from '../../utils/apiError';
 import crypto from 'crypto';
+import Order from '../order/order.model';
+import Service from '../service/service.model';
+import { OrderStatus } from '../order/order.interface';
+import { ServiceStatus } from '../service/service.interface';
 
 class InvoiceService {
     /**
@@ -86,6 +90,21 @@ class InvoiceService {
         if (status === InvoiceStatus.PAID) {
             invoice.balanceDue = 0;
             invoice.credit = invoice.total;
+
+            // Handle Order and Service Activation
+            if (invoice.orderId) {
+                const order = await Order.findById(invoice.orderId);
+                if (order && order.status !== OrderStatus.COMPLETED) {
+                    order.status = OrderStatus.COMPLETED;
+                    await order.save();
+
+                    // Activate associated services
+                    await Service.updateMany(
+                        { orderId: order._id, status: ServiceStatus.PENDING },
+                        { $set: { status: ServiceStatus.ACTIVE, lastPaymentDate: new Date() } }
+                    );
+                }
+            }
         }
 
         await invoice.save();

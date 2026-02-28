@@ -69,6 +69,14 @@ const clientSchema = new Schema<IClient>(
                 'Please provide a valid contact email',
             ],
         },
+        phoneNumber: {
+            type: String,
+            default: null,
+        },
+        avatar: {
+            type: String,
+            default: null,
+        },
         address: {
             type: addressSchema,
             default: {},

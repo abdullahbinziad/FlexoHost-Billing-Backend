@@ -1,12 +1,12 @@
 import express from 'express';
 import { orderController } from './order.controller';
-import { protect } from '../../middlewares/auth';
+import { protect, optionalAuth } from '../../middlewares/auth';
 
 const router = express.Router();
 
 router.post(
     '/',
-    protect,
+    optionalAuth,
     orderController.createOrder
 );
 

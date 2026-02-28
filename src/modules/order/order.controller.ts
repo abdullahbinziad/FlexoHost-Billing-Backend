@@ -6,12 +6,16 @@ import { AuthRequest } from '../../middlewares/auth';
 
 export class OrderController {
     createOrder = catchAsync(async (req: Request, res: Response) => {
-        const userId = (req as AuthRequest).user!.id; // Cast to AuthRequest
-        const { items, paymentMethod, currency } = req.body;
+        // `req.user` might be null if it's a new account registration during checkout
+        // So we'll pass `req.user?.id` to the service, and let the service handle client identity
+        const currentUserId = (req as AuthRequest).user?.id;
 
-        const order = await orderService.createOrder(userId, items, paymentMethod, currency);
+        // Pass the entire structured payload to the service
+        const payload = req.body;
 
-        ApiResponse.created(res, 'Order created successfully', order);
+        const order = await orderService.createOrder(payload, currentUserId);
+
+        ApiResponse.created(res, 'Order created successfully. Redirecting to payment...', order);
     });
 
     getOrders = catchAsync(async (req: Request, res: Response) => {

@@ -1,9 +1,15 @@
-export interface IDomainSearchResult {
+export interface IDomainAvailability {
     domain: string;
     available: boolean;
-    price?: number;
-    currency?: string;
     premium?: boolean;
+}
+
+export interface IDomainSearchResult extends IDomainAvailability {
+    data: IDomainSearchResult;
+    pricing?: {
+        USD: number;
+        BDT: number;
+    };
 }
 
 export interface IDomainRegistrationPayload {
@@ -43,7 +49,7 @@ export interface IDomainDetails {
 
 export interface IDomainRegistrar {
     name: string;
-    searchDomain(domain: string): Promise<IDomainSearchResult>;
+    searchDomain(domain: string): Promise<IDomainAvailability>;
     registerDomain(payload: IDomainRegistrationPayload): Promise<any>;
     renewDomain(domain: string, duration: number): Promise<any>;
     transferDomain(payload: IDomainTransferPayload): Promise<any>;

@@ -22,6 +22,7 @@ import invoiceRoutes from './modules/invoice/invoice.routes';
 import orderRoutes from './modules/order/order.routes';
 import serviceRoutes from './modules/service/service.routes';
 import serverRoutes from './modules/server/server.routes';
+import productRoutes from './modules/product/product.routes';
 
 
 const app: Application = express();
@@ -83,6 +84,11 @@ app.get('/health', (req: Request, res: Response) => {
 
 
 // API routes
+import storeRoutes from './modules/product/store.routes';
+
+// ... existing imports
+
+// API routes
 app.use(`/api/${config.apiVersion}/auth`, authRoutes);
 app.use(`/api/${config.apiVersion}/users`, userRoutes);
 app.use(`/api/${config.apiVersion}/clients`, clientRoutes);
@@ -93,6 +99,8 @@ app.use('/api/v1/invoices', invoiceRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/services', serviceRoutes);
 app.use('/api/v1/servers', serverRoutes);
+app.use('/api/v1/admin/products', productRoutes);
+app.use('/api/v1/store/products', storeRoutes);
 
 
 // 404 handler
