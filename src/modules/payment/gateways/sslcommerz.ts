@@ -1,25 +1,26 @@
 import httpCall from '../utils/http.util';
-import paymentInitDataProcess from '../utils/payment-process.util';
 import { IPaymentGateway, IPaymentInitData } from '../payment.interface';
+// @ts-ignore
+import SSLCommerz from 'ssl-commerz-node';
 
 class SslCommerzPayment implements IPaymentGateway {
     private store_id: string;
     private store_passwd: string;
     private baseURL: string;
-    private initURL: string;
     private validationURL: string;
     private refundURL: string;
     private refundQueryURL: string;
     private transactionQueryBySessionIdURL: string;
     private transactionQueryByTransactionIdURL: string;
+    private is_live: boolean;
 
-    name = 'SslCommerz';
+    name = 'sslcommerz'; // Should match gateway target names
 
     constructor(store_id: string, store_passwd: string, live: boolean = false) {
         this.store_id = store_id;
         this.store_passwd = store_passwd;
+        this.is_live = live;
         this.baseURL = `https://${live ? 'securepay' : 'sandbox'}.sslcommerz.com`;
-        this.initURL = this.baseURL + '/gwprocess/v4/api.php';
         this.validationURL = this.baseURL + '/validator/api/validationserverAPI.php?';
         this.refundURL = this.baseURL + '/validator/api/merchantTransIDvalidationAPI.php?';
         this.refundQueryURL = this.baseURL + '/validator/api/merchantTransIDvalidationAPI.php?';
@@ -27,16 +28,72 @@ class SslCommerzPayment implements IPaymentGateway {
         this.transactionQueryByTransactionIdURL = this.baseURL + '/validator/api/merchantTransIDvalidationAPI.php?';
     }
 
-    async init(data: IPaymentInitData & Record<string, any>, url: string | false = false, method: string = "POST"): Promise<any> {
-        data.store_id = this.store_id;
-        data.store_passwd = this.store_passwd;
+    async init(data: IPaymentInitData & Record<string, any>): Promise<any> {
+        const payment = new SSLCommerz.PaymentSession(
+            !this.is_live, // `ssl-commerz-node` expects `true` for sandbox, so we negate `is_live`
+            this.store_id,
+            this.store_passwd
+        );
 
-        // Ensure required fields for the processor
-        return httpCall({
-            url: url || this.initURL,
-            method: method || "POST",
-            data: paymentInitDataProcess(data)
+        // Set the urls
+        payment.setUrls({
+            success: data.success_url,
+            fail: data.fail_url,
+            cancel: data.cancel_url,
+            ipn: data.ipn_url,
         });
+
+        // Set order details
+        payment.setOrderInfo({
+            total_amount: data.total_amount,
+            currency: data.currency,
+            tran_id: data.tran_id,
+            emi_option: data.emi_option || 0,
+        });
+
+        // The ssl-commerz-node package does not support value_a, value_b, etc. in setOrderInfo.
+        // We must push them manually to its internal postData object.
+        if (data.value_a) payment.postData['value_a'] = data.value_a;
+        if (data.value_b) payment.postData['value_b'] = data.value_b;
+        if (data.value_c) payment.postData['value_c'] = data.value_c;
+        if (data.value_d) payment.postData['value_d'] = data.value_d;
+
+        // Set customer info
+        payment.setCusInfo({
+            name: data.cus_name,
+            email: data.cus_email,
+            add1: data.cus_add1,
+            add2: data.cus_add2,
+            city: data.cus_city,
+            state: data.cus_state || 'Optional',
+            postcode: data.cus_postcode || 1000,
+            country: data.cus_country,
+            phone: data.cus_phone,
+            fax: data.cus_fax,
+        });
+
+        // Set shipping info
+        payment.setShippingInfo({
+            method: data.shipping_method || 'NO',
+            num_item: data.num_of_item || 1,
+            name: data.ship_name || data.cus_name,
+            add1: data.ship_add1 || data.cus_add1,
+            add2: data.ship_add2 || data.cus_add2,
+            city: data.ship_city || data.cus_city,
+            state: data.ship_state || data.cus_state || 'Optional',
+            postcode: data.ship_postcode || data.cus_postcode || 1000,
+            country: data.ship_country || data.cus_country || 'Bangladesh',
+        });
+
+        // Set Product Profile
+        payment.setProductInfo({
+            product_name: data.product_name,
+            product_category: data.product_category,
+            product_profile: data.product_profile,
+        });
+
+        // Initiate Payment
+        return await payment.paymentInit();
     }
 
     async validate(data: { val_id: string }, url: string | false = false, method: string = "GET"): Promise<any> {

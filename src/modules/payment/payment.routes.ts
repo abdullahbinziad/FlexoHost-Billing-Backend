@@ -4,8 +4,11 @@ import { protect } from '../../middlewares/auth'; // Assuming authentication is 
 
 const router = Router();
 
-// Initiate payment (requires authentication probably)
+// Initialize payment by directly passing invoice init data
 router.post('/init', protect, paymentController.initPayment);
+
+// Initialize payment directly for an invoice
+router.post('/pay-invoice', protect, paymentController.payInvoice);
 
 // Callback routes (public, called by payment gateway)
 // These are usually POST for strict security but sometimes GET depending on gateway config.

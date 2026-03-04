@@ -89,13 +89,13 @@ const clientSchema = new Schema<IClient>(
     }
 );
 
-// Auto-increment clientId before saving
+// Auto-increment clientId before saving (atomic counter)
 clientSchema.pre('save', async function (next) {
     if (this.isNew && !this.clientId) {
         try {
-            // Find the highest clientId and increment
-            const lastClient = await Client.findOne().sort({ clientId: -1 }).select('clientId');
-            this.clientId = lastClient ? lastClient.clientId + 1 : 1000; // Start from 1000
+            const { getNextSequence } = await import('../../models/counter.model');
+            const seq = await getNextSequence('client');
+            this.clientId = 999 + seq; // seq=1 => clientId=1000, seq=2 => 1001, ...
         } catch (error) {
             return next(error as Error);
         }

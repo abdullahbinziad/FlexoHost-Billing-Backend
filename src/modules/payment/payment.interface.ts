@@ -32,5 +32,9 @@ export interface IPaymentInitData {
     product_name: string;
     product_category: string;
     product_profile: string;
+    value_a?: string;
+    value_b?: string;
+    value_c?: string;
+    value_d?: string;
     // Add other fields as necessary
 }

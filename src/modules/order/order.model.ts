@@ -1,96 +1,89 @@
 import mongoose, { Schema } from 'mongoose';
-import { IOrderDocument, IOrderModel, OrderStatus, OrderItemType, BillingCycle } from './order.interface';
-
-const orderItemSchema = new Schema(
-    {
-        productId: {
-            type: String,
-            required: true,
-            trim: true,
-        },
-        type: {
-            type: String,
-            enum: Object.values(OrderItemType),
-            required: true,
-        },
-        description: {
-            type: String,
-            required: true,
-            trim: true,
-        },
-        price: {
-            type: Number,
-            required: true,
-            min: 0,
-        },
-        billingCycle: {
-            type: String,
-            enum: Object.values(BillingCycle),
-        },
-        serverLocation: {
-            type: String,
-            trim: true,
-        },
-        domainDetails: {
-            domainName: String,
-            authCode: String,
-            registrationYears: Number,
-        },
-    },
-    { _id: false }
-);
+import { IOrderDocument, IOrderModel, OrderStatus } from './order.interface';
 
 const orderSchema = new Schema<IOrderDocument, IOrderModel>(
     {
+        orderId: {
+            type: String,
+            required: true,
+            unique: true,
+            trim: true,
+            index: true,
+        },
+        orderNumber: {
+            type: String,
+            required: true,
+            unique: true,
+            trim: true,
+            index: true,
+        },
+        clientId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Client',
+            required: true,
+            index: true,
+        },
         userId: {
             type: Schema.Types.ObjectId,
             ref: 'User',
             required: true,
-            index: true,
-        },
-        invoiceId: {
-            type: Schema.Types.ObjectId,
-            ref: 'Invoice',
-            required: true,
-            unique: true,
         },
         status: {
             type: String,
             enum: Object.values(OrderStatus),
-            default: OrderStatus.PENDING,
+            default: OrderStatus.PENDING_PAYMENT,
             index: true,
-        },
-        totalAmount: {
-            type: Number,
-            required: true,
-            min: 0,
         },
         currency: {
             type: String,
             required: true,
             default: 'USD',
-            trim: true,
         },
-        paymentMethod: {
-            type: String,
-            trim: true,
+        subtotal: {
+            type: Number,
+            required: true,
+            default: 0,
+            min: 0,
         },
-        items: [orderItemSchema],
-        transactionId: {
-            type: String,
-            trim: true,
+        discountTotal: {
+            type: Number,
+            required: true,
+            default: 0,
+            min: 0,
         },
-        metadata: {
-            type: Map,
-            of: Schema.Types.Mixed,
+        taxTotal: {
+            type: Number,
+            required: true,
+            default: 0,
+            min: 0,
+        },
+        total: {
+            type: Number,
+            required: true,
+            default: 0,
+            min: 0,
+        },
+        invoiceId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Invoice',
+            index: true,
+        },
+        paidAt: {
+            type: Date,
+        },
+        meta: {
+            type: Schema.Types.Mixed, // Safe cart snapshot
         },
     },
     {
         timestamps: true,
-        toJSON: { virtuals: true },
-        toObject: { virtuals: true },
     }
 );
+
+orderSchema.statics.isOrderNumberTaken = async function (orderNumber: string): Promise<boolean> {
+    const order = await this.findOne({ orderNumber });
+    return !!order;
+};
 
 const Order = mongoose.model<IOrderDocument, IOrderModel>('Order', orderSchema);
 

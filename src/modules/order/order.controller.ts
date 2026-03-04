@@ -6,22 +6,35 @@ import { AuthRequest } from '../../middlewares/auth';
 
 export class OrderController {
     createOrder = catchAsync(async (req: Request, res: Response) => {
-        // `req.user` might be null if it's a new account registration during checkout
-        // So we'll pass `req.user?.id` to the service, and let the service handle client identity
         const currentUserId = (req as AuthRequest).user?.id;
-
-        // Pass the entire structured payload to the service
         const payload = req.body;
+        const orderResult = await orderService.createOrder(payload, currentUserId);
 
-        const order = await orderService.createOrder(payload, currentUserId);
-
-        ApiResponse.created(res, 'Order created successfully. Redirecting to payment...', order);
+        ApiResponse.created(res, 'Order created successfully. Redirecting to payment...', {
+            order: orderResult,
+            invoiceId: (orderResult as any).invoiceId
+        });
     });
 
     getOrders = catchAsync(async (req: Request, res: Response) => {
-        const userId = (req as AuthRequest).user!.id;
-        const orders = await orderService.getOrders(userId);
+        const user = (req as AuthRequest).user!;
+        const clientId = req.query.clientId as string | undefined;
 
+        const filter: any = {};
+
+        const isAdmin = ['admin', 'superadmin', 'staff'].includes(user.role);
+
+        if (!isAdmin) {
+            filter.userId = user.id;
+        } else if (req.query.userId) {
+            filter.userId = req.query.userId;
+        }
+
+        if (clientId) {
+            filter.clientId = clientId;
+        }
+
+        const orders = await orderService.getOrders(filter);
         ApiResponse.success(res, 200, 'Orders retrieved successfully', orders);
     });
 
@@ -33,8 +46,12 @@ export class OrderController {
             return ApiResponse.error(res, 404, 'Order not found');
         }
 
-        // Check if user owns the order
-        if (order.userId.toString() !== (req as AuthRequest).user!.id && (req as AuthRequest).user!.role !== 'admin') {
+        // Check if user owns the order (using userId field)
+        const orderUserId = order.userId?.toString();
+        const requestUserId = (req as AuthRequest).user!.id;
+
+        if (orderUserId !== requestUserId &&
+            !['admin', 'superadmin', 'staff'].includes((req as AuthRequest).user!.role)) {
             return ApiResponse.error(res, 403, 'Unauthorized access to order');
         }
 

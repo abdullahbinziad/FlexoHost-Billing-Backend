@@ -20,7 +20,7 @@ import domainRoutes from './modules/domain/domain.routes';
 import paymentRoutes from './modules/payment/payment.routes';
 import invoiceRoutes from './modules/invoice/invoice.routes';
 import orderRoutes from './modules/order/order.routes';
-import serviceRoutes from './modules/service/service.routes';
+import serviceRoutes from './modules/services/service.routes';
 import serverRoutes from './modules/server/server.routes';
 import productRoutes from './modules/product/product.routes';
 

@@ -3,6 +3,12 @@ import { IInvoiceDocument, IInvoiceModel, InvoiceStatus, InvoiceItemType } from 
 
 const invoiceSchema = new Schema<IInvoiceDocument, IInvoiceModel>(
     {
+        clientId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Client',
+            required: true,
+            index: true,
+        },
         invoiceNumber: {
             type: String,
             required: true,
@@ -43,6 +49,7 @@ const invoiceSchema = new Schema<IInvoiceDocument, IInvoiceModel>(
                     endDate: { type: Date },
                 },
                 amount: { type: Number, required: true, min: 0 },
+                meta: { type: Schema.Types.Mixed },
             },
         ],
         currency: {
@@ -75,6 +82,10 @@ const invoiceSchema = new Schema<IInvoiceDocument, IInvoiceModel>(
         orderId: {
             type: Schema.Types.ObjectId,
             ref: 'Order',
+        },
+        paymentMethod: {
+            type: String,
+            trim: true,
         },
     },
     {

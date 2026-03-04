@@ -38,7 +38,27 @@ class InvoiceController {
             filters.status = req.query.status;
         }
 
-        // Add more filters as needed (customer name, date range etc)
+        // Auto-scope for client-role users: only show their own invoices
+        const user = (req as any).user;
+        if (user && (user.role === 'client' || user.role === 'user')) {
+            const Client = (await import('../client/client.model')).default;
+            const client = await Client.findOne({ user: user.id || user._id }).lean();
+            if (client) {
+                filters.clientId = client._id;
+            } else {
+                // No client record found — return empty results
+                return ApiResponse.ok(res, 'Invoices retrieved', {
+                    results: [],
+                    page: options.page,
+                    limit: options.limit,
+                    totalPages: 0,
+                    totalResults: 0,
+                });
+            }
+        } else if (req.query.clientId) {
+            // Admin/staff can filter by specific clientId
+            filters.clientId = req.query.clientId;
+        }
 
         const result = await invoiceService.getInvoices(filters, options);
         return ApiResponse.ok(res, 'Invoices retrieved', result);

@@ -1,28 +1,17 @@
 import Invoice from './invoice.model';
 import { IInvoice, IInvoiceDocument, InvoiceStatus } from './invoice.interface';
 import ApiError from '../../utils/apiError';
-import crypto from 'crypto';
-import Order from '../order/order.model';
-import Service from '../service/service.model';
-import { OrderStatus } from '../order/order.interface';
-import { ServiceStatus } from '../service/service.interface';
+import { getNextSequence, formatSequenceId } from '../../models/counter.model';
+import { handleInvoicePaid } from '../services/services';
+import serviceLifecycleService from '../services/services/service-lifecycle.service';
 
 class InvoiceService {
     /**
-     * Generate a unique invoice number
+     * Generate a sequential invoice number: INV-000001, INV-000002, ...
      */
     private async generateInvoiceNumber(): Promise<string> {
-        const prefix = 'INV';
-        const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-        const randomPart = crypto.randomBytes(2).toString('hex').toUpperCase();
-        const invoiceNumber = `${prefix}-${datePart}-${randomPart}`;
-
-        // Ensure uniqueness
-        const isTaken = await Invoice.isInvoiceNumberTaken(invoiceNumber);
-        if (isTaken) {
-            return this.generateInvoiceNumber();
-        }
-        return invoiceNumber;
+        const seq = await getNextSequence('invoice');
+        return formatSequenceId('INV', seq);
     }
 
     /**
@@ -91,20 +80,14 @@ class InvoiceService {
             invoice.balanceDue = 0;
             invoice.credit = invoice.total;
 
-            // Handle Order and Service Activation
+            // Handle Order and Service Activation seamlessly with new background Provisioning hook queue processing.
             if (invoice.orderId) {
-                const order = await Order.findById(invoice.orderId);
-                if (order && order.status !== OrderStatus.COMPLETED) {
-                    order.status = OrderStatus.COMPLETED;
-                    await order.save();
-
-                    // Activate associated services
-                    await Service.updateMany(
-                        { orderId: order._id, status: ServiceStatus.PENDING },
-                        { $set: { status: ServiceStatus.ACTIVE, lastPaymentDate: new Date() } }
-                    );
-                }
+                await handleInvoicePaid(invoice._id as any);
             }
+            // Trigger Unsuspend Evaluation for Renewals
+            await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
+            // Advance due dates
+            await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
         }
 
         await invoice.save();

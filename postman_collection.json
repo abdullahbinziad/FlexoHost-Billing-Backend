@@ -30,6 +30,31 @@
             "key": "tldId",
             "value": "",
             "type": "string"
+        },
+        {
+            "key": "serviceId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "orderId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "invoiceId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "serverId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "jobId",
+            "value": "",
+            "type": "string"
         }
     ],
     "item": [
@@ -1278,8 +1303,7 @@
                     ]
                 }
             ]
-        }
-,
+        },
         {
             "name": "Payment Management",
             "item": [
@@ -1732,6 +1756,974 @@
                             ]
                         },
                         "description": "Get all products in a specific group (Admin only)"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Services Management",
+            "item": [
+                {
+                    "name": "Get Client Services",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/client/:clientId?type=HOSTING",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "client",
+                                ":clientId"
+                            ],
+                            "query": [
+                                {
+                                    "key": "type",
+                                    "value": "HOSTING",
+                                    "description": "Optional: Filter by service type (HOSTING, DOMAIN, VPS, EMAIL, LICENSE)"
+                                }
+                            ],
+                            "variable": [
+                                {
+                                    "key": "clientId",
+                                    "value": "{{clientId}}"
+                                }
+                            ]
+                        },
+                        "description": "Get all services for a specific client"
+                    }
+                },
+                {
+                    "name": "Get Client Service Details",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/client/:clientId/:serviceId",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "client",
+                                ":clientId",
+                                ":serviceId"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "clientId",
+                                    "value": "{{clientId}}"
+                                },
+                                {
+                                    "key": "serviceId",
+                                    "value": "{{serviceId}}"
+                                }
+                            ]
+                        },
+                        "description": "Get detailed information about a specific service for a client"
+                    }
+                },
+                {
+                    "name": "Admin: Suspend Service",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"reason\": \"Overdue Payment\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/:serviceId/suspend",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                ":serviceId",
+                                "suspend"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "serviceId",
+                                    "value": "{{serviceId}}"
+                                }
+                            ]
+                        },
+                        "description": "Admin action to suspend a running service"
+                    }
+                },
+                {
+                    "name": "Admin: Unsuspend Service",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/:serviceId/unsuspend",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                ":serviceId",
+                                "unsuspend"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "serviceId",
+                                    "value": "{{serviceId}}"
+                                }
+                            ]
+                        },
+                        "description": "Admin action to unsuspend/restore a suspended service"
+                    }
+                },
+                {
+                    "name": "Admin: Terminate Service",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/:serviceId/terminate",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                ":serviceId",
+                                "terminate"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "serviceId",
+                                    "value": "{{serviceId}}"
+                                }
+                            ]
+                        },
+                        "description": "Admin action to permanently terminate a service"
+                    }
+                },
+                {
+                    "name": "Admin: Retry Provisioning",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/:serviceId/retry-provision",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                ":serviceId",
+                                "retry-provision"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "serviceId",
+                                    "value": "{{serviceId}}"
+                                }
+                            ]
+                        },
+                        "description": "Admin action to retry failed provisioning for a service"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Order Management",
+            "item": [
+                {
+                    "name": "Create Order (Checkout)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}",
+                                "description": "Optional: Only needed for logged-in users"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"client\": {\n        \"type\": \"existing\",\n        \"clientId\": \"{{clientId}}\"\n    },\n    \"productId\": \"{{productId}}\",\n    \"currency\": \"USD\",\n    \"billingCycle\": \"monthly\",\n    \"serverLocation\": \"Auto\",\n    \"domain\": {\n        \"action\": \"use-owned\",\n        \"ownDomain\": {\n            \"domainName\": \"myflexosite.com\"\n        }\n    }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/orders",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Submit a new order. The payload supports 'client.type' as 'new' (with account details) or 'existing' (with clientId). Domain action can be 'use-owned', 'register', or 'transfer'."
+                    }
+                },
+                {
+                    "name": "Get My Orders",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/orders",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Get all orders for the currently authenticated user"
+                    }
+                },
+                {
+                    "name": "Get Order Details",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/orders/:id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "orders",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "{{orderId}}"
+                                }
+                            ]
+                        },
+                        "description": "Get comprehensive details of a specific order including items, provisioning jobs, and child services"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Invoice Management",
+            "item": [
+                {
+                    "name": "Admin: Create Invoice",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"billedTo\": {\n        \"customerName\": \"John Doe\",\n        \"companyName\": \"Doe Enterprises\",\n        \"address\": \"123 Main St\",\n        \"country\": \"USA\",\n        \"email\": \"john@example.com\"\n    },\n    \"items\": [\n        {\n            \"type\": \"hosting\",\n            \"description\": \"Shared Hosting - Annual\",\n            \"amount\": 120.00\n        }\n    ],\n    \"currency\": \"USD\",\n    \"dueDate\": \"2023-12-31T00:00:00Z\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/invoices",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "invoices"
+                            ]
+                        },
+                        "description": "Create a new manual invoice (Admin/Staff only)"
+                    }
+                },
+                {
+                    "name": "Get All Invoices",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/invoices?page=1&limit=10&status=UNPAID",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "invoices"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "UNPAID",
+                                    "description": "Filter by status: PAID, UNPAID, CANCELLED, REFUNDED, COLLECTION"
+                                }
+                            ]
+                        },
+                        "description": "Retrieve list of invoices with pagination and optional filters"
+                    }
+                },
+                {
+                    "name": "Get Invoice Detail",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/invoices/:id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "invoices",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "{{invoiceId}}",
+                                    "description": "Can be the MongoDB ObjectId or the explicit Invoice Number (e.g. INV-1234)"
+                                }
+                            ]
+                        },
+                        "description": "Retrieve a specific invoice by its internal ID or explicit Invoice Number"
+                    }
+                },
+                {
+                    "name": "Admin: Update Invoice Status",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"status\": \"PAID\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/invoices/:id/status",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "invoices",
+                                ":id",
+                                "status"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "{{invoiceId}}"
+                                }
+                            ]
+                        },
+                        "description": "Manually update an invoice status (e.g. marking it PAID bypasses webhook). Admin/Staff only."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Server Management",
+            "item": [
+                {
+                    "name": "Admin: Get All Servers",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/servers",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "servers"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Admin: Create Server",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"cPanel US1\",\n    \"hostname\": \"us1.flexohost.com\",\n    \"ipAddress\": \"192.168.1.100\",\n    \"type\": \"cpanel\",\n    \"capacity\": 100\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/servers",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "servers"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Admin: Get Server",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/servers/:serverId",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "servers",
+                                ":serverId"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "serverId",
+                                    "value": "{{serverId}}"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Product Management (Admin)",
+            "item": [
+                {
+                    "name": "Admin: Get All Products",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Admin: Create Product",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Starter Hosting\",\n    \"type\": \"hosting\",\n    \"price\": 10.00\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/products",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "products"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Store Front (Public)",
+            "item": [
+                {
+                    "name": "Get Product Config",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/store/products/:productId",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "store",
+                                "products",
+                                ":productId"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "productId",
+                                    "value": "{{productId}}"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Payment Gateway",
+            "item": [
+                {
+                    "name": "Mock Payment Success",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"invoiceId\": \"{{invoiceId}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payment/mock-success",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payment",
+                                "mock-success"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Domain Management",
+            "item": [
+                {
+                    "name": "Search Domain",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/domains/search?domain=example.com",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "domains",
+                                "search"
+                            ],
+                            "query": [
+                                {
+                                    "key": "domain",
+                                    "value": "example.com"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get TLD List",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/domains/tld",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "domains",
+                                "tld"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "System Admin & Cron Overrides",
+            "item": [
+                {
+                    "name": "Provisioning: Get All Jobs",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/jobs/provisioning?status=FAILED",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "jobs",
+                                "provisioning"
+                            ],
+                            "query": [
+                                {
+                                    "key": "status",
+                                    "value": "FAILED",
+                                    "description": "Filter strictly by QUEUED, RUNNING, SUCCESS, FAILED"
+                                }
+                            ]
+                        },
+                        "description": "View background processing queue states for Order Fulfillments"
+                    }
+                },
+                {
+                    "name": "Provisioning: Retry Failed Job",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/jobs/provisioning/:jobId/retry",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "jobs",
+                                "provisioning",
+                                ":jobId"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "jobId",
+                                    "value": "{{jobId}}"
+                                }
+                            ]
+                        },
+                        "description": "Force a queued retry of a specific failed provision"
+                    }
+                },
+                {
+                    "name": "Actions: Get All Jobs",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/jobs/actions?status=FAILED",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "jobs",
+                                "actions"
+                            ],
+                            "query": [
+                                {
+                                    "key": "status",
+                                    "value": "FAILED",
+                                    "description": "Filter strictly by QUEUED, RUNNING, SUCCESS, FAILED"
+                                }
+                            ]
+                        },
+                        "description": "View backend jobs for remote Suspend, Unsuspend, or Terminate acts"
+                    }
+                },
+                {
+                    "name": "Actions: Retry Failed Job",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/jobs/actions/:jobId/retry",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "jobs",
+                                "actions",
+                                ":jobId"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "jobId",
+                                    "value": "{{jobId}}"
+                                }
+                            ]
+                        },
+                        "description": "Force retry remote provider suspends/unsuspends that timed out or dropped"
+                    }
+                },
+                {
+                    "name": "Workers: Trigger Provisioning Queue",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/trigger/provisioning-worker",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "trigger",
+                                "provisioning-worker"
+                            ]
+                        },
+                        "description": "Force trigger the physical Provisioning Loop natively instead of waiting for setTimeout"
+                    }
+                },
+                {
+                    "name": "Workers: Trigger Action Queue",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/trigger/action-worker",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "trigger",
+                                "action-worker"
+                            ]
+                        },
+                        "description": "Force trigger the physical Remote Action Loop sequentially"
+                    }
+                },
+                {
+                    "name": "Cron: Trigger Service Renewals",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/trigger/renewals",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "trigger",
+                                "renewals"
+                            ]
+                        },
+                        "description": "Force invoice generation logic testing."
+                    }
+                },
+                {
+                    "name": "Cron: Trigger Overdue Suspensions",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/trigger/overdue-suspensions",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "trigger",
+                                "overdue-suspensions"
+                            ]
+                        },
+                        "description": "Force checks against the 5-Day unpaid grace limit natively suspending accounts."
+                    }
+                },
+                {
+                    "name": "Cron: Trigger Invoice Reminders",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/trigger/invoice-reminders",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "trigger",
+                                "invoice-reminders"
+                            ]
+                        },
+                        "description": "Force systemic emails/sms reminders looping"
+                    }
+                },
+                {
+                    "name": "Cron: Trigger Service Terminations",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/services/admin/trigger/terminations",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "services",
+                                "admin",
+                                "trigger",
+                                "terminations"
+                            ]
+                        },
+                        "description": "Permanently destruct accounts suspended for over 30 days securely"
                     }
                 }
             ]

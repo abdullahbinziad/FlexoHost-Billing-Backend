@@ -8,7 +8,7 @@ import authService from './auth.service';
 const baseCookieOptions = {
     httpOnly: true,
     secure: config.env === 'production',
-    sameSite: 'strict' as const,
+    sameSite: 'lax' as const,
 };
 
 class AuthController {

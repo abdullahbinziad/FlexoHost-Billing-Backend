@@ -27,9 +27,11 @@ export interface IInvoiceItem {
         endDate: Date;
     };
     amount: number;
+    meta?: Record<string, any>;
 }
 
 export interface IInvoice {
+    clientId: Types.ObjectId;
     invoiceNumber: string;
     status: InvoiceStatus;
     invoiceDate: Date;
@@ -42,6 +44,7 @@ export interface IInvoice {
     total: number;
     balanceDue: number;
     orderId?: Types.ObjectId;
+    paymentMethod?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }

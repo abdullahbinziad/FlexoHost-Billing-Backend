@@ -46,6 +46,8 @@
         "multer": "^1.4.5-lts.1",
         "node-fetch": "^2.7.0",
         "nodemailer": "^8.0.0",
+        "ssl-commerz-node": "^1.0.4",
+        "sslcommerz-lts": "^1.2.0",
         "uuid": "^13.0.0",
         "winston": "^3.11.0"
     },
