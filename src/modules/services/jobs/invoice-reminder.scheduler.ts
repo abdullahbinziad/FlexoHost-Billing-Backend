@@ -14,7 +14,10 @@ export class InvoiceReminderScheduler {
 
         const unpaidInvoices = await Invoice.find({
             status: InvoiceStatus.UNPAID
-        }).lean().exec();
+        })
+            .populate({ path: 'clientId', select: 'contactEmail user', populate: { path: 'user', select: 'email' } })
+            .lean()
+            .exec();
 
         let remindersSent = 0;
 
@@ -60,8 +63,12 @@ export class InvoiceReminderScheduler {
 
             if (!existingLog) {
                 try {
-                    // Pull email dynamically safely
-                    const clientEmail = invoice.billedTo?.customerName ? `${invoice.billedTo.customerName.replace(' ', '.')}@example.com` : 'client@example.com';
+                    const client = invoice.clientId as any;
+                    const clientEmail = client?.contactEmail || client?.user?.email;
+                    if (!clientEmail) {
+                        console.warn(`[InvoiceReminder] No email for invoice ${invoice._id}, skipping`);
+                        continue;
+                    }
                     const sent = await notificationProvider.sendEmail(
                         clientEmail,
                         emailSubject,

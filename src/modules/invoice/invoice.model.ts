@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { IInvoiceDocument, IInvoiceModel, InvoiceStatus, InvoiceItemType } from './invoice.interface';
+import { DEFAULT_CURRENCY, SUPPORTED_CURRENCIES } from '../../config/currency.config';
 
 const invoiceSchema = new Schema<IInvoiceDocument, IInvoiceModel>(
     {
@@ -55,12 +56,18 @@ const invoiceSchema = new Schema<IInvoiceDocument, IInvoiceModel>(
         currency: {
             type: String,
             required: true,
-            default: 'BDT',
+            default: DEFAULT_CURRENCY,
             trim: true,
+            enum: [...SUPPORTED_CURRENCIES],
         },
         subTotal: {
             type: Number,
             required: true,
+            min: 0,
+        },
+        discount: {
+            type: Number,
+            default: 0,
             min: 0,
         },
         credit: {
@@ -108,12 +115,10 @@ invoiceSchema.pre('save', function (next) {
 
     // Calculate subTotal from items
     const calculatedSubTotal = invoice.items.reduce((acc, item) => acc + item.amount, 0);
+    const discount = invoice.discount ?? 0;
 
-    // Validate if provided subTotal matches calculated
-    // Note: We might want to just force calculation here instead of validating user input
-    // User requirement: "Invoice totals must be validated on backend" -> I will overwrite them to be safe and correct
     invoice.subTotal = calculatedSubTotal;
-    invoice.total = invoice.subTotal; // + tax if needed later
+    invoice.total = Math.max(0, invoice.subTotal - discount);
     invoice.balanceDue = invoice.total - invoice.credit;
 
     if (invoice.isNew) {

@@ -21,6 +21,7 @@ import {
 import { DomainOperationType, DomainTransferStatus } from '../models/domain-details.model';
 import { ControlPanelType } from '../models/hosting-details.model';
 import { getNextSequence, formatSequenceId } from '../../../models/counter.model';
+import { DEFAULT_CURRENCY } from '../../../config/currency.config';
 
 export class ProvisioningWorker {
     /**
@@ -80,14 +81,14 @@ export class ProvisioningWorker {
             type: job.serviceType,
             status: ServiceStatus.PROVISIONING,
             billingCycle: item.billingCycle?.toUpperCase() as BillingCycle || BillingCycle.MONTHLY,
-            currency: order.currency || 'USD',
+            currency: order.currency || DEFAULT_CURRENCY,
             priceSnapshot: {
                 setup: 0,
                 recurring: item.pricingSnapshot?.total || 0,
                 discount: 0,
                 tax: 0,
                 total: item.pricingSnapshot?.total || 0,
-                currency: order.currency || 'USD'
+                currency: order.currency || DEFAULT_CURRENCY
             },
             autoRenew: true,
             nextDueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // Default 1 month approx for demo

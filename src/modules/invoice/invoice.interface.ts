@@ -40,6 +40,7 @@ export interface IInvoice {
     items: IInvoiceItem[];
     currency: string;
     subTotal: number;
+    discount?: number;
     credit: number;
     total: number;
     balanceDue: number;

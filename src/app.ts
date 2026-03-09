@@ -23,6 +23,8 @@ import orderRoutes from './modules/order/order.routes';
 import serviceRoutes from './modules/services/service.routes';
 import serverRoutes from './modules/server/server.routes';
 import productRoutes from './modules/product/product.routes';
+import promotionRoutes from './modules/promotion/promotion.routes';
+import emailRoutes from './modules/email/email.routes';
 
 
 const app: Application = express();
@@ -100,7 +102,9 @@ app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/services', serviceRoutes);
 app.use('/api/v1/servers', serverRoutes);
 app.use('/api/v1/admin/products', productRoutes);
+app.use('/api/v1/promotions', promotionRoutes);
 app.use('/api/v1/store/products', storeRoutes);
+app.use('/api/v1/email', emailRoutes);
 
 
 // 404 handler

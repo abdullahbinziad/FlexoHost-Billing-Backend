@@ -13,7 +13,9 @@
         "seed:force": "ts-node src/seeders/index.ts --force",
         "seed:clear": "ts-node src/seeders/index.ts --clear",
         "seed:users": "ts-node src/seeders/user.seeder.ts",
-        "seed:users:force": "ts-node src/seeders/user.seeder.ts --force"
+        "seed:users:force": "ts-node src/seeders/user.seeder.ts --force",
+        "test:email": "ts-node src/scripts/test_email.ts",
+        "test:emails": "ts-node src/scripts/test-all-emails.ts"
     },
     "keywords": [
         "express",
@@ -49,7 +51,8 @@
         "ssl-commerz-node": "^1.0.4",
         "sslcommerz-lts": "^1.2.0",
         "uuid": "^13.0.0",
-        "winston": "^3.11.0"
+        "winston": "^3.11.0",
+        "zod": "^4.3.6"
     },
     "devDependencies": {
         "@types/bcryptjs": "^2.4.6",

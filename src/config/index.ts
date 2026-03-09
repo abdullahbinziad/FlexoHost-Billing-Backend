@@ -38,6 +38,7 @@ interface Config {
             password: string;
         };
         from: string;
+        logoUrl: string;
     };
     security: {
         bcryptSaltRounds: number;
@@ -98,6 +99,7 @@ const config: Config = {
             password: process.env.SMTP_PASSWORD || '',
         },
         from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
+        logoUrl: process.env.EMAIL_LOGO_URL || 'https://flexohost.com/logo.png',
     },
 
     security: {

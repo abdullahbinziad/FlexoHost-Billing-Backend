@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { IProductDocument, IProductModel } from './product.interface';
+import { SUPPORTED_CURRENCIES } from '../../config/currency.config';
 
 /**
  * Pricing Detail Schema
@@ -37,7 +38,7 @@ const currencyPricingSchema = new Schema({
     currency: {
         type: String,
         required: true,
-        enum: ['BDT', 'USD', 'EUR', 'GBP']
+        enum: [...SUPPORTED_CURRENCIES]
     },
     monthly: pricingDetailSchema,
     quarterly: pricingDetailSchema,

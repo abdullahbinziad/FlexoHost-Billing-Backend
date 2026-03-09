@@ -38,6 +38,10 @@ class InvoiceController {
             filters.status = req.query.status;
         }
 
+        if (req.query.invoiceNumber) {
+            filters.invoiceNumber = { $regex: req.query.invoiceNumber, $options: 'i' };
+        }
+
         // Auto-scope for client-role users: only show their own invoices
         const user = (req as any).user;
         if (user && (user.role === 'client' || user.role === 'user')) {
@@ -74,6 +78,48 @@ class InvoiceController {
 
         const invoice = await invoiceService.updateInvoiceStatus(id, status);
         return ApiResponse.ok(res, `Invoice marked as ${status}`, invoice);
+    });
+
+    sendReminder = catchAsync(async (req: Request, res: Response) => {
+        const { id } = req.params;
+        const { template } = req.body;
+        const result = await invoiceService.sendReminder(id, template);
+        return ApiResponse.ok(res, result.message, result);
+    });
+
+    deleteInvoice = catchAsync(async (req: Request, res: Response) => {
+        const { id } = req.params;
+        await invoiceService.deleteInvoice(id);
+        return ApiResponse.ok(res, 'Invoice deleted successfully');
+    });
+
+    addPayment = catchAsync(async (req: Request, res: Response) => {
+        const { id } = req.params;
+        const { date, amount, paymentMethod, transactionFees, transactionId, sendEmail } = req.body;
+        const invoice = await invoiceService.addPayment(id, {
+            date,
+            amount,
+            paymentMethod,
+            transactionFees,
+            transactionId,
+            sendEmail,
+        });
+        return ApiResponse.ok(res, 'Payment recorded successfully', invoice);
+    });
+
+    updateInvoice = catchAsync(async (req: Request, res: Response) => {
+        const { id } = req.params;
+        const { billedTo, invoiceDate, dueDate, items, credit, currency } = req.body;
+        const updates: any = {};
+        if (billedTo) updates.billedTo = billedTo;
+        if (invoiceDate) updates.invoiceDate = invoiceDate;
+        if (dueDate) updates.dueDate = dueDate;
+        if (items) updates.items = items;
+        if (credit !== undefined) updates.credit = credit;
+        if (currency) updates.currency = currency;
+
+        const invoice = await invoiceService.updateInvoice(id, updates);
+        return ApiResponse.ok(res, 'Invoice updated successfully', invoice);
     });
 }
 

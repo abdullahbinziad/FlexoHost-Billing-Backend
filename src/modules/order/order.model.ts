@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { IOrderDocument, IOrderModel, OrderStatus } from './order.interface';
+import { DEFAULT_CURRENCY, SUPPORTED_CURRENCIES } from '../../config/currency.config';
 
 const orderSchema = new Schema<IOrderDocument, IOrderModel>(
     {
@@ -37,7 +38,8 @@ const orderSchema = new Schema<IOrderDocument, IOrderModel>(
         currency: {
             type: String,
             required: true,
-            default: 'USD',
+            default: DEFAULT_CURRENCY,
+            enum: [...SUPPORTED_CURRENCIES],
         },
         subtotal: {
             type: Number,

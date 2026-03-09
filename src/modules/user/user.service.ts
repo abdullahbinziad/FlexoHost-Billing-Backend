@@ -292,7 +292,15 @@ class UserService {
         const resetToken = user.createPasswordResetToken();
         await user.save({ validateBeforeSave: false });
 
-        // TODO: Send reset token via email
+        try {
+            const client = await Client.findOne({ user: user._id }).lean();
+            const displayName = client
+                ? `${(client.firstName || '').trim()} ${(client.lastName || '').trim()}`.trim() || 'User'
+                : 'User';
+            await emailService.sendPasswordResetEmail(user.email, displayName, resetToken);
+        } catch (emailError) {
+            logger.error('Failed to send password reset email:', emailError);
+        }
 
         return resetToken;
     }

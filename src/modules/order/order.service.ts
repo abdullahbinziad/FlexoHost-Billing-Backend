@@ -1,10 +1,12 @@
 import mongoose from 'mongoose';
+import { DEFAULT_CURRENCY } from '../../config/currency.config';
 import Order from './order.model';
 import OrderItem from './order-item.model';
 import { getNextSequence, formatSequenceId } from '../../models/counter.model';
 import Product from '../product/product.model';
 import Client from '../client/client.model';
 import invoiceService from '../invoice/invoice.service';
+import { promotionService } from '../promotion/promotion.service';
 import { OrderStatus } from './order.interface';
 import { DomainActionType } from './order-item.interface';
 import { TLDModel } from '../domain/tld/tld.model';
@@ -44,7 +46,7 @@ class OrderService {
             const product = await Product.findById(payload.productId).session(session);
             if (!product) throw new Error('Product not found');
 
-            const currency = payload.currency || 'BDT';
+            const currency = payload.currency || DEFAULT_CURRENCY;
             const billingCycle = payload.billingCycle || 'monthly';
 
             const currencyPricing = product.pricing?.find(p => p.currency === currency);
@@ -162,6 +164,52 @@ class OrderService {
                 });
             }
 
+            // 3b. Apply coupon if provided
+            let discountTotal = 0;
+            let appliedPromotionId: string | null = null;
+
+            const couponCode = typeof payload.coupon === 'string' ? payload.coupon : payload.coupon?.code;
+            if (couponCode) {
+                const isFirstOrder = (await Order.countDocuments({ clientId }).session(session)) === 0;
+                const productIds = [product._id.toString()];
+                const productTypes = [product.type];
+                const productBillingCycle = billingCycle;
+
+                const domainTlds: string[] = [];
+                let domainBillingCycle: string | undefined;
+                if (payload.domain?.action === 'register' || payload.domain?.action === 'transfer') {
+                    const domainData = payload.domain.action === 'register'
+                        ? payload.domain.registration
+                        : payload.domain.transfer;
+                    if (domainData?.tld) {
+                        domainTlds.push(domainData.tld.startsWith('.') ? domainData.tld : `.${domainData.tld}`);
+                    }
+                    const period = String(domainData?.period || 1);
+                    domainBillingCycle = period === '1' ? 'annually' : period === '2' ? 'biennially' : 'triennially';
+                }
+
+                const couponResult = await promotionService.validateCoupon({
+                    code: couponCode,
+                    subtotal: total,
+                    currency,
+                    clientId: clientId.toString(),
+                    productIds,
+                    productTypes,
+                    productBillingCycle,
+                    domainTlds,
+                    domainBillingCycle,
+                    isFirstOrder,
+                });
+
+                if (!couponResult.valid) {
+                    throw new Error(couponResult.error || 'Invalid coupon code');
+                }
+                discountTotal = couponResult.discountAmount ?? 0;
+                appliedPromotionId = couponResult.promotion?._id?.toString() ?? null;
+            }
+
+            total = Math.max(0, total - discountTotal);
+
             // 4. Generate IDs
             const orderSeq = await getNextSequence('order');
             const orderId = formatSequenceId('ORD', orderSeq);
@@ -176,14 +224,15 @@ class OrderService {
                 status: OrderStatus.PENDING_PAYMENT,
                 currency,
                 subtotal,
-                discountTotal: 0, // apply logic here if promo exists
+                discountTotal,
                 taxTotal: 0,
                 total,
                 meta: {
                     billingCycle,
                     serverLocation: payload.serverLocation,
                     coupon: payload.coupon,
-                    referral: payload.referral
+                    referral: payload.referral,
+                    promotionId: appliedPromotionId
                 }
             }], { session, ordered: true });
 
@@ -205,8 +254,20 @@ class OrderService {
                     country: clientDoc?.address?.country || 'Country'
                 },
                 items: invoiceItemsPayloads,
+                discount: discountTotal,
                 paymentMethod: payload.paymentMethod
             });
+
+            // Record promotion usage for analytics (inside transaction)
+            if (appliedPromotionId && discountTotal > 0) {
+                await promotionService.recordUsage(
+                    appliedPromotionId,
+                    clientId.toString(),
+                    order._id.toString(),
+                    discountTotal,
+                    session
+                );
+            }
 
             // Update order with invoiceId
             order.invoiceId = invoice._id as any;
@@ -260,7 +321,7 @@ class OrderService {
                 total: order.invoiceId?.total || 0,
             },
             paymentStatus: order.invoiceId?.status || 'N/A',
-            currency: order.currency || 'N/A',
+            currency: order.currency || DEFAULT_CURRENCY,
             status: order.status,
         }));
     }

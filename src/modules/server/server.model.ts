@@ -42,11 +42,12 @@ const serverSchema = new Schema<IServerDocument, IServerModel>(
             required: true,
             default: 'USA'
         },
-        group: {
-            type: String,
+        /** @deprecated Single group; use groups. Kept so existing DB docs still load. */
+        group: { type: String, enum: ['Web Hosting', 'BDIX Hosting', 'Turbo Hosting', 'Ecommerce Hosting', 'VPS', 'BDIX Vps'] },
+        groups: {
+            type: [String],
             enum: ['Web Hosting', 'BDIX Hosting', 'Turbo Hosting', 'Ecommerce Hosting', 'VPS', 'BDIX Vps'],
-            required: true,
-            default: 'Web Hosting'
+            default: ['Web Hosting'],
         },
 
         nameservers: { type: nameserverSchema, required: true },

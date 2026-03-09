@@ -38,7 +38,10 @@ export interface IServer {
     isEnabled: boolean;
 
     location: ServerLocation;
-    group: ServerGroup;
+    /** @deprecated Use groups. Kept for DB backward compatibility. */
+    group?: ServerGroup;
+    /** A server can belong to multiple groups */
+    groups: ServerGroup[];
 
     nameservers: INameServer;
     module: IServerModule;

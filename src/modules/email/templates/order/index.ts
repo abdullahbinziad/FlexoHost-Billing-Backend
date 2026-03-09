@@ -1,0 +1,1 @@
+export { orderConfirmationTemplate } from './confirmation';

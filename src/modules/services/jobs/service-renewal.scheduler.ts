@@ -7,6 +7,7 @@ import ServiceAuditLog from '../models/service-audit-log.model';
 import { BillingCycle, ServiceStatus, ServiceActionType, ProvisioningJobStatus } from '../types/enums';
 import { InvoiceStatus, InvoiceItemType } from '../../invoice/invoice.interface';
 import { getNextSequence, formatSequenceId } from '../../../models/counter.model';
+import { DEFAULT_CURRENCY } from '../../../config/currency.config';
 
 export class ServiceRenewalScheduler {
     /**
@@ -85,7 +86,7 @@ export class ServiceRenewalScheduler {
                     country: client.address?.country || 'N/A'
                 },
                 items: invoiceItems,
-                currency: services[0].currency || 'USD',
+                currency: services[0].currency || DEFAULT_CURRENCY,
                 subTotal,
                 total: subTotal,
                 balanceDue: subTotal

@@ -1,4 +1,5 @@
 import { body, param, query } from 'express-validator';
+import { SUPPORTED_CURRENCIES } from '../../config/currency.config';
 
 /**
  * Validation for creating a product
@@ -41,8 +42,8 @@ export const createProductValidation = [
 
     body('pricing.*.currency')
         .optional()
-        .isIn(['BDT', 'USD', 'EUR', 'GBP'])
-        .withMessage('Currency must be one of: BDT, USD, EUR, GBP'),
+        .isIn([...SUPPORTED_CURRENCIES])
+        .withMessage(`Currency must be one of: ${SUPPORTED_CURRENCIES.join(', ')}`),
 
     body('pricing.*.monthly.price')
         .optional()
@@ -243,8 +244,8 @@ export const getProductsQueryValidation = [
 
     query('limit')
         .optional()
-        .isInt({ min: 1, max: 100 })
-        .withMessage('Limit must be between 1 and 100'),
+        .isInt({ min: 1, max: 500 })
+        .withMessage('Limit must be between 1 and 500'),
 
     query('sort')
         .optional()
