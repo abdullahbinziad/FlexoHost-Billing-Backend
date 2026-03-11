@@ -29,24 +29,19 @@ export class ProvisioningJobRepository {
         const now = new Date();
         const staleLockThreshold = new Date(now.getTime() - lockDurationMs);
 
-        // Find applicable jobs (QUEUED, or RUNNING but stale)
-        const filter = {
-            $or: [
-                {
-                    status: ProvisioningJobStatus.QUEUED,
-                    $expr: { $lt: ['$attempts', '$maxAttempts'] }
-                },
-                {
-                    status: ProvisioningJobStatus.RUNNING,
-                    lockedAt: { $lt: staleLockThreshold }
-                }
-            ]
+        // Find QUEUED jobs (attempts < maxAttempts), or RUNNING jobs with expired lock
+        const queuedFilter = {
+            status: ProvisioningJobStatus.QUEUED,
+            $expr: { $lt: ['$attempts', '$maxAttempts'] },
         };
+        const staleFilter = {
+            status: ProvisioningJobStatus.RUNNING,
+            lockedAt: { $lt: staleLockThreshold },
+        };
+        const findFilter = { $or: [queuedFilter, staleFilter] };
 
-        // First, find IDs to lock (to avoid locking too many if using a simple updateMany, OR we can use findOneAndUpdate in a loop)
-        const jobsToLock = await ProvisioningJob.find(filter)
+        const jobsToLock = await ProvisioningJob.find(findFilter)
             .sort({ createdAt: 1 })
-            .select('_id')
             .limit(limit)
             .lean()
             .exec();
@@ -55,26 +50,25 @@ export class ProvisioningJobRepository {
             return [];
         }
 
-        const jobIds = jobsToLock.map(j => j._id);
+        const jobIds = jobsToLock.map((j: any) => j._id);
 
-        // Attempt to atomically lock them
-        await ProvisioningJob.updateMany(
-            {
-                _id: { $in: jobIds },
-                ...filter // Ensure they still match our criteria
-            },
+        const updateResult = await ProvisioningJob.updateMany(
+            { _id: { $in: jobIds }, ...findFilter },
             {
                 $set: {
                     status: ProvisioningJobStatus.RUNNING,
                     lockedAt: now,
-                    lockOwner: lockOwner
+                    lockOwner,
                 },
-                $inc: { attempts: 1 }
+                $inc: { attempts: 1 },
             }
         ).exec();
 
-        // Retrieve the successfully locked jobs
-        return await ProvisioningJob.find({ lockOwner, lockedAt: now }).exec();
+        if (updateResult.modifiedCount === 0) {
+            return [];
+        }
+
+        return await ProvisioningJob.find({ lockOwner, lockedAt: now }).sort({ createdAt: 1 }).exec();
     }
 
     async updateStatus(id: string, status: ProvisioningJobStatus, extraData: Partial<IProvisioningJob> = {}): Promise<IProvisioningJob | null> {

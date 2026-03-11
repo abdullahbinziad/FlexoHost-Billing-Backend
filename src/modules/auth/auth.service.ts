@@ -1,5 +1,8 @@
 import userService from '../user/user.service';
 import { IUserCreate, IUserLogin, IAuthTokens } from '../user/user.interface';
+import { getOAuthNormalizer } from './strategies';
+import type { GoogleProfile } from './types/google.types';
+export type { GoogleProfile };
 
 class AuthService {
     register(userData: IUserCreate) {
@@ -36,6 +39,18 @@ class AuthService {
 
     verifyEmail(token: string): Promise<void> {
         return userService.verifyEmail(token);
+    }
+
+    /** Social login – normalizes provider profile and finds/creates user. Scalable for Facebook, GitHub, etc. */
+    loginWithOAuth(provider: 'google' | 'facebook' | 'github', rawProfile: unknown): Promise<{ user: any; tokens: IAuthTokens }> {
+        const normalizer = getOAuthNormalizer(provider);
+        if (!normalizer) throw new Error(`Unsupported OAuth provider: ${provider}`);
+        const profile = normalizer(rawProfile);
+        return userService.findOrCreateFromOAuth(profile);
+    }
+
+    loginWithGoogle(profile: GoogleProfile): Promise<{ user: any; tokens: IAuthTokens }> {
+        return this.loginWithOAuth('google', profile);
     }
 }
 

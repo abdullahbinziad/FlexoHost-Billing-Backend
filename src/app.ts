@@ -25,6 +25,10 @@ import serverRoutes from './modules/server/server.routes';
 import productRoutes from './modules/product/product.routes';
 import promotionRoutes from './modules/promotion/promotion.routes';
 import emailRoutes from './modules/email/email.routes';
+import transactionRoutes from './modules/transaction/transaction.routes';
+import notificationRoutes from './modules/notification/notification.routes';
+import ticketRoutes from './modules/ticket/ticket.routes';
+import uploadRoutes from './modules/upload/upload.routes';
 
 
 const app: Application = express();
@@ -88,23 +92,26 @@ app.get('/health', (req: Request, res: Response) => {
 // API routes
 import storeRoutes from './modules/product/store.routes';
 
-// ... existing imports
+const apiBase = `/api/${config.apiVersion}`;
 
-// API routes
-app.use(`/api/${config.apiVersion}/auth`, authRoutes);
-app.use(`/api/${config.apiVersion}/users`, userRoutes);
-app.use(`/api/${config.apiVersion}/clients`, clientRoutes);
-app.use(`/api/${config.apiVersion}/whm`, whmRoutes);
-app.use(`/api/${config.apiVersion}/domains`, domainRoutes);
-app.use('/api/v1/payment', paymentRoutes);
-app.use('/api/v1/invoices', invoiceRoutes);
-app.use('/api/v1/orders', orderRoutes);
-app.use('/api/v1/services', serviceRoutes);
-app.use('/api/v1/servers', serverRoutes);
-app.use('/api/v1/admin/products', productRoutes);
-app.use('/api/v1/promotions', promotionRoutes);
-app.use('/api/v1/store/products', storeRoutes);
-app.use('/api/v1/email', emailRoutes);
+app.use(`${apiBase}/auth`, authRoutes);
+app.use(`${apiBase}/users`, userRoutes);
+app.use(`${apiBase}/clients`, clientRoutes);
+app.use(`${apiBase}/whm`, whmRoutes);
+app.use(`${apiBase}/domains`, domainRoutes);
+app.use(`${apiBase}/payment`, paymentRoutes);
+app.use(`${apiBase}/invoices`, invoiceRoutes);
+app.use(`${apiBase}/orders`, orderRoutes);
+app.use(`${apiBase}/services`, serviceRoutes);
+app.use(`${apiBase}/servers`, serverRoutes);
+app.use(`${apiBase}/admin/products`, productRoutes);
+app.use(`${apiBase}/promotions`, promotionRoutes);
+app.use(`${apiBase}/store/products`, storeRoutes);
+app.use(`${apiBase}/email`, emailRoutes);
+app.use(`${apiBase}/transactions`, transactionRoutes);
+app.use(`${apiBase}/notifications`, notificationRoutes);
+app.use(`${apiBase}/tickets`, ticketRoutes);
+app.use(`${apiBase}/upload`, uploadRoutes);
 
 
 // 404 handler

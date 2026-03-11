@@ -81,6 +81,24 @@ const clientSchema = new Schema<IClient>(
             type: addressSchema,
             default: {},
         },
+        // 6-digit numeric support PIN used for verifying callers
+        supportPin: {
+            type: String,
+            length: 6,
+            index: true,
+            unique: true,
+            sparse: true,
+        },
+        supportPinLastGeneratedAt: {
+            type: Date,
+        },
+        supportPinLastVerifiedAt: {
+            type: Date,
+        },
+        profileCompletedAt: {
+            type: Date,
+            default: null,
+        },
     },
     {
         timestamps: true,

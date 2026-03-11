@@ -22,4 +22,16 @@ router.get(
     orderController.getOrder
 );
 
+router.patch(
+    '/:id/status',
+    protect,
+    orderController.updateOrderStatus
+);
+
+router.post(
+    '/:id/run-module-create',
+    protect,
+    orderController.runModuleCreate
+);
+
 export default router;

@@ -33,6 +33,11 @@ function getTransporter(): nodemailer.Transporter {
     return transporter;
 }
 
+export interface EmailAttachment {
+    filename: string;
+    content: Buffer;
+}
+
 export interface SendOptions {
     to: string;
     subject: string;
@@ -41,6 +46,7 @@ export interface SendOptions {
     replyTo?: string;
     cc?: string[];
     bcc?: string[];
+    attachments?: EmailAttachment[];
 }
 
 export async function sendViaTransport(options: SendOptions): Promise<SendResult> {
@@ -55,6 +61,7 @@ export async function sendViaTransport(options: SendOptions): Promise<SendResult
             replyTo: options.replyTo,
             cc: options.cc?.join(','),
             bcc: options.bcc?.join(','),
+            attachments: options.attachments?.map((a) => ({ filename: a.filename, content: a.content })),
         });
 
         return {

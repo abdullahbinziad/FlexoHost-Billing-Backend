@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 import User from './user.model';
 import Client from '../client/client.model';
+import clientService from '../client/client.service';
 import ApiError from '../../utils/apiError';
 import {
     IUserCreate,
@@ -12,6 +13,8 @@ import {
 import { generateAuthTokens, verifyRefreshToken, sanitizeUser } from './user.helper';
 import emailService from '../email/email.service';
 import logger from '../../utils/logger';
+import { getPagination } from '../../utils/pagination';
+import type { OAuthProfile } from '../auth/types/oauth.types';
 
 class UserService {
     // Register new user
@@ -56,7 +59,7 @@ class UserService {
             }
 
             // Generate auth tokens
-            const tokens = generateAuthTokens(user._id.toString());
+            const tokens = generateAuthTokens(user._id.toString(), user.role);
 
             // Save refresh token
             user.refreshToken = tokens.refreshToken;
@@ -108,7 +111,14 @@ class UserService {
             throw ApiError.unauthorized('Invalid email or password');
         }
 
-        // Fetch Client Profile to include in payload
+        // Regenerate support PIN on every login
+        try {
+            await clientService.regenerateSupportPinForUser(user._id.toString());
+        } catch (e) {
+            logger.warn('Support PIN regeneration on login skipped (no client?):', e);
+        }
+
+        // Fetch Client Profile to include in payload (includes new support PIN)
         const clientProfile = await Client.findOne({ user: user._id }).lean();
 
         // Reset login attempts on successful login (DISABLED FOR NOW)
@@ -117,18 +127,113 @@ class UserService {
         // }
 
         // Generate auth tokens
-        const tokens = generateAuthTokens(user._id.toString());
+        const tokens = generateAuthTokens(user._id.toString(), user.role);
 
         // Save refresh token
         user.refreshToken = tokens.refreshToken;
         await user.save({ validateBeforeSave: false });
 
         const sanitizedUser = sanitizeUser(user);
+        const profileCompleted = !!(clientProfile?.profileCompletedAt);
 
         return {
-            user: { ...sanitizedUser, client: clientProfile },
+            user: { ...sanitizedUser, client: clientProfile, profileCompleted },
             tokens,
         };
+    }
+
+    /**
+     * Find or create user from OAuth profile (Google, Facebook, GitHub, etc.).
+     * New users get Client without profileCompletedAt so frontend can show "Complete your profile".
+     */
+    async findOrCreateFromOAuth(profile: OAuthProfile): Promise<{ user: any; tokens: IAuthTokens }> {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            const email = profile.email.toLowerCase();
+            let user = await User.findOne({ provider: profile.provider, providerId: profile.providerId })
+                .select('+provider +providerId +googleId')
+                .session(session);
+
+            if (!user && profile.provider === 'google') {
+                user = await User.findOne({ googleId: profile.providerId }).select('+googleId +provider +providerId').session(session);
+                if (user && !user.provider) {
+                    user.provider = 'google';
+                    user.providerId = profile.providerId;
+                    await user.save({ session, validateBeforeSave: false });
+                }
+            }
+
+            if (!user) {
+                user = await User.findOne({ email }).select('+provider +providerId +googleId').session(session);
+                if (user) {
+                    user.provider = profile.provider;
+                    user.providerId = profile.providerId;
+                    if (profile.provider === 'google') user.googleId = profile.providerId;
+                    await user.save({ session, validateBeforeSave: false });
+                }
+            }
+
+            if (!user) {
+                const createPayload: any = {
+                    email,
+                    provider: profile.provider,
+                    providerId: profile.providerId,
+                    role: 'user',
+                    verified: profile.verified ?? true,
+                    active: true,
+                };
+                if (profile.provider === 'google') createPayload.googleId = profile.providerId;
+                const [newUser] = await User.create([createPayload], { session });
+
+                const firstName = (profile.firstName && profile.firstName.trim().length >= 2)
+                    ? profile.firstName.trim().slice(0, 50)
+                    : 'User';
+                const lastName = (profile.lastName && profile.lastName.trim().length >= 2)
+                    ? profile.lastName.trim().slice(0, 50)
+                    : 'User';
+                await Client.create([{
+                    user: newUser._id,
+                    firstName,
+                    lastName,
+                    // profileCompletedAt left unset so "Complete your profile" is shown
+                }], { session });
+
+                user = newUser;
+            }
+
+            // active has select: false; when not selected it's undefined, so check explicitly for false
+            if (user.active === false) {
+                throw ApiError.unauthorized('Your account has been deactivated');
+            }
+
+            const tokens = generateAuthTokens(user._id.toString(), user.role);
+            user.refreshToken = tokens.refreshToken;
+            await user.save({ session, validateBeforeSave: false });
+
+            const sanitizedUser = sanitizeUser(user);
+            await session.commitTransaction();
+
+            // Regenerate support PIN on every login (after commit so client doc is updated)
+            try {
+                await clientService.regenerateSupportPinForUser(user._id.toString());
+            } catch (e) {
+                logger.warn('Support PIN regeneration on login skipped (no client?):', e);
+            }
+            const clientProfile = await Client.findOne({ user: user._id }).lean() as any;
+            const profileCompleted = !!(clientProfile?.profileCompletedAt);
+
+            return {
+                user: { ...sanitizedUser, client: clientProfile, profileCompleted },
+                tokens,
+            };
+        } catch (error) {
+            await session.abortTransaction();
+            throw error;
+        } finally {
+            session.endSession();
+        }
     }
 
     // Refresh access token
@@ -150,7 +255,7 @@ class UserService {
             }
 
             // Generate new tokens
-            const tokens = generateAuthTokens(user._id.toString());
+            const tokens = generateAuthTokens(user._id.toString(), user.role);
 
             // Update refresh token
             user.refreshToken = tokens.refreshToken;
@@ -184,10 +289,11 @@ class UserService {
             throw ApiError.notFound('User not found');
         }
 
-        const clientProfile = await Client.findOne({ user: user._id }).lean();
+        const clientProfile = await Client.findOne({ user: user._id }).lean() as any;
         const sanitizedUser = sanitizeUser(user);
+        const profileCompleted = !!(clientProfile?.profileCompletedAt);
 
-        return { ...sanitizedUser, client: clientProfile };
+        return { ...sanitizedUser, client: clientProfile, profileCompleted };
     }
 
     // Update user
@@ -355,13 +461,13 @@ class UserService {
         limit: number = 10,
         filters: any = {}
     ): Promise<{ users: any[]; total: number; page: number; pages: number }> {
-        const skip = (page - 1) * limit;
+        const { page: safePage, limit: safeLimit, skip } = getPagination({ page, limit });
 
         const users = await User.find(filters)
             .select('+active')
             .setOptions({ includeInactive: true })
             .skip(skip)
-            .limit(limit)
+            .limit(safeLimit)
             .sort({ createdAt: -1 });
 
         const total = await User.countDocuments(filters).setOptions({ includeInactive: true });
@@ -369,8 +475,8 @@ class UserService {
         return {
             users: users.map((user) => sanitizeUser(user)),
             total,
-            page,
-            pages: Math.ceil(total / limit),
+            page: safePage,
+            pages: Math.ceil(total / safeLimit),
         };
     }
 

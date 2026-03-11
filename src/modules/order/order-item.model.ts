@@ -64,6 +64,10 @@ const orderItemSchema = new Schema<IOrderItemDocument, IOrderItemModel>(
             type: Schema.Types.Mixed,
             required: true,
         },
+        meta: {
+            type: Schema.Types.Mixed,
+            default: undefined,
+        },
     },
     { timestamps: true, }
 );

@@ -4,6 +4,12 @@
 
 import { z } from 'zod';
 
+export const ticketAttachmentSchema = z.object({
+    url: z.string().url(),
+    filename: z.string(),
+    mimeType: z.string().optional(),
+});
+
 export const ticketOpenedSchema = z.object({
     customerName: z.string().min(1),
     ticketId: z.string().min(1),
@@ -13,5 +19,6 @@ export const ticketOpenedSchema = z.object({
     createdAt: z.string().min(1),
     summaryMessage: z.string().optional(),
     ticketUrl: z.string().url(),
+    attachments: z.array(ticketAttachmentSchema).optional(),
 });
 export type TicketOpenedPropsSchema = z.infer<typeof ticketOpenedSchema>;

@@ -1,10 +1,19 @@
 import Invoice from './invoice.model';
+import Client from '../client/client.model';
 import { IInvoice, IInvoiceDocument, InvoiceStatus, InvoiceItemType } from './invoice.interface';
 import ApiError from '../../utils/apiError';
 import { getNextSequence, formatSequenceId } from '../../models/counter.model';
 import { handleInvoicePaid } from '../services/services';
 import serviceLifecycleService from '../services/services/service-lifecycle.service';
 import { notificationProvider } from '../services/providers/notification.provider';
+import { buildSort, getPagination } from '../../utils/pagination';
+import PaymentTransaction from '../transaction/transaction.model';
+import { TransactionStatus, TransactionType } from '../transaction/transaction.interface';
+import notificationService from '../notification/notification.service';
+import * as emailService from '../email/email.service';
+import { getInvoicePdfBuffer } from './invoice-pdf.service';
+import config from '../../config';
+import logger from '../../utils/logger';
 
 class InvoiceService {
     /**
@@ -39,6 +48,43 @@ class InvoiceService {
             total,
             balanceDue,
         });
+
+        if (!invoice.orderId) {
+            const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
+            const clientEmail = clientDoc?.contactEmail || '';
+            const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
+            const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+            if (clientEmail) {
+                try {
+                    const lineItems = (invoice.items || []).map((i: any) => ({ label: i.description || 'Item', amount: String(i.amount ?? 0) }));
+                    if (lineItems.length === 0) lineItems.push({ label: 'Total', amount: String(invoice.total ?? 0) });
+                    let attachments: { filename: string; content: Buffer }[] | undefined;
+                    try {
+                        const pdfBuffer = await getInvoicePdfBuffer(invoice);
+                        attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
+                    } catch (pdfErr: any) {
+                        logger.warn('[Invoice] PDF generation failed, sending email without attachment:', pdfErr?.message);
+                    }
+                    await emailService.sendTemplatedEmail({
+                        to: clientEmail,
+                        templateKey: 'billing.invoice_created',
+                        props: {
+                            customerName,
+                            invoiceNumber: invoice.invoiceNumber,
+                            dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A',
+                            amountDue: String(invoice.balanceDue ?? invoice.total ?? 0),
+                            currency: invoice.currency || 'BDT',
+                            invoiceUrl: `${baseUrl}/invoices/${invoice._id}`,
+                            billingUrl: `${baseUrl}/client`,
+                            lineItems,
+                        },
+                        attachments,
+                    });
+                } catch (e: any) {
+                    logger.warn('[Invoice] Invoice created email failed:', e?.message || e);
+                }
+            }
+        }
 
         return invoice;
     }
@@ -107,6 +153,38 @@ class InvoiceService {
         }
 
         await invoice.save();
+
+        if (status === InvoiceStatus.PAID) {
+            const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
+            const clientEmail = clientDoc?.contactEmail || '';
+            if (clientEmail) {
+                const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
+                const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+                let attachments: { filename: string; content: Buffer }[] | undefined;
+                try {
+                    const pdfBuffer = await getInvoicePdfBuffer(invoice);
+                    attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
+                } catch (pdfErr: any) {
+                    logger.warn('[Invoice] Payment success email PDF failed (status update):', pdfErr?.message);
+                }
+                emailService.sendTemplatedEmail({
+                    to: clientEmail,
+                    templateKey: 'billing.payment_success',
+                    props: {
+                        customerName,
+                        invoiceNumber: invoice.invoiceNumber,
+                        transactionId: 'N/A',
+                        amountPaid: String(invoice.total ?? 0),
+                        currency: invoice.currency || 'BDT',
+                        paymentDate: new Date().toLocaleDateString(),
+                        paymentMethodLabel: 'Marked as paid',
+                        billingUrl: `${baseUrl}/client`,
+                    },
+                    attachments,
+                }).catch(() => {});
+            }
+        }
+
         return invoice;
     }
 
@@ -216,17 +294,83 @@ class InvoiceService {
         invoice.credit = (invoice.credit || 0) + amount;
         invoice.paymentMethod = data.paymentMethod || invoice.paymentMethod;
 
-        if (invoice.balanceDue <= amount) {
+        const fullyPaid = invoice.balanceDue <= amount;
+        if (fullyPaid) {
             invoice.status = InvoiceStatus.PAID;
             invoice.credit = invoice.total;
+        }
+
+        await invoice.save();
+
+        // Record manual payment transaction
+        await PaymentTransaction.create({
+            invoiceId: invoice._id,
+            orderId: invoice.orderId,
+            clientId: invoice.clientId as any,
+            userId: undefined,
+            gateway: data.paymentMethod || 'manual',
+            type: TransactionType.CHARGE,
+            status: TransactionStatus.SUCCESS,
+            amount,
+            currency: invoice.currency,
+            externalTransactionId: data.transactionId,
+            gatewayPayload: {
+                date: data.date,
+                transactionFees: data.transactionFees,
+            },
+        });
+
+        if (fullyPaid) {
             if (invoice.orderId) {
                 await handleInvoicePaid(invoice._id as any);
             }
             await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
             await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
-        }
 
-        await invoice.save();
+            // Notify user about manual payment
+            await notificationService.create({
+                userId: invoice.clientId as any,
+                clientId: invoice.clientId as any,
+                category: 'billing',
+                title: `Payment recorded for Invoice ${invoice.invoiceNumber}`,
+                message: `A payment of ${amount} ${invoice.currency} has been recorded (${data.paymentMethod}).`,
+                linkPath: `/invoices/${invoice._id.toString()}`,
+                linkLabel: 'View invoice',
+                meta: {
+                    invoiceId: invoice._id.toString(),
+                    transactionId: data.transactionId,
+                },
+            });
+
+            const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
+            const clientEmail = clientDoc?.contactEmail || '';
+            const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
+            const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+            if (clientEmail) {
+                let attachments: { filename: string; content: Buffer }[] | undefined;
+                try {
+                    const pdfBuffer = await getInvoicePdfBuffer(invoice);
+                    attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
+                } catch (pdfErr: any) {
+                    logger.warn('[Invoice] Payment success email PDF failed:', pdfErr?.message);
+                }
+                emailService.sendTemplatedEmail({
+                    to: clientEmail,
+                    templateKey: 'billing.payment_success',
+                    props: {
+                        customerName,
+                        invoiceNumber: invoice.invoiceNumber,
+                        transactionId: data.transactionId || 'N/A',
+                        amountPaid: String(amount),
+                        currency: invoice.currency || 'BDT',
+                        paymentDate: new Date().toLocaleDateString(),
+                        paymentMethodLabel: data.paymentMethod || 'Manual',
+                        billingUrl: `${baseUrl}/client`,
+                    },
+                    attachments,
+                }).catch(() => {});
+            }
+        }
 
         if (data.sendEmail) {
             try {
@@ -254,23 +398,22 @@ class InvoiceService {
     /**
      * Get all invoices with pagination and filters
      */
-    async getInvoices(filters: any, options: { page: number; limit: number; sortBy?: string; sortOrder?: string }) {
-        const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = 'desc' } = options;
-        const skip = (page - 1) * limit;
+    async getInvoices(
+        filters: any,
+        options: { page?: number | string; limit?: number | string; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {}
+    ) {
+        const { page, limit, sortBy = 'createdAt', sortOrder = 'desc' } = options;
+        const { page: safePage, limit: safeLimit, skip } = getPagination({ page, limit });
+        const sort = buildSort(sortBy, sortOrder);
 
-        const sort: any = {};
-        if (sortBy) {
-            sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
-        }
-
-        const invoices = await Invoice.find(filters).sort(sort).skip(skip).limit(limit);
+        const invoices = await Invoice.find(filters).sort(sort).skip(skip).limit(safeLimit);
         const totalCounts = await Invoice.countDocuments(filters);
 
         return {
             results: invoices,
-            page,
-            limit,
-            totalPages: Math.ceil(totalCounts / limit),
+            page: safePage,
+            limit: safeLimit,
+            totalPages: Math.ceil(totalCounts / safeLimit),
             totalResults: totalCounts,
         };
     }

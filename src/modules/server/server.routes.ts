@@ -19,4 +19,7 @@ router
     .patch(serverController.update)
     .delete(serverController.delete);
 
+router.post('/:id/test-connection', serverController.testConnection);
+router.get('/:id/packages', serverController.getPackages);
+
 export default router;

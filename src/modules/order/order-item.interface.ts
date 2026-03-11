@@ -26,7 +26,9 @@ export interface IOrderItem {
     billingCycle: BillingCycle;
     qty: number;
     pricingSnapshot: IOrderItemPricingSnapshot;
-    configSnapshot: Record<string, any>; // Type specific config
+    /** Type-specific config. For HOSTING: primaryDomain (required for cPanel), serverLocation, serverGroup. */
+    configSnapshot: Record<string, any>;
+    meta?: Record<string, any>; // Provisioning result: serverId, accountUsername, whmPackage, etc.
     createdAt: Date;
     updatedAt: Date;
 }

@@ -4,10 +4,12 @@ import Order from '../../order/order.model';
 import { provisioningJobRepository } from '../repositories';
 import { ProvisioningJobStatus } from '../types/enums';
 import OrderItem from '../../order/order-item.model';
+import provisioningWorker from '../jobs/provisioning.worker';
+import logger from '../../../utils/logger';
 
 /**
  * Handles the event when an invoice is fully paid.
- * Safely creates Provisioning Jobs using an idempotent pattern.
+ * Creates provisioning jobs and runs the worker so cPanel/domain provisioning runs.
  */
 export const handleInvoicePaid = async (invoiceId: string | mongoose.Types.ObjectId) => {
     let createdJobs = 0;
@@ -17,7 +19,7 @@ export const handleInvoicePaid = async (invoiceId: string | mongoose.Types.Objec
     if (!invoice) throw new Error(`Invoice not found: ${invoiceId}`);
 
     if (!invoice.orderId) {
-        console.warn(`Invoice ${invoiceId} has no associated orderId. Skipping provisioning triggers.`);
+        logger.warn(`[Provisioning] Invoice ${invoiceId} has no orderId. Skipping.`);
         return { createdJobs, skippedJobs };
     }
 
@@ -25,26 +27,30 @@ export const handleInvoicePaid = async (invoiceId: string | mongoose.Types.Objec
     if (!order) throw new Error(`Order not found: ${invoice.orderId}`);
 
     const items = await OrderItem.find({ orderId: order._id }).exec();
+    logger.info(`[Provisioning] Invoice ${invoiceId} paid. Order ${order.orderNumber} has ${items.length} item(s).`);
 
     for (const item of items) {
         const orderItemId = item._id.toString();
-
-        const serviceType = item.type; // Matches ENUM cleanly now
+        const rawType = (item as any).type;
+        const serviceType = typeof rawType === 'string' ? rawType.toUpperCase() : rawType;
 
         const idempotencyKey = `${invoiceId}:${orderItemId}`;
 
         const existingJob = await provisioningJobRepository.findByIdempotencyKey(idempotencyKey);
 
         if (existingJob) {
-            skippedJobs++;
+            if (existingJob.status === ProvisioningJobStatus.FAILED) {
+                await provisioningJobRepository.updateStatus(existingJob._id.toString(), ProvisioningJobStatus.QUEUED, { attempts: 0 } as any);
+                createdJobs++;
+                logger.info(`[Provisioning] Re-queued failed job for orderItem ${orderItemId}.`);
+            } else {
+                skippedJobs++;
+            }
             continue;
         }
 
         await provisioningJobRepository.create({
-            clientId: invoice.orderId as any, // Temporary mapping, Order contains userId in older setup. Using order references safely.
-            // Note: Since real payload decouple, User -> Client is handled previously. 
-            // In a real execution environment Invoice/Order might own `userId`. 
-            // We coerce to ObjectId mappings.
+            clientId: invoice.clientId as any,
             orderId: order._id as any,
             orderItemId: orderItemId as any,
             invoiceId: invoice._id as any,
@@ -52,16 +58,26 @@ export const handleInvoicePaid = async (invoiceId: string | mongoose.Types.Objec
             status: ProvisioningJobStatus.QUEUED,
             attempts: 0,
             maxAttempts: 3,
-            idempotencyKey
+            idempotencyKey,
         });
 
         createdJobs++;
+        logger.info(`[Provisioning] Created job for orderItem ${orderItemId} type=${serviceType}.`);
     }
 
-    // Update order status loosely representing "Processing"
-    // order.interface.ts defines: PENDING, COMPLETED, CANCELLED, PROCESSED.
-    order.status = 'PROCESSING' as any; // Triggered 
+    order.status = 'PROCESSING' as any;
     await order.save();
+
+    if (createdJobs > 0) {
+        logger.info(`[Provisioning] Running worker for ${createdJobs} job(s).`);
+        try {
+            const processed = await provisioningWorker.processQueuedJobs();
+            logger.info(`[Provisioning] Worker processed ${processed} job(s).`);
+        } catch (err: any) {
+            logger.error('[Provisioning] Worker failed:', err?.message || err);
+            throw err;
+        }
+    }
 
     return { createdJobs, skippedJobs };
 };

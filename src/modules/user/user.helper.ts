@@ -2,8 +2,10 @@ import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 import config from '../../config';
 import { IUser, IAuthTokens } from './user.interface';
 
-export const generateAccessToken = (userId: string): string => {
-    return jwt.sign({ id: userId }, config.jwt.secret as Secret, {
+export const generateAccessToken = (userId: string, role?: string): string => {
+    const payload: { id: string; role?: string } = { id: userId };
+    if (role) payload.role = role;
+    return jwt.sign(payload, config.jwt.secret as Secret, {
         expiresIn: config.jwt.accessExpiration as SignOptions['expiresIn'],
     });
 };
@@ -14,8 +16,8 @@ export const generateRefreshToken = (userId: string): string => {
     });
 };
 
-export const generateAuthTokens = (userId: string): IAuthTokens => {
-    const accessToken = generateAccessToken(userId);
+export const generateAuthTokens = (userId: string, role?: string): IAuthTokens => {
+    const accessToken = generateAccessToken(userId, role);
     const refreshToken = generateRefreshToken(userId);
 
     return {

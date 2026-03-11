@@ -10,6 +10,13 @@ import { handleInvoicePaid } from '../services/services';
 import serviceLifecycleService from '../services/services/service-lifecycle.service';
 import Client from '../client/client.model';
 import User from '../user/user.model';
+import PaymentTransaction from '../transaction/transaction.model';
+import { TransactionStatus, TransactionType } from '../transaction/transaction.interface';
+import notificationService from '../notification/notification.service';
+import * as emailService from '../email/email.service';
+import { getInvoicePdfBuffer } from '../invoice/invoice-pdf.service';
+import config from '../../config';
+import logger from '../../utils/logger';
 
 class PaymentService {
     private gateways: Map<string, IPaymentGateway> = new Map();
@@ -108,27 +115,58 @@ class PaymentService {
             session.startTransaction();
 
             try {
+                const gatewayId = gatewayName || this.defaultGateway;
+
                 // 1. Update Invoice
                 invoice.status = InvoiceStatus.PAID;
                 invoice.balanceDue = 0;
-                invoice.paymentMethod = gatewayName || this.defaultGateway;
-                // Optionally add a transaction record to invoice.transactions here
+                invoice.paymentMethod = gatewayId;
                 await invoice.save({ session });
 
                 // 2. Determine if it has an Order to fulfill
+                let orderUserId: mongoose.Types.ObjectId | undefined;
                 if (invoice.orderId) {
                     const order = await Order.findById(invoice.orderId).session(session);
                     if (order) {
                         order.status = OrderStatus.PROCESSING; // Triggers provisioning if applicable
                         order.paidAt = new Date();
                         order.meta = order.meta || {};
-                        order.meta.paymentMethod = gatewayName || this.defaultGateway;
+                        order.meta.paymentMethod = gatewayId;
                         order.meta.transactionId = result.tran_id;
+                        orderUserId = order.userId as any;
                         await order.save({ session });
                     }
                 }
 
-                // 3. Process services
+                // 3. Record payment transaction
+                const amount = Number(result.amount) || invoice.total;
+                const currency =
+                    typeof result.currency === 'string'
+                        ? result.currency
+                        : typeof result.currency_type === 'string'
+                        ? result.currency_type
+                        : invoice.currency;
+
+                await PaymentTransaction.create(
+                    [
+                        {
+                            invoiceId: invoice._id,
+                            orderId: invoice.orderId,
+                            clientId: invoice.clientId as any,
+                            userId: orderUserId,
+                            gateway: gatewayId,
+                            type: TransactionType.CHARGE,
+                            status: TransactionStatus.SUCCESS,
+                            amount,
+                            currency,
+                            externalTransactionId: result.tran_id,
+                            gatewayPayload: result,
+                        },
+                    ],
+                    { session }
+                );
+
+                // 4. Process services
                 await handleInvoicePaid(invoice._id as any);
 
                 await session.commitTransaction();
@@ -136,6 +174,53 @@ class PaymentService {
                 // Unsuspend outside session because it might call HTTP hooks
                 await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
                 await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
+
+                // Notify user about successful payment
+                await notificationService.create({
+                    userId: (invoice as any).clientId?.user || orderUserId || (invoice as any).clientId,
+                    clientId: invoice.clientId as any,
+                    category: 'billing',
+                    title: `Payment received for Invoice ${invoice.invoiceNumber}`,
+                    message: `We received your payment of ${amount} ${currency} via ${gatewayId}.`,
+                    linkPath: `/invoices/${invoice._id.toString()}`,
+                    linkLabel: 'View invoice',
+                    meta: {
+                        invoiceId: invoice._id.toString(),
+                        tran_id: result.tran_id,
+                    },
+                });
+
+                const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
+                const clientEmail = clientDoc?.contactEmail || '';
+                const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
+                const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+                if (clientEmail) {
+                    let attachments: { filename: string; content: Buffer }[] | undefined;
+                    try {
+                        const paidInvoice = await Invoice.findById(invoice._id).lean();
+                        if (paidInvoice) {
+                            const pdfBuffer = await getInvoicePdfBuffer(paidInvoice);
+                            attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
+                        }
+                    } catch (pdfErr: any) {
+                        logger.warn('[Payment] Invoice PDF for email failed:', pdfErr?.message);
+                    }
+                    emailService.sendTemplatedEmail({
+                        to: clientEmail,
+                        templateKey: 'billing.payment_success',
+                        props: {
+                            customerName,
+                            invoiceNumber: invoice.invoiceNumber,
+                            transactionId: result.tran_id || 'N/A',
+                            amountPaid: String(amount),
+                            currency: currency || invoice.currency || 'BDT',
+                            paymentDate: new Date().toLocaleDateString(),
+                            paymentMethodLabel: gatewayId === 'sslcommerz' ? 'Card / Mobile Banking' : gatewayId,
+                            billingUrl: `${baseUrl}/client`,
+                        },
+                        attachments,
+                    }).catch(() => {});
+                }
 
                 return { message: 'Payment successful', invoiceId: invoice._id, tran_id: result.tran_id };
             } catch (error) {
@@ -183,10 +268,28 @@ class PaymentService {
                 invoice.balanceDue = 0;
                 invoice.paymentMethod = 'MOCK_PAYMENT';
                 await invoice.save({ session });
-            }
 
-            // 3. Create Services & Evaluate Suspensions
-            if (invoice) {
+                // Record mock payment transaction
+                await PaymentTransaction.create(
+                    [
+                        {
+                            invoiceId: invoice._id,
+                            orderId: order._id,
+                            clientId: invoice.clientId as any,
+                            userId: order.userId as any,
+                            gateway: 'mock',
+                            type: TransactionType.CHARGE,
+                            status: TransactionStatus.SUCCESS,
+                            amount: invoice.total,
+                            currency: invoice.currency,
+                            externalTransactionId: order.meta.transactionId,
+                            gatewayPayload: null,
+                        },
+                    ],
+                    { session }
+                );
+
+                // 3. Create Services & Evaluate Suspensions
                 await handleInvoicePaid(invoice._id as any);
                 await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
                 await serviceLifecycleService.applyRenewalPayment(invoice._id as any);

@@ -1,16 +1,37 @@
 import mongoose from 'mongoose';
+import config from '../../config';
 import { DEFAULT_CURRENCY } from '../../config/currency.config';
 import Order from './order.model';
 import OrderItem from './order-item.model';
+import Service from '../services/service.model';
 import { getNextSequence, formatSequenceId } from '../../models/counter.model';
 import Product from '../product/product.model';
 import Client from '../client/client.model';
+import Server from '../server/server.model';
+import { serverService } from '../server/server.service';
 import invoiceService from '../invoice/invoice.service';
+import { getInvoicePdfBuffer } from '../invoice/invoice-pdf.service';
+import notificationService from '../notification/notification.service';
+import * as emailService from '../email/email.service';
 import { promotionService } from '../promotion/promotion.service';
 import { OrderStatus } from './order.interface';
 import { DomainActionType } from './order-item.interface';
 import { TLDModel } from '../domain/tld/tld.model';
-import { ServiceType } from '../services/types/enums';
+import { ServiceType, normalizeBillingCycle } from '../services/types/enums';
+import { ControlPanelType } from '../services/models/hosting-details.model';
+import logger from '../../utils/logger';
+
+/** Result of creating one hosting account (for runModuleCreate and provisioning provider). */
+export interface CreateHostingAccountResult {
+    serverId: string;
+    accountUsername: string;
+    primaryDomain: string;
+    whmPackageName: string;
+    /** Shape for HostingServiceDetails persistence */
+    details: Record<string, unknown>;
+    /** True when WHM createAccount was called this run; false when returning existing meta only */
+    actuallyCreated?: boolean;
+}
 
 class OrderService {
     // -------------------------
@@ -47,7 +68,7 @@ class OrderService {
             if (!product) throw new Error('Product not found');
 
             const currency = payload.currency || DEFAULT_CURRENCY;
-            const billingCycle = payload.billingCycle || 'monthly';
+            const billingCycle = normalizeBillingCycle(payload.billingCycle || 'monthly');
 
             const currencyPricing = product.pricing?.find(p => p.currency === currency);
             if (!currencyPricing && product.paymentType !== 'free') {
@@ -70,12 +91,18 @@ class OrderService {
             const orderItemsPayloads: any[] = [];
             const invoiceItemsPayloads: any[] = [];
 
-            // Add Hosting Item
+            // Add Hosting Item: store chosen domain as primaryDomain (for cPanel / provisioning).
+            // Source: Use Owned Domain, Register, or Transfer at checkout.
+            const primaryDomainRaw = payload.domain?.ownDomain?.domainName ||
+                payload.domain?.registration?.domainName ||
+                payload.domain?.transfer?.domainName;
+            const primaryDomain = typeof primaryDomainRaw === 'string' && primaryDomainRaw.trim()
+                ? primaryDomainRaw.trim()
+                : '';
             const hostingConfigSnapshot: any = {
                 serverLocation: payload.serverLocation,
-                domain: payload.domain?.ownDomain?.domainName ||
-                    payload.domain?.registration?.domainName ||
-                    payload.domain?.transfer?.domainName
+                serverGroup: product.module?.serverGroup,
+                primaryDomain,
             };
 
             orderItemsPayloads.push({
@@ -258,6 +285,21 @@ class OrderService {
                 paymentMethod: payload.paymentMethod
             });
 
+            // Notify user about new invoice
+            await notificationService.create({
+                userId,
+                clientId,
+                category: 'billing',
+                title: `New invoice ${invoice.invoiceNumber} created`,
+                message: `An invoice has been created for your order #${order.orderId}.`,
+                linkPath: `/invoices/${invoice._id.toString()}`,
+                linkLabel: 'View invoice',
+                meta: {
+                    invoiceId: invoice._id.toString(),
+                    orderId: order._id.toString(),
+                },
+            });
+
             // Record promotion usage for analytics (inside transaction)
             if (appliedPromotionId && discountTotal > 0) {
                 await promotionService.recordUsage(
@@ -274,6 +316,87 @@ class OrderService {
             await order.save({ session });
 
             await session.commitTransaction();
+
+            const clientForEmail = await Client.findById(clientId)
+                .select('contactEmail firstName lastName')
+                .populate('user', 'email')
+                .lean();
+            const clientEmail = (clientForEmail as any)?.contactEmail || (clientForEmail as any)?.user?.email || '';
+            const customerName = clientForEmail
+                ? `${(clientForEmail as any).firstName || ''} ${(clientForEmail as any).lastName || ''}`.trim() || 'Customer'
+                : 'Customer';
+            const baseUrl = config.frontendUrl || config.cors?.origin || 'http://localhost:3000';
+
+            if (!clientEmail) {
+                logger.warn(`[Order] No email for client ${clientId}; skipping order confirmation and invoice emails for order ${order.orderNumber}`);
+            }
+
+            if (clientEmail) {
+                try {
+                    const orderConfirmResult = await emailService.sendTemplatedEmail({
+                        to: clientEmail,
+                        templateKey: 'order.confirmation',
+                        props: {
+                            customerName,
+                            orderNumber: order.orderNumber,
+                            orderDate: new Date().toLocaleDateString(),
+                            items: orderItemsPayloads.map((p: any) => ({
+                                name: p.nameSnapshot,
+                                type: p.type || 'Service',
+                                billingCycle: normalizeBillingCycle(p.billingCycle),
+                                quantity: p.qty || 1,
+                                price: String(p.pricingSnapshot?.total ?? 0),
+                            })),
+                            subtotal: String(invoice.subTotal ?? order.subtotal ?? 0),
+                            tax: '0',
+                            total: String(invoice.total ?? 0),
+                            currency: currency,
+                            paymentStatus: 'Pending Payment',
+                            clientAreaUrl: `${baseUrl}/client`,
+                            supportUrl: `${baseUrl}/support`,
+                        },
+                    });
+                    if (!orderConfirmResult.success) {
+                        logger.warn(`[Order] Order confirmation email failed for ${clientEmail}: ${orderConfirmResult.error}`);
+                    }
+                } catch (e: any) {
+                    logger.warn('[Order] Order confirmation email error:', e?.message || e);
+                }
+                try {
+                    const lineItems = (invoice.items || []).map((i: any) => ({
+                        label: i.description || 'Item',
+                        amount: String(i.amount ?? 0),
+                    }));
+                    if (lineItems.length === 0) lineItems.push({ label: 'Total', amount: String(invoice.total ?? 0) });
+                    let attachments: { filename: string; content: Buffer }[] | undefined;
+                    try {
+                        const pdfBuffer = await getInvoicePdfBuffer(invoice);
+                        attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
+                    } catch (pdfErr: any) {
+                        logger.warn('[Order] Invoice PDF generation failed, sending email without attachment:', pdfErr?.message);
+                    }
+                    const invoiceCreatedResult = await emailService.sendTemplatedEmail({
+                        to: clientEmail,
+                        templateKey: 'billing.invoice_created',
+                        props: {
+                            customerName,
+                            invoiceNumber: invoice.invoiceNumber,
+                            dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A',
+                            amountDue: String(invoice.balanceDue ?? invoice.total ?? 0),
+                            currency,
+                            invoiceUrl: `${baseUrl}/invoices/${invoice._id}`,
+                            billingUrl: `${baseUrl}/client`,
+                            lineItems,
+                        },
+                        attachments,
+                    });
+                    if (!invoiceCreatedResult.success) {
+                        logger.warn(`[Order] Invoice created email failed for ${clientEmail}: ${invoiceCreatedResult.error}`);
+                    }
+                } catch (e: any) {
+                    logger.warn('[Order] Invoice created email error:', e?.message || e);
+                }
+            }
 
             return {
                 id: order._id,
@@ -356,6 +479,19 @@ class OrderService {
         return this.getOrderWithItems(orderId);
     }
 
+    /** Update order status. Admin/staff only. */
+    async updateOrderStatus(orderId: string, status: OrderStatus) {
+        const _id = this.ensureObjectId(orderId, 'Order ID');
+        const order = await Order.findById(_id);
+        if (!order) throw new Error('Order not found');
+        if (!Object.values(OrderStatus).includes(status)) {
+            throw new Error('Invalid order status');
+        }
+        order.status = status;
+        await order.save();
+        return this.getOrderWithItems(orderId);
+    }
+
     // ✅ order + items (single query using $lookup)
     async getOrderWithItems(orderId: string) {
         const _id = this.ensureObjectId(orderId, 'Order ID');
@@ -430,9 +566,12 @@ class OrderService {
                     meta: 1,
                     client: {
                         _id: '$client._id',
+                        firstName: '$client.firstName',
+                        lastName: '$client.lastName',
                         name: { $concat: ['$client.firstName', ' ', '$client.lastName'] },
                         email: '$client.contactEmail',
                         companyName: '$client.companyName',
+                        phoneNumber: '$client.phoneNumber',
                         address: '$client.address',
                     },
                     invoice: {
@@ -449,7 +588,253 @@ class OrderService {
             },
         ]);
 
-        return result[0] || null;
+        const orderData = result[0] || null;
+        if (!orderData?.items?.length) return orderData;
+
+        const orderItemIds = orderData.items.map((i: any) => i._id);
+        const services = await Service.find({ orderItemId: { $in: orderItemIds } })
+            .select('orderItemId status provisioning')
+            .lean();
+        const serviceByOrderItemId = new Map(services.map((s: any) => [s.orderItemId.toString(), s]));
+
+        orderData.items = orderData.items.map((item: any) => {
+            const sid = item._id?.toString();
+            const service = sid ? serviceByOrderItemId.get(sid) : null;
+            return {
+                ...item,
+                username: item.meta?.accountUsername ?? null,
+                domain: item.configSnapshot?.primaryDomain ?? item.configSnapshot?.domain ?? item.domain ?? null,
+                provisioningStatus: service?.status ?? null,
+                provisioningError: service?.provisioning?.lastError ?? null,
+            };
+        });
+
+        return orderData;
+    }
+
+    /**
+     * Create a single cPanel account for an order item (shared by runModuleCreate and provisioning worker).
+     * Picks server by location + product server group, creates account via WHM, optionally updates order item meta.
+     */
+    async createHostingAccountForOrderItem(
+        orderItem: any,
+        order: any,
+        clientEmail: string,
+        options: {
+            serverId?: string;
+            whmPackage?: string;
+            username?: string;
+            password?: string;
+            updateOrderItemMeta?: boolean;
+            sendWelcomeEmail?: boolean;
+        } = {}
+    ): Promise<CreateHostingAccountResult> {
+        const {
+            serverId: chosenServerId,
+            whmPackage: chosenPackage,
+            username: chosenUsername,
+            password: chosenPassword,
+            updateOrderItemMeta = true,
+            sendWelcomeEmail = false,
+        } = options;
+
+        const existingMeta = orderItem?.meta;
+        if (existingMeta?.accountUsername) {
+            const primaryDomain = String(orderItem?.configSnapshot?.primaryDomain ?? orderItem?.configSnapshot?.domain ?? '').trim();
+            const whmPackageName = existingMeta.whmPackage || '';
+            return {
+                serverId: existingMeta.serverId,
+                accountUsername: existingMeta.accountUsername,
+                primaryDomain: primaryDomain || 'unknown',
+                whmPackageName,
+                details: {
+                    primaryDomain: primaryDomain || 'unknown',
+                    serverId: existingMeta.serverId,
+                    controlPanel: ControlPanelType.CPANEL,
+                    packageId: orderItem?.productId?.toString() || '',
+                    accountUsername: existingMeta.accountUsername,
+                    accountRemoteId: existingMeta.accountUsername,
+                    assignedIp: undefined,
+                    nameservers: [],
+                    resourceLimits: { diskMb: 10000, bandwidthMb: 100000, inodeLimit: 100000 },
+                    sslEnabled: true,
+                    dedicatedIp: false,
+                },
+                actuallyCreated: false,
+            };
+        }
+
+        const config = orderItem?.configSnapshot || {};
+        const primaryDomain = String(config.primaryDomain ?? config.domain ?? '').trim();
+        if (!primaryDomain) {
+            throw new Error('Primary domain is required for cPanel account creation');
+        }
+        const location = config.serverLocation ? String(config.serverLocation).toLowerCase() : '';
+        const serverGroup = config.serverGroup || '';
+        const product = await Product.findById(orderItem?.productId).lean();
+        const productServerGroup = serverGroup || (product as any)?.module?.serverGroup;
+        const defaultPackageName = (product as any)?.module?.packageName || '';
+        const whmPackageName = chosenPackage || defaultPackageName;
+
+        let serverId = chosenServerId;
+        if (!serverId) {
+            const candidateServers = await Server.find({ isEnabled: true }).lean();
+            if (candidateServers.length === 0) {
+                throw new Error('No servers configured. Add at least one server in Admin → Servers and ensure it is enabled.');
+            }
+            const locMatch = (s: any) => !location || String(s.location || '').toLowerCase() === location;
+            const groupMatch = (s: any) => {
+                const groups = Array.isArray(s.groups) ? s.groups : (s.group ? [s.group] : []);
+                if (!productServerGroup) return true;
+                return groups.length === 0 || groups.includes(productServerGroup);
+            };
+            const eligible = candidateServers.filter((s: any) => locMatch(s) && groupMatch(s));
+            const serversToConsider = eligible.length > 0 ? eligible : candidateServers;
+            const withCount = await Promise.all(serversToConsider.map(async (s: any) => {
+                const { count, error } = await serverService.getWhmAccountCount(s._id.toString());
+                return { server: s, count: error ? 999999 : count, maxAccounts: s.maxAccounts ?? 200 };
+            }));
+            const withCapacity = withCount.filter((w: any) => w.count < w.maxAccounts);
+            withCapacity.sort((a: any, b: any) => b.count - a.count);
+            const picked = withCapacity[0]?.server;
+            if (!picked) {
+                throw new Error('No server with capacity. Either all servers are full (max accounts reached) or WHM account count could not be read. Check Admin → Servers and WHM API token.');
+            }
+            serverId = picked._id.toString();
+        }
+
+        const whmResult = await serverService.getWhmClientOrError(serverId);
+        if ('error' in whmResult) {
+            throw new Error(whmResult.error);
+        }
+        const whmClient = whmResult.client;
+
+        let username = chosenUsername;
+        if (!username) {
+            const base = primaryDomain.replace(/^www\./, '').split('/')[0].toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'user';
+            username = `${base}${Math.floor(100 + Math.random() * 900)}`.slice(0, 16);
+        }
+        username = String(username).trim().slice(0, 16);
+        if (!username) {
+            throw new Error('Username required');
+        }
+
+        const email = clientEmail || `admin@${primaryDomain}`;
+        await whmClient.createAccount({
+            username,
+            domain: primaryDomain,
+            plan: whmPackageName || 'default',
+            email,
+        });
+
+        if (updateOrderItemMeta && orderItem?._id) {
+            await OrderItem.findByIdAndUpdate(orderItem._id, {
+                $set: {
+                    meta: {
+                        serverId,
+                        accountUsername: username,
+                        whmPackage: whmPackageName,
+                        ...(chosenPassword ? { password: chosenPassword } : {}),
+                    },
+                },
+            });
+        }
+
+        if (sendWelcomeEmail && clientEmail) {
+            try {
+                const clientName = (order as any)?.client?.name || 'Customer';
+                await emailService.sendWelcomeEmail(clientEmail, clientName);
+            } catch (_) { /* optional */ }
+        }
+
+        const details: Record<string, unknown> = {
+            primaryDomain,
+            serverId,
+            controlPanel: ControlPanelType.CPANEL,
+            packageId: orderItem?.productId?.toString() || '',
+            accountUsername: username,
+            accountRemoteId: username,
+            assignedIp: undefined,
+            nameservers: [],
+            resourceLimits: { diskMb: 10000, bandwidthMb: 100000, inodeLimit: 100000 },
+            sslEnabled: true,
+            dedicatedIp: false,
+        };
+
+        return { serverId, accountUsername: username, primaryDomain, whmPackageName, details, actuallyCreated: true };
+    }
+
+    /**
+     * Run module create for hosting items: pick server (by location + group, fill until full),
+     * create cPanel account via WHM, optionally send welcome email.
+     * Body: { items: [{ itemIndex, serverId?, whmPackage?, username?, password?, runModuleCreate, sendWelcomeEmail }] }
+     */
+    async runModuleCreate(orderId: string, body: { items: Array<{
+        itemIndex: number;
+        orderItemId?: string;
+        serverId?: string;
+        whmPackage?: string;
+        username?: string;
+        password?: string;
+        runModuleCreate?: boolean;
+        sendWelcomeEmail?: boolean;
+    }> }, _userId?: string) {
+        const order = await this.getOrderWithItems(orderId);
+        if (!order) throw new Error('Order not found');
+        const items = await this.getOrderItemsByOrderId(orderId);
+        let clientEmail = (order as any).client?.email || '';
+        if (!clientEmail) {
+            const orderDoc = await Order.findById(orderId).select('clientId').lean();
+            const clientDoc = orderDoc?.clientId ? await Client.findById(orderDoc.clientId).select('contactEmail').lean() : null;
+            clientEmail = clientDoc?.contactEmail || '';
+        }
+        const results: Array<{ itemIndex: number; success: boolean; serverId?: string; accountUsername?: string; error?: string; created?: boolean }> = [];
+
+        for (const spec of body.items || []) {
+            const { itemIndex, orderItemId: specOrderItemId, serverId: chosenServerId, whmPackage: chosenPackage, username: chosenUsername, password: chosenPassword, runModuleCreate, sendWelcomeEmail } = spec;
+            const item = specOrderItemId
+                ? items.find((i: any) => String(i._id) === String(specOrderItemId))
+                : items[itemIndex];
+            if (!item || (item as any).type !== ServiceType.HOSTING) {
+                results.push({ itemIndex, success: false, error: 'Item not found or not HOSTING' });
+                continue;
+            }
+            if (!runModuleCreate) {
+                results.push({ itemIndex, success: true });
+                continue;
+            }
+
+            try {
+                const created = await this.createHostingAccountForOrderItem(
+                    item,
+                    order,
+                    clientEmail,
+                    {
+                        serverId: chosenServerId,
+                        whmPackage: chosenPackage,
+                        username: chosenUsername,
+                        password: chosenPassword,
+                        updateOrderItemMeta: true,
+                        sendWelcomeEmail: !!sendWelcomeEmail,
+                    }
+                );
+                results.push({
+                    itemIndex,
+                    success: true,
+                    serverId: created.serverId,
+                    accountUsername: created.accountUsername,
+                    created: created.actuallyCreated !== false,
+                });
+            } catch (err: any) {
+                results.push({
+                    itemIndex,
+                    success: false,
+                    error: err?.message || 'Hosting account creation failed',
+                });
+            }
+        }
+
+        return { results };
     }
 }
 

@@ -7,8 +7,32 @@ import { USER_ROLES } from '../user/user.const';
 
 import emailService from '../email/email.service';
 import logger from '../../utils/logger';
+import { getPagination } from '../../utils/pagination';
 
 class ClientService {
+    /**
+     * Generate a unique 6-digit numeric support PIN.
+     * Ensures no other client currently has the same PIN.
+     */
+    private async generateUniqueSupportPin(): Promise<string> {
+        // In practice the chance of repeated collisions is extremely low,
+        // but we still cap retries to avoid an infinite loop.
+        const MAX_RETRIES = 20;
+
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            const pin = Math.floor(Math.random() * 1_000_000)
+                .toString()
+                .padStart(6, '0');
+
+            const exists = await Client.exists({ supportPin: pin });
+            if (!exists) {
+                return pin;
+            }
+        }
+
+        throw ApiError.internalError('Failed to generate a unique support PIN. Please try again.');
+    }
+
     /**
      * Register a new client with atomic transaction
      * If user exists, use existing user; otherwise create new user
@@ -54,7 +78,7 @@ class ClientService {
                 await user.save({ session });
             }
 
-            // Step 2: Create client profile
+            // Step 2: Create client profile (full registration = profile complete)
             const clientProfile = {
                 user: user._id,
                 firstName: clientData.firstName,
@@ -64,6 +88,7 @@ class ClientService {
                 phoneNumber: clientData.phoneNumber,
                 avatar: clientData.avatar,
                 address: clientData.address,
+                profileCompletedAt: new Date(),
             };
 
             const [client] = await Client.create([clientProfile], { session });
@@ -136,6 +161,80 @@ class ClientService {
     }
 
     /**
+     * Get or generate support PIN for the current client (by user id)
+     */
+    async getOrCreateSupportPinForUser(userId: string): Promise<{ supportPin: string; lastGeneratedAt: Date }> {
+        const client = await Client.findOne({ user: userId });
+        if (!client) {
+            throw ApiError.notFound('Client profile not found for this user');
+        }
+
+        if (!client.supportPin) {
+            client.supportPin = await this.generateUniqueSupportPin();
+            client.supportPinLastGeneratedAt = new Date();
+            await client.save();
+        }
+
+        return {
+            supportPin: client.supportPin,
+            lastGeneratedAt: client.supportPinLastGeneratedAt || client.updatedAt,
+        };
+    }
+
+    /**
+     * Regenerate support PIN for the current client (by user id)
+     */
+    async regenerateSupportPinForUser(userId: string): Promise<{ supportPin: string; lastGeneratedAt: Date }> {
+        const client = await Client.findOne({ user: userId });
+        if (!client) {
+            throw ApiError.notFound('Client profile not found for this user');
+        }
+
+        client.supportPin = await this.generateUniqueSupportPin();
+        client.supportPinLastGeneratedAt = new Date();
+        await client.save();
+
+        return {
+            supportPin: client.supportPin,
+            lastGeneratedAt: client.supportPinLastGeneratedAt,
+        };
+    }
+
+    /**
+     * Regenerate support PIN for a specific client (admin/staff triggered).
+     */
+    async regenerateSupportPinForClient(clientId: string): Promise<{ supportPin: string; lastGeneratedAt: Date }> {
+        const client = await Client.findById(clientId);
+        if (!client) {
+            throw ApiError.notFound('Client not found');
+        }
+
+        client.supportPin = await this.generateUniqueSupportPin();
+        client.supportPinLastGeneratedAt = new Date();
+        await client.save();
+
+        return {
+            supportPin: client.supportPin,
+            lastGeneratedAt: client.supportPinLastGeneratedAt,
+        };
+    }
+
+    /**
+     * Find client by support PIN (for admin/staff verification)
+     */
+    async findClientBySupportPin(pin: string): Promise<any> {
+        const client = await Client.findOne({ supportPin: pin })
+            .populate('user', 'email active createdAt')
+            .lean();
+
+        if (!client) {
+            throw ApiError.notFound('Client not found for this support PIN');
+        }
+
+        return client;
+    }
+
+    /**
      * Get client by clientId (auto-increment number)
      */
     async getClientByClientId(clientId: number): Promise<any> {
@@ -151,42 +250,62 @@ class ClientService {
     }
 
     /**
-     * Get all clients with pagination
+     * Get all clients with pagination.
+     * `search` matches first/last/full name, company, email, phone.
+     * `supportPin` (if provided) must match exactly.
      */
     async getAllClients(
         page: number = 1,
         limit: number = 10,
         filters: any = {}
     ): Promise<{ clients: any[]; total: number; page: number; pages: number }> {
-        const skip = (page - 1) * limit;
+        const { page: safePage, limit: safeLimit, skip } = getPagination({ page, limit });
 
         const query: any = {};
 
-        // Add filters
-        if (filters.companyName) {
-            query.companyName = { $regex: filters.companyName, $options: 'i' };
-        }
-        if (filters.firstName) {
-            query.firstName = { $regex: filters.firstName, $options: 'i' };
-        }
-        if (filters.lastName) {
-            query.lastName = { $regex: filters.lastName, $options: 'i' };
+        const search = (filters.search || '').trim();
+        const supportPin = (filters.supportPin || '').trim();
+
+        if (search) {
+            const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(escaped, 'i');
+            query.$or = [
+                { firstName: { $regex: regex } },
+                { lastName: { $regex: regex } },
+                { companyName: { $regex: regex } },
+                { contactEmail: { $regex: regex } },
+                { phoneNumber: { $regex: regex } },
+                {
+                    $expr: {
+                        $regexMatch: {
+                            input: { $concat: ['$firstName', ' ', '$lastName'] },
+                            regex: escaped,
+                            options: 'i',
+                        },
+                    },
+                },
+            ];
         }
 
-        const clients = await Client.find(query)
-            .populate('user', 'email role verified active createdAt')
-            .skip(skip)
-            .limit(limit)
-            .sort({ createdAt: -1 })
-            .lean();
+        if (supportPin) {
+            query.supportPin = supportPin;
+        }
 
-        const total = await Client.countDocuments(query);
+        const [clients, total] = await Promise.all([
+            Client.find(query)
+                .populate('user', 'email role verified active createdAt')
+                .skip(skip)
+                .limit(safeLimit)
+                .sort({ createdAt: -1 })
+                .lean(),
+            Client.countDocuments(query),
+        ]);
 
         return {
             clients,
             total,
-            page,
-            pages: Math.ceil(total / limit),
+            page: safePage,
+            pages: Math.ceil(total / safeLimit) || 1,
         };
     }
 
@@ -204,6 +323,23 @@ class ClientService {
         }
 
         return client;
+    }
+
+    /**
+     * Complete profile for the current user's client (post–social signup).
+     * Updates allowed fields and sets profileCompletedAt.
+     */
+    async completeProfile(userId: string, data: IClientUpdate): Promise<any> {
+        const client = await Client.findOne({ user: userId });
+        if (!client) {
+            throw ApiError.notFound('Client profile not found for this user');
+        }
+        const updateData = { ...data, profileCompletedAt: new Date() };
+        const updated = await Client.findByIdAndUpdate(client._id, updateData, {
+            new: true,
+            runValidators: true,
+        }).populate('user', 'email role verified active createdAt').lean();
+        return updated;
     }
 
     /**

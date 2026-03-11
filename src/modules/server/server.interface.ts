@@ -1,4 +1,4 @@
-import { Document, Model } from 'mongoose';
+import mongoose, { Document, Model } from 'mongoose';
 
 export type ServerLocation = 'USA' | 'Malaysia' | 'Singapore' | 'Bangladesh' | 'Germany' | 'Finland';
 export type ServerGroup = 'Web Hosting' | 'BDIX Hosting' | 'Turbo Hosting' | 'Ecommerce Hosting' | 'VPS' | 'BDIX Vps';
@@ -46,6 +46,10 @@ export interface IServer {
     nameservers: INameServer;
     module: IServerModule;
     accessControl: 'unrestricted' | 'restricted';
+
+    lastConnectionCheckAt?: Date;
+    lastConnectionStatus?: 'success' | 'failed' | null;
+    createdBy?: mongoose.Types.ObjectId;
 
     createdAt?: Date;
     updatedAt?: Date;

@@ -19,6 +19,12 @@ export interface IClient extends Document {
     phoneNumber?: string;
     avatar?: string;
     address?: IAddress;
+    // 5-digit numeric support PIN for phone / external support verification
+    supportPin?: string;
+    supportPinLastGeneratedAt?: Date;
+    supportPinLastVerifiedAt?: Date;
+    /** Set when user completes the post-signup profile form (e.g. company, phone, address). */
+    profileCompletedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }

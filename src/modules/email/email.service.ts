@@ -7,7 +7,7 @@ import logger from '../../utils/logger';
 import { getTemplate } from './templates/registry';
 import { mergeBrandProps } from './templates/config';
 import { validateProps } from './templates/schemas';
-import { sendViaTransport, isTransportConfigured } from './transport';
+import { sendViaTransport, isTransportConfigured, type EmailAttachment } from './transport';
 import type { TemplateKey } from './templates/types';
 import type { SendResult } from './templates/types';
 
@@ -18,6 +18,7 @@ export interface SendTemplatedEmailOptions<T = Record<string, unknown>> {
     replyTo?: string;
     cc?: string[];
     bcc?: string[];
+    attachments?: EmailAttachment[];
 }
 
 /**
@@ -27,7 +28,7 @@ export interface SendTemplatedEmailOptions<T = Record<string, unknown>> {
 export async function sendTemplatedEmail<T>(
     options: SendTemplatedEmailOptions<T>
 ): Promise<SendResult> {
-    const { to, templateKey, props, replyTo, cc, bcc } = options;
+    const { to, templateKey, props, replyTo, cc, bcc, attachments } = options;
 
     const validation = validateProps(templateKey, props);
     if (!validation.success) {
@@ -44,8 +45,8 @@ export async function sendTemplatedEmail<T>(
     const text = template.renderText(fullProps);
 
     if (!isTransportConfigured()) {
-        logger.warn(`[Email-Stub] ${templateKey} to ${to} | Subject: ${subject}`);
-        return { success: true };
+        logger.warn(`[Email] SMTP not configured – no email sent. Would send ${templateKey} to ${to} | Subject: ${subject}. Set SMTP_USER and SMTP_PASSWORD in .env.`);
+        return { success: false, error: 'SMTP not configured. Set SMTP_USER and SMTP_PASSWORD in .env.' };
     }
 
     return sendViaTransport({
@@ -56,6 +57,7 @@ export async function sendTemplatedEmail<T>(
         replyTo,
         cc,
         bcc,
+        attachments,
     });
 }
 
@@ -117,6 +119,67 @@ export async function sendVerificationEmail(
     });
 }
 
+/**
+ * Send hosting account ready (new cPanel account details) after provisioning.
+ */
+export async function sendHostingAccountReadyEmail(
+    to: string,
+    customerName: string,
+    options: {
+        domain: string;
+        username: string;
+        serverHostname: string;
+        nameservers?: string[];
+    }
+): Promise<SendResult> {
+    const origin = config.cors?.origin || 'http://localhost:3000';
+    const websiteUrl = (config.cors?.origin || '').replace(/\/$/, '') || 'https://flexohost.com';
+    const controlPanelUrl = `https://${options.serverHostname}:2083`;
+    return sendTemplatedEmail({
+        to,
+        templateKey: 'service.hosting_ready',
+        props: {
+            customerName,
+            domain: options.domain,
+            serverHostname: options.serverHostname,
+            nameservers: options.nameservers || [],
+            controlPanelUrl,
+            username: options.username,
+            setupPasswordUrl: `${origin}/login`,
+            gettingStartedUrl: `${websiteUrl}/kb`,
+            supportUrl: `${websiteUrl}/support`,
+        },
+    });
+}
+
+/**
+ * Send domain registration confirmation after domain is provisioned.
+ */
+export async function sendDomainRegistrationEmail(
+    to: string,
+    customerName: string,
+    options: {
+        domain: string;
+        registrationPeriod: string;
+        registrationDate: string;
+        autoRenewEnabled?: boolean;
+    }
+): Promise<SendResult> {
+    const origin = config.cors?.origin || 'http://localhost:3000';
+    return sendTemplatedEmail({
+        to,
+        templateKey: 'domain.registration_confirmation',
+        props: {
+            customerName,
+            domain: options.domain,
+            registrationPeriod: options.registrationPeriod,
+            registrationDate: options.registrationDate,
+            autoRenewEnabled: options.autoRenewEnabled ?? true,
+            manageDomainUrl: `${origin}/client`,
+        },
+    });
+}
+
 export async function sendPasswordResetEmail(
     to: string,
     name: string,
@@ -152,6 +215,7 @@ const LEGACY_TEMPLATE_MAP: Record<string, TemplateKey> = {
     'invoice-overdue-14': 'billing.overdue_reminder',
     'invoice-payment-confirmation': 'billing.payment_success',
     'invoice-modified': 'billing.invoice_created',
+    'support.ticket_opened': 'support.ticket_opened',
 };
 
 export async function sendEmailByTemplate(
@@ -248,6 +312,25 @@ export async function sendEmailByTemplate(
             suspensionDate,
             paymentUrl: `${origin}/invoices/${invoice._id}/pay`,
             billingUrl: `${origin}/billing`,
+        };
+    } else if (templateKey === 'support.ticket_opened') {
+        const apiBase = process.env.API_URL ? new URL(process.env.API_URL).origin : 'http://localhost:5001';
+        const rawAttachments = context.attachments || [];
+        const attachments = rawAttachments.map((a: { url: string; filename: string; mimeType?: string }) => ({
+            url: a.url.startsWith('http') ? a.url : `${apiBase}${a.url.startsWith('/') ? a.url : '/' + a.url}`,
+            filename: a.filename || 'attachment',
+            mimeType: a.mimeType || 'image/jpeg',
+        }));
+        props = {
+            customerName: context.customerName || 'Customer',
+            ticketId: context.ticketId || 'N/A',
+            ticketSubject: context.ticketSubject || 'Support Request',
+            priority: context.priority || 'NORMAL',
+            department: context.department || 'Support',
+            createdAt: context.createdAt || new Date().toISOString(),
+            summaryMessage: context.summaryMessage,
+            ticketUrl: context.ticketUrl || `${origin}/tickets`,
+            attachments,
         };
     }
 

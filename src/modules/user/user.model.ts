@@ -20,8 +20,24 @@ const userSchema = new Schema<IUser>(
         },
         password: {
             type: String,
-            required: [true, 'Password is required'],
+            required: function (this: any) { return !this.googleId && (this.provider === 'local' || !this.provider); },
             minlength: [8, 'Password must be at least 8 characters'],
+            select: false,
+        },
+        googleId: {
+            type: String,
+            unique: true,
+            sparse: true,
+            select: false,
+        },
+        provider: {
+            type: String,
+            enum: ['local', 'google', 'facebook', 'github'],
+            default: 'local',
+        },
+        providerId: {
+            type: String,
+            sparse: true,
             select: false,
         },
         role: {
@@ -83,11 +99,12 @@ const userSchema = new Schema<IUser>(
 
 userSchema.index({ role: 1 });
 userSchema.index({ active: 1 });
+userSchema.index({ provider: 1, providerId: 1 }, { sparse: true, unique: true });
 
-// Pre-save middleware to hash password
+// Pre-save middleware to hash password (skip for social-only users with no password)
 userSchema.pre('save', async function (next) {
-    // Only run if password was modified
     if (!this.isModified('password')) return next();
+    if (!this.password) return next();
 
     // Hash password
     this.password = await bcrypt.hash(this.password, config.security.bcryptSaltRounds);

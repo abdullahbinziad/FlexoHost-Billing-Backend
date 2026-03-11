@@ -57,6 +57,11 @@ interface Config {
         apiKey: string;
         baseUrl: string;
     };
+    google: {
+        clientId: string;
+        clientSecret: string;
+    };
+    frontendUrl: string;
 }
 
 const config: Config = {
@@ -119,6 +124,11 @@ const config: Config = {
         apiKey: process.env.NAMELY_API_KEY || '',
         baseUrl: process.env.NAMELY_BASE_URL || 'https://api.namely.com.bd/v1/partner-api',
     },
+    google: {
+        clientId: process.env.GOOGLE_CLIENT_ID || '',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    },
+    frontendUrl: process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:3000',
 };
 
 // Validate required environment variables in production

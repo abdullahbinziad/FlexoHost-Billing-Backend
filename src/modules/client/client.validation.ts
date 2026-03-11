@@ -111,6 +111,24 @@ export const updateClientValidation = [
         .withMessage('Avatar must be a string'),
 ];
 
+/** Post–social signup: complete profile (company, phone, address). */
+export const completeProfileValidation = [
+    body('companyName')
+        .optional()
+        .trim()
+        .isLength({ max: 100 })
+        .withMessage('Company name cannot exceed 100 characters'),
+    body('phoneNumber')
+        .optional()
+        .isMobilePhone('any')
+        .withMessage('Please provide a valid phone number'),
+    body('address.street').optional().trim(),
+    body('address.city').optional().trim(),
+    body('address.state').optional().trim(),
+    body('address.postCode').optional().trim(),
+    body('address.country').optional().trim(),
+];
+
 export const getClientByIdValidation = [
     param('id').notEmpty().withMessage('Client ID is required').isMongoId().withMessage('Invalid client ID'),
 ];
@@ -128,10 +146,7 @@ export const getAllClientsValidation = [
 
     query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
 
-    query('companyName').optional().trim(),
-
-    query('firstName').optional().trim(),
-
-    query('lastName').optional().trim(),
+    query('search').optional().trim(),
+    query('supportPin').optional().trim(),
 ];
 

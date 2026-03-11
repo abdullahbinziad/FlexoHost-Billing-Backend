@@ -1,29 +1,49 @@
-import { serviceRepository, provisioningJobRepository } from '../repositories';
+import { serviceRepository, provisioningJobRepository, hostingDetailsRepository } from '../repositories';
 import ServiceAuditLog, { ServiceAdminAction } from '../models/service-audit-log.model';
-import { ServiceStatus, ProvisioningJobStatus } from '../types/enums';
+import { ServiceStatus, ProvisioningJobStatus, ServiceType } from '../types/enums';
+import { serverService } from '../../server/server.service';
 
 export class ServiceAdminService {
+    private async callWhmForHosting(serviceId: string, action: 'suspend' | 'unsuspend' | 'terminate' | 'changePackage', plan?: string): Promise<void> {
+        const details = await hostingDetailsRepository.findByServiceId(serviceId);
+        if (!details?.serverId || !details?.accountUsername) throw new Error('Hosting service has no linked server or username');
+        const client = await serverService.getWhmClient(details.serverId.toString());
+        if (!client) throw new Error('Server WHM configuration unavailable');
+        if (action === 'suspend') await client.suspendAccount(details.accountUsername);
+        else if (action === 'unsuspend') await client.unsuspendAccount(details.accountUsername);
+        else if (action === 'terminate') await client.terminateAccount(details.accountUsername);
+        else if (action === 'changePackage' && plan) await client.changePackage(details.accountUsername, plan);
+    }
+
     async performAction(
         serviceId: string,
         action: ServiceAdminAction,
         actorUserId: string,
         actorIp?: string,
-        actorUserAgent?: string
+        actorUserAgent?: string,
+        extra?: { plan?: string }
     ) {
         const service = await serviceRepository.findById(serviceId);
         if (!service) throw new Error('Service not found');
 
         const beforeSnapshot = service.toObject();
 
-        // Perform specific action
         if (action === ServiceAdminAction.SUSPEND) {
+            if (service.type === ServiceType.HOSTING) await this.callWhmForHosting(serviceId, 'suspend');
             await serviceRepository.updateStatus(serviceId, ServiceStatus.SUSPENDED);
         } else if (action === ServiceAdminAction.UNSUSPEND) {
+            if (service.type === ServiceType.HOSTING) await this.callWhmForHosting(serviceId, 'unsuspend');
             await serviceRepository.updateStatus(serviceId, ServiceStatus.ACTIVE, {
                 suspendedAt: null as any
             });
         } else if (action === ServiceAdminAction.TERMINATE) {
+            if (service.type === ServiceType.HOSTING) await this.callWhmForHosting(serviceId, 'terminate');
             await serviceRepository.updateStatus(serviceId, ServiceStatus.TERMINATED);
+        } else if (action === ServiceAdminAction.CHANGE_PACKAGE && extra?.plan) {
+            if (service.type === ServiceType.HOSTING) {
+                await this.callWhmForHosting(serviceId, 'changePackage', extra.plan);
+                await hostingDetailsRepository.updateByServiceId(serviceId, { packageId: extra.plan });
+            }
         } else if (action === ServiceAdminAction.RETRY_PROVISION) {
             // retry-provision creates a new ProvisioningJob for the service.orderItemId (idempotent setup handles existing QUEUED jobs, but we can reset attempts or recreate)
             // If the job already exists and failed, reset attempts or create replacement

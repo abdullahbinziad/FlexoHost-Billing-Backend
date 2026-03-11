@@ -1,8 +1,14 @@
 import { Document } from 'mongoose';
 
+export type AuthProvider = 'local' | 'google' | 'facebook' | 'github';
+
 export interface IUser extends Document {
     email: string;
-    password: string;
+    password?: string;
+    /** @deprecated Use provider + providerId. Kept for backward compatibility. */
+    googleId?: string;
+    provider?: AuthProvider;
+    providerId?: string;
     role: 'admin' | 'user' | 'moderator';
     active: boolean;
     verified: boolean;

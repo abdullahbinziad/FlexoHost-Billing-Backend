@@ -20,9 +20,8 @@ class ClientController {
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 10;
         const filters = {
-            companyName: req.query.companyName as string,
-            firstName: req.query.firstName as string,
-            lastName: req.query.lastName as string,
+            search: req.query.search as string,
+            supportPin: req.query.supportPin as string,
         };
 
         const result = await clientService.getAllClients(page, limit, filters);
@@ -52,6 +51,26 @@ class ClientController {
         return ApiResponse.ok(res, 'Client profile retrieved successfully', { client });
     });
 
+    // Get current client's support PIN (generate if missing)
+    getMySupportPin = catchAsync(async (req: AuthRequest, res: Response) => {
+        const result = await clientService.getOrCreateSupportPinForUser(req.user._id.toString());
+        return ApiResponse.ok(res, 'Support PIN retrieved successfully', result);
+    });
+
+    // Regenerate current client's support PIN
+    regenerateMySupportPin = catchAsync(async (req: AuthRequest, res: Response) => {
+        const result = await clientService.regenerateSupportPinForUser(req.user._id.toString());
+        return ApiResponse.ok(res, 'Support PIN regenerated successfully', result);
+    });
+
+    // Regenerate support PIN for a specific client (admin/staff)
+    regenerateSupportPinForClient = catchAsync(async (req: AuthRequest, res: Response) => {
+        const { id } = req.params;
+        const result = await clientService.regenerateSupportPinForClient(id);
+        return ApiResponse.ok(res, 'Support PIN regenerated successfully for client', result);
+    });
+
+    // Get current client profile (for logged-in client)
     // Update client profile
     updateClient = catchAsync(async (req: AuthRequest, res: Response) => {
         const client = await clientService.updateClient(req.params.id, req.body);
@@ -65,6 +84,23 @@ class ClientController {
         const client = await clientService.updateClient(currentClient._id.toString(), req.body);
 
         return ApiResponse.ok(res, 'Profile updated successfully', { client });
+    });
+
+    // Complete profile (post–social signup: company, phone, address)
+    completeProfile = catchAsync(async (req: AuthRequest, res: Response) => {
+        const client = await clientService.completeProfile(req.user._id.toString(), req.body);
+        return ApiResponse.ok(res, 'Profile completed successfully', { client });
+    });
+
+    // Verify support PIN (admin/staff: search client by PIN)
+    verifySupportPin = catchAsync(async (req: AuthRequest, res: Response) => {
+        const { pin } = req.body as { pin: string };
+        if (!pin || typeof pin !== 'string' || pin.length !== 6) {
+            return ApiResponse.badRequest(res, 'A valid 6-digit support PIN is required');
+        }
+
+        const client = await clientService.findClientBySupportPin(pin);
+        return ApiResponse.ok(res, 'Support PIN verified successfully', { client });
     });
 
     // Delete client (soft delete)

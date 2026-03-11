@@ -57,7 +57,11 @@ const serverSchema = new Schema<IServerDocument, IServerModel>(
             type: String,
             enum: ['unrestricted', 'restricted'],
             default: 'unrestricted'
-        }
+        },
+
+        lastConnectionCheckAt: { type: Date },
+        lastConnectionStatus: { type: String, enum: ['success', 'failed'], default: null },
+        createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     },
     {
         timestamps: true,

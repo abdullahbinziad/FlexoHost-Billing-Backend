@@ -1,9 +1,13 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
+import fetch from 'node-fetch';
 import { AuthRequest } from '../../middlewares/auth';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
 import config from '../../config';
 import authService from './auth.service';
+import type { GoogleProfile } from './auth.service';
+
+const apiBase = `/api/${config.apiVersion}`;
 
 const baseCookieOptions = {
     httpOnly: true,
@@ -123,6 +127,84 @@ class AuthController {
         await authService.verifyEmail(req.params.token);
 
         return ApiResponse.ok(res, 'Email verified successfully');
+    });
+
+    /**
+     * Redirect to Google OAuth consent screen.
+     * state = optional frontend path to redirect after login (e.g. / or /admin).
+     */
+    getGoogleAuth = catchAsync(async (req: Request, res: Response) => {
+        if (!config.google.clientId) {
+            return ApiResponse.badRequest(res, 'Google sign-in is not configured');
+        }
+        const state = typeof req.query.state === 'string' ? req.query.state : '';
+        const callbackUrl = `${req.protocol}://${req.get('host')}${apiBase}/auth/google/callback`;
+        const scope = 'openid email profile';
+        const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+        url.searchParams.set('client_id', config.google.clientId);
+        url.searchParams.set('redirect_uri', callbackUrl);
+        url.searchParams.set('response_type', 'code');
+        url.searchParams.set('scope', scope);
+        if (state) url.searchParams.set('state', state);
+        url.searchParams.set('access_type', 'offline');
+        url.searchParams.set('prompt', 'consent');
+        return res.redirect(url.toString());
+    });
+
+    /**
+     * Google OAuth callback: exchange code for profile, find/create user, redirect to frontend with token.
+     */
+    getGoogleCallback = catchAsync(async (req: Request, res: Response) => {
+        if (!config.google.clientId || !config.google.clientSecret) {
+            return res.redirect(`${config.frontendUrl}/login?error=google_not_configured`);
+        }
+        const code = req.query.code as string;
+        const state = (typeof req.query.state === 'string' ? req.query.state : '').trim();
+        if (!code) {
+            return res.redirect(`${config.frontendUrl}/login?error=missing_code`);
+        }
+
+        const callbackUrl = `${req.protocol}://${req.get('host')}${apiBase}/auth/google/callback`;
+
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                code,
+                client_id: config.google.clientId,
+                client_secret: config.google.clientSecret,
+                redirect_uri: callbackUrl,
+                grant_type: 'authorization_code',
+            }),
+        });
+
+        if (!tokenRes.ok) {
+            const err = await tokenRes.text();
+            console.error('Google token error:', err);
+            return res.redirect(`${config.frontendUrl}/login?error=token_exchange_failed`);
+        }
+
+        const tokenData = (await tokenRes.json()) as { access_token?: string };
+        const accessToken = tokenData.access_token;
+        if (!accessToken) {
+            return res.redirect(`${config.frontendUrl}/login?error=no_access_token`);
+        }
+
+        const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!userInfoRes.ok) {
+            return res.redirect(`${config.frontendUrl}/login?error=userinfo_failed`);
+        }
+        const profile = (await userInfoRes.json()) as GoogleProfile;
+
+        const { user, tokens } = await authService.loginWithGoogle(profile);
+
+        this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
+
+        const redirectPath = state || '/';
+        const hash = `accessToken=${encodeURIComponent(tokens.accessToken)}&redirect=${encodeURIComponent(redirectPath)}`;
+        return res.redirect(`${config.frontendUrl}/login#${hash}`);
     });
 }
 

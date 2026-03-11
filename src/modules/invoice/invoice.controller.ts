@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
+import ApiError from '../../utils/apiError';
 import invoiceService from './invoice.service';
 import { InvoiceStatus } from './invoice.interface';
+import { getInvoicePdfBuffer } from './invoice-pdf.service';
 
 class InvoiceController {
     createInvoice = catchAsync(async (req: Request, res: Response) => {
@@ -25,13 +27,32 @@ class InvoiceController {
         return ApiResponse.ok(res, 'Invoice retrieved', invoice);
     });
 
+    /** Download invoice as PDF (same layout as portal and email attachment) */
+    getInvoicePdf = catchAsync(async (req: Request, res: Response) => {
+        const { id } = req.params;
+        const invoice = await invoiceService.getInvoiceById(id);
+        const user = (req as any).user;
+        if (user && (user.role === 'client' || user.role === 'user')) {
+            const Client = (await import('../client/client.model')).default;
+            const client = await Client.findOne({ user: user.id || user._id }).lean();
+            if (!client || client._id.toString() !== (invoice.clientId as any)?.toString()) {
+                throw new ApiError(403, 'You can only download your own invoices');
+            }
+        }
+        const pdfBuffer = await getInvoicePdfBuffer(invoice);
+        const filename = `Invoice-${invoice.invoiceNumber}.pdf`;
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(pdfBuffer);
+    });
+
     getAllInvoices = catchAsync(async (req: Request, res: Response) => {
         const filters: any = {};
         const options = {
             page: Number(req.query.page) || 1,
             limit: Number(req.query.limit) || 10,
             sortBy: (req.query.sortBy as string) || 'createdAt',
-            sortOrder: (req.query.sortOrder as string) || 'desc',
+            sortOrder: (req.query.sortOrder as 'asc' | 'desc') || 'desc',
         };
 
         if (req.query.status) {
@@ -39,7 +60,7 @@ class InvoiceController {
         }
 
         if (req.query.invoiceNumber) {
-            filters.invoiceNumber = { $regex: req.query.invoiceNumber, $options: 'i' };
+            filters.invoiceNumber = String(req.query.invoiceNumber).trim();
         }
 
         // Auto-scope for client-role users: only show their own invoices

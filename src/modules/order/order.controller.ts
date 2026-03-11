@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { orderService } from './order.service';
+import { OrderStatus } from './order.interface';
 import ApiResponse from '../../utils/apiResponse';
 import catchAsync from '../../utils/catchAsync';
 import { AuthRequest } from '../../middlewares/auth';
@@ -56,6 +57,35 @@ export class OrderController {
         }
 
         return ApiResponse.success(res, 200, 'Order retrieved successfully', order);
+    });
+
+    updateOrderStatus = catchAsync(async (req: Request, res: Response) => {
+        const orderId = req.params.id;
+        const user = (req as AuthRequest).user!;
+        if (!['admin', 'superadmin', 'staff'].includes(user.role)) {
+            return ApiResponse.error(res, 403, 'Only staff can update order status');
+        }
+        const { status } = req.body as { status: string };
+        if (!status) {
+            return ApiResponse.error(res, 400, 'Status is required');
+        }
+        const validStatuses = Object.values(OrderStatus);
+        if (!validStatuses.includes(status as OrderStatus)) {
+            return ApiResponse.error(res, 400, `Invalid status. Use one of: ${validStatuses.join(', ')}`);
+        }
+        const updated = await orderService.updateOrderStatus(orderId, status as OrderStatus);
+        return ApiResponse.success(res, 200, 'Order status updated', updated);
+    });
+
+    runModuleCreate = catchAsync(async (req: Request, res: Response) => {
+        const orderId = req.params.id;
+        const user = (req as AuthRequest).user!;
+        if (!['admin', 'superadmin', 'staff'].includes(user.role)) {
+            return ApiResponse.error(res, 403, 'Only staff can run module create');
+        }
+        const body = req.body as { items: Array<{ itemIndex: number; orderItemId?: string; serverId?: string; whmPackage?: string; username?: string; password?: string; runModuleCreate?: boolean; sendWelcomeEmail?: boolean }> };
+        const result = await orderService.runModuleCreate(orderId, body, user.id);
+        ApiResponse.success(res, 200, 'Run module create completed', result);
     });
 }
 

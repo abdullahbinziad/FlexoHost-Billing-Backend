@@ -14,7 +14,10 @@ import {
 
 const router = Router();
 
-// Public routes
+// Public routes – Google OAuth (no body/validation)
+router.get('/google', authController.getGoogleAuth);
+router.get('/google/callback', authController.getGoogleCallback);
+
 router.post('/register', validate(registerValidation), authController.register);
 router.post('/login', validate(loginValidation), authController.login);
 router.post('/refresh-token', validate(refreshTokenValidation), authController.refreshToken);
