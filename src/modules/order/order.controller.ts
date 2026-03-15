@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { orderService } from './order.service';
-import { OrderStatus } from './order.interface';
 import ApiResponse from '../../utils/apiResponse';
 import catchAsync from '../../utils/catchAsync';
 import { AuthRequest } from '../../middlewares/auth';
@@ -99,6 +98,36 @@ export class OrderController {
         const body = req.body as { items: Array<{ itemIndex: number; orderItemId?: string; serverId?: string; whmPackage?: string; username?: string; password?: string; runModuleCreate?: boolean; sendWelcomeEmail?: boolean }> };
         const result = await orderService.runModuleCreate(orderId, body, user.id);
         return ApiResponse.success(res, 200, 'Run module create completed', result);
+    });
+
+    bulkAcceptOrders = catchAsync(async (req: Request, res: Response) => {
+        const { orderIds } = req.body as { orderIds: string[] };
+        const result = await orderService.bulkAcceptOrders(orderIds);
+        return ApiResponse.success(res, 200, `Accepted ${result.updated} of ${result.total} order(s)`, result);
+    });
+
+    bulkCancelOrders = catchAsync(async (req: Request, res: Response) => {
+        const { orderIds } = req.body as { orderIds: string[] };
+        const result = await orderService.bulkCancelOrders(orderIds);
+        return ApiResponse.success(res, 200, `Cancelled ${result.updated} of ${result.total} order(s)`, result);
+    });
+
+    bulkDeleteOrders = catchAsync(async (req: Request, res: Response) => {
+        const { orderIds } = req.body as { orderIds: string[] };
+        const result = await orderService.bulkDeleteOrders(orderIds);
+        return ApiResponse.success(res, 200, `Deleted ${result.deleted} of ${result.total} order(s)`, result);
+    });
+
+    bulkSendMessage = catchAsync(async (req: Request, res: Response) => {
+        const user = (req as AuthRequest).user!;
+        const { orderIds, subject, message } = req.body as { orderIds: string[]; subject: string; message: string };
+        const result = await orderService.bulkSendMessage(
+            orderIds,
+            subject,
+            message,
+            user._id?.toString?.() ?? user.id
+        );
+        return ApiResponse.success(res, 200, `Sent to ${result.sent} of ${result.total} client(s)`, result);
     });
 }
 

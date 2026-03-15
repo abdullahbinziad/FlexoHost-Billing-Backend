@@ -9,6 +9,7 @@ import {
     updateAffiliateClientSettingsValidation,
     updateAffiliateClientStatusValidation,
     updateAffiliateDefaultSettingsValidation,
+    updateClientAffiliateReferralCodeValidation,
     updateMyAffiliateReferralCodeValidation,
 } from './affiliate.validation';
 
@@ -82,6 +83,17 @@ router.patch(
     restrictTo('superadmin', 'admin', 'staff'),
     validate(updateAffiliateClientStatusValidation),
     affiliateController.updateClientAffiliateStatus
+);
+router.patch(
+    '/admin/clients/:clientId/referral-code',
+    restrictTo('superadmin', 'admin', 'staff'),
+    validate(updateClientAffiliateReferralCodeValidation),
+    affiliateController.updateClientAffiliateReferralCode
+);
+router.post(
+    '/admin/clients/:clientId/referral-code/regenerate',
+    restrictTo('superadmin', 'admin', 'staff'),
+    affiliateController.regenerateClientAffiliateReferralCode
 );
 router.patch(
     '/admin/payout-requests/:id',

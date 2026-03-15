@@ -602,6 +602,12 @@ class OrderService {
         if (filter.clientId) query.clientId = filter.clientId;
         if (filter.userId) query.userId = filter.userId;
 
+        // Exclude soft-deleted orders
+        query.$and = query.$and || [];
+        query.$and.push({
+            $or: [{ 'meta.deleted': { $ne: true } }, { 'meta.deleted': { $exists: false } }],
+        });
+
         if (filter.status) {
             const normalizedStatus = String(filter.status).trim().toLowerCase();
             if (normalizedStatus === 'active') query.status = OrderStatus.ACTIVE;
@@ -770,6 +776,79 @@ class OrderService {
         order.status = status;
         await order.save();
         return this.getOrderWithItems(orderId);
+    }
+
+    /** Bulk update order status. Admin/staff only. */
+    async bulkUpdateOrderStatus(orderIds: string[], status: OrderStatus) {
+        const ids = orderIds.map((id) => this.ensureObjectId(id, 'Order ID'));
+        const result = await Order.updateMany({ _id: { $in: ids } }, { $set: { status } });
+        return { updated: result.modifiedCount, total: ids.length };
+    }
+
+    /** Bulk cancel orders (set status to CANCELLED). */
+    async bulkCancelOrders(orderIds: string[]) {
+        return this.bulkUpdateOrderStatus(orderIds, OrderStatus.CANCELLED);
+    }
+
+    /** Bulk accept orders (set status to ACTIVE). */
+    async bulkAcceptOrders(orderIds: string[]) {
+        return this.bulkUpdateOrderStatus(orderIds, OrderStatus.ACTIVE);
+    }
+
+    /** Bulk delete orders (soft delete: set meta.deleted). */
+    async bulkDeleteOrders(orderIds: string[]) {
+        const ids = orderIds.map((id) => this.ensureObjectId(id, 'Order ID'));
+        const result = await Order.updateMany(
+            { _id: { $in: ids } },
+            {
+                $set: {
+                    status: OrderStatus.CANCELLED,
+                    'meta.deleted': true,
+                    'meta.deletedAt': new Date(),
+                },
+            }
+        );
+        return { deleted: result.modifiedCount, total: ids.length };
+    }
+
+    /** Bulk send message (email) to clients of selected orders. One email per unique client. */
+    async bulkSendMessage(
+        orderIds: string[],
+        subject: string,
+        message: string,
+        _actorUserId: string
+    ): Promise<{ sent: number; failed: number; total: number }> {
+        const ids = orderIds.map((id) => this.ensureObjectId(id, 'Order ID'));
+        const orders = await Order.find({ _id: { $in: ids } }).select('clientId').lean();
+        const clientIds = [...new Set(orders.map((o: any) => o.clientId?.toString()).filter(Boolean))];
+        const clientObjectIds = clientIds.map((id) => new mongoose.Types.ObjectId(id));
+        const clients = await Client.find({ _id: { $in: clientObjectIds } })
+            .populate('user', 'email')
+            .lean();
+
+        let sent = 0;
+        let failed = 0;
+        const senderLabel = 'Support Team';
+
+        for (const client of clients) {
+            const c = client as any;
+            const email = c.contactEmail || c.user?.email;
+            if (!email) {
+                failed++;
+                continue;
+            }
+            const html = `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:20px;"><p>${(message || '').replace(/\n/g, '<br>')}</p><hr/><p style="color:#666;font-size:12px;">Sent by ${senderLabel}</p></body></html>`;
+            const result = await emailService.sendEmail({
+                to: email,
+                subject: subject || 'Message from Support',
+                text: message,
+                html,
+            });
+            if (result.success) sent++;
+            else failed++;
+        }
+
+        return { sent, failed, total: clients.length };
     }
 
     // ✅ order + items (single query using $lookup)

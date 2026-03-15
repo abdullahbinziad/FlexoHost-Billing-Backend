@@ -1,12 +1,27 @@
 import { Router, Request, Response } from 'express';
+import { protect, restrictTo } from '../../middlewares/auth';
+import { validate } from '../../middlewares/validate';
 import { previewTemplate } from './preview';
 import { validateProps } from './templates/schemas';
 import { TEMPLATE_KEYS } from './templates/registry';
 import { hasTemplate } from './templates/registry';
 import ApiResponse from '../../utils/apiResponse';
 import type { TemplateKey } from './templates/types';
+import emailController from './email.controller';
+import { sendBulkEmailValidation } from './email.validation';
 
 const router = Router();
+
+/**
+ * POST /email/send-bulk - Send email to multiple clients (admin/staff only)
+ */
+router.post(
+    '/send-bulk',
+    protect,
+    restrictTo('superadmin', 'admin', 'staff'),
+    validate(sendBulkEmailValidation),
+    emailController.sendBulk
+);
 
 /**
  * GET /email/templates - List all template keys

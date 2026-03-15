@@ -58,3 +58,12 @@ export const updateMyAffiliateReferralCodeValidation = [
         .matches(/^[A-Za-z0-9]{4,20}$/)
         .withMessage('Referral code must be 4-20 letters or numbers'),
 ];
+
+export const updateClientAffiliateReferralCodeValidation = [
+    param('clientId').isMongoId().withMessage('Invalid client id'),
+    body('referralCode')
+        .isString()
+        .trim()
+        .matches(/^[A-Za-z0-9]{4,20}$/)
+        .withMessage('Referral code must be 4-20 letters or numbers'),
+];

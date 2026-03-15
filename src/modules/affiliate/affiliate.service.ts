@@ -796,6 +796,87 @@ class AffiliateService {
         };
     }
 
+    async updateClientAffiliateReferralCode(clientId: string, payload: { referralCode: string }, actorUserId: string) {
+        const client = await Client.findById(clientId).exec();
+        if (!client) {
+            throw new ApiError(404, 'Client not found');
+        }
+
+        const profile = await AffiliateProfile.findOne({ clientId: client._id }).exec();
+        if (!profile) {
+            throw new ApiError(404, 'Affiliate profile not found for this client');
+        }
+
+        const referralCode = normalizeCode(payload.referralCode);
+
+        if (!/^[A-Z0-9]{4,20}$/.test(referralCode)) {
+            throw new ApiError(400, 'Referral code must be 4-20 letters or numbers');
+        }
+
+        const existing = await AffiliateProfile.findOne({
+            referralCode,
+            _id: { $ne: profile._id },
+        })
+            .select('_id')
+            .lean();
+
+        if (existing) {
+            throw new ApiError(400, 'Referral code is already in use');
+        }
+
+        profile.referralCode = referralCode;
+        await profile.save();
+
+        auditLogSafe({
+            message: `Admin updated affiliate referral code for client ${client.clientId}`,
+            type: 'affiliate_settings_updated' as any,
+            category: 'affiliate' as any,
+            actorType: 'user',
+            actorId: actorUserId as any,
+            source: 'manual',
+            status: 'success',
+            clientId: client._id as any,
+            meta: { referralCode } as Record<string, unknown>,
+        });
+
+        return {
+            profile: profile.toObject(),
+            referralLink: this.buildReferralLink(profile.referralCode),
+        };
+    }
+
+    async regenerateClientAffiliateReferralCode(clientId: string, actorUserId: string) {
+        const client = await Client.findById(clientId).exec();
+        if (!client) {
+            throw new ApiError(404, 'Client not found');
+        }
+
+        const profile = await AffiliateProfile.findOne({ clientId: client._id }).exec();
+        if (!profile) {
+            throw new ApiError(404, 'Affiliate profile not found for this client');
+        }
+
+        profile.referralCode = await this.generateUniqueReferralCode(client);
+        await profile.save();
+
+        auditLogSafe({
+            message: `Admin regenerated affiliate referral code for client ${client.clientId}`,
+            type: 'affiliate_settings_updated' as any,
+            category: 'affiliate' as any,
+            actorType: 'user',
+            actorId: actorUserId as any,
+            source: 'manual',
+            status: 'success',
+            clientId: client._id as any,
+            meta: { referralCode: profile.referralCode } as Record<string, unknown>,
+        });
+
+        return {
+            profile: profile.toObject(),
+            referralLink: this.buildReferralLink(profile.referralCode),
+        };
+    }
+
     async redeemToCreditForUser(userId: string, payload: { amount: number; currency?: string }) {
         await this.approveEligibleCommissions();
 

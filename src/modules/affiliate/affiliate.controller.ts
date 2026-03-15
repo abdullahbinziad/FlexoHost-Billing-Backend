@@ -81,6 +81,23 @@ class AffiliateController {
         );
         return ApiResponse.ok(res, 'Affiliate payout request updated successfully', result);
     });
+
+    updateClientAffiliateReferralCode = catchAsync(async (req: AuthRequest, res: Response) => {
+        const result = await affiliateService.updateClientAffiliateReferralCode(
+            req.params.clientId,
+            req.body,
+            req.user._id.toString()
+        );
+        return ApiResponse.ok(res, 'Client affiliate referral code updated successfully', result);
+    });
+
+    regenerateClientAffiliateReferralCode = catchAsync(async (req: AuthRequest, res: Response) => {
+        const result = await affiliateService.regenerateClientAffiliateReferralCode(
+            req.params.clientId,
+            req.user._id.toString()
+        );
+        return ApiResponse.ok(res, 'Client affiliate referral code regenerated successfully', result);
+    });
 }
 
 export const affiliateController = new AffiliateController();
