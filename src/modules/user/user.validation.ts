@@ -132,8 +132,13 @@ export const adminUpdateUserValidation = [
 
     body('role')
         .optional()
-        .isIn(['admin', 'user', 'moderator'])
+        .isIn(['admin', 'superadmin', 'staff', 'user', 'moderator'])
         .withMessage('Invalid role'),
+
+    body('roleId')
+        .optional()
+        .isMongoId()
+        .withMessage('Invalid role ID'),
 
     body('active')
         .optional()
@@ -243,6 +248,22 @@ export const getAllUsersValidation = [
         .optional()
         .isIn(['admin', 'user', 'moderator'])
         .withMessage('Invalid role'),
+];
+
+export const bulkAssignRoleValidation = [
+    body('userIds')
+        .isArray()
+        .withMessage('userIds must be an array')
+        .notEmpty()
+        .withMessage('userIds is required'),
+    body('userIds.*')
+        .isMongoId()
+        .withMessage('Invalid user ID'),
+    body('roleId')
+        .notEmpty()
+        .withMessage('roleId is required')
+        .isMongoId()
+        .withMessage('Invalid role ID'),
 ];
 
 export const refreshTokenValidation = [

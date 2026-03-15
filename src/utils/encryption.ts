@@ -8,7 +8,10 @@ const KEY_LENGTH = 32;
 function getEncryptionKey(): Buffer {
     const secret = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'fallback-do-not-use-in-production';
     if (secret === 'fallback-do-not-use-in-production' && process.env.NODE_ENV === 'production') {
-        console.warn('Encryption: set ENCRYPTION_KEY or JWT_SECRET in production');
+        throw new Error('ENCRYPTION_KEY or JWT_SECRET must be set in production');
+    }
+    if (secret === 'fallback-do-not-use-in-production') {
+        console.warn('Encryption: set ENCRYPTION_KEY or JWT_SECRET for production');
     }
     return crypto.scryptSync(secret, 'whm-token-salt', KEY_LENGTH);
 }

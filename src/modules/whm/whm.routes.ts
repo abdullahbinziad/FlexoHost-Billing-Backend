@@ -4,7 +4,6 @@ import { protect, restrictTo } from '../../middlewares/auth';
 
 const router = express.Router();
 
-// All routes are protected and restricted to admin
 router.use(protect, restrictTo('admin'));
 
 router.post('/create', controller.createCpanel);

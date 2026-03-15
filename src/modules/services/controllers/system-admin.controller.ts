@@ -3,9 +3,12 @@ import ProvisioningJob from '../models/provisioning-job.model';
 import ServiceActionJob from '../models/service-action-job.model';
 import provisioningWorker from '../jobs/provisioning.worker';
 import serviceActionWorker from '../jobs/service-action.worker';
-import serviceRenewalScheduler from '../jobs/service-renewal.scheduler';
-import invoiceReminderScheduler from '../jobs/invoice-reminder.scheduler';
-import serviceTerminationScheduler from '../jobs/service-termination.scheduler';
+import { automationTasksService } from '../jobs/automation-tasks.service';
+import {
+    AutomationTaskKey,
+    getAutomationTaskRegistryItem,
+} from '../jobs/automation-task.registry';
+import { automationRunService } from '../services/automation-run.service';
 
 export const systemAdminController = {
     // ---- Jobs Management ----
@@ -96,7 +99,7 @@ export const systemAdminController = {
 
     async triggerRenewals(_req: Request, res: Response) {
         try {
-            const result = await serviceRenewalScheduler.processRenewals();
+            const result = await automationTasksService.runRenewals('manual');
             return res.status(200).json({ success: true, message: 'Renewal scheduler forced execution complete', data: result });
         } catch (err: any) {
             return res.status(500).json({ success: false, message: err.message });
@@ -105,8 +108,8 @@ export const systemAdminController = {
 
     async triggerOverdueSuspensions(_req: Request, res: Response) {
         try {
-            const suspendedCount = await serviceRenewalScheduler.processOverdueEnforcements();
-            return res.status(200).json({ success: true, message: 'Overdue suspension forced execution complete', data: { suspendedCount } });
+            const result = await automationTasksService.runOverdueSuspensions('manual');
+            return res.status(200).json({ success: true, message: 'Overdue suspension forced execution complete', data: result });
         } catch (err: any) {
             return res.status(500).json({ success: false, message: err.message });
         }
@@ -114,8 +117,8 @@ export const systemAdminController = {
 
     async triggerInvoiceReminders(_req: Request, res: Response) {
         try {
-            const results = await invoiceReminderScheduler.processReminders();
-            return res.status(200).json({ success: true, message: 'Invoice reminder forced execution complete', data: results });
+            const result = await automationTasksService.runInvoiceReminders('manual');
+            return res.status(200).json({ success: true, message: 'Invoice reminder forced execution complete', data: result });
         } catch (err: any) {
             return res.status(500).json({ success: false, message: err.message });
         }
@@ -123,8 +126,18 @@ export const systemAdminController = {
 
     async triggerTerminations(_req: Request, res: Response) {
         try {
-            const terminatedCount = await serviceTerminationScheduler.processTerminations();
-            return res.status(200).json({ success: true, message: 'Service termination forced execution complete', data: { terminatedCount } });
+            const result = await automationTasksService.runTerminations('manual');
+            return res.status(200).json({ success: true, message: 'Service termination forced execution complete', data: result });
+        } catch (err: any) {
+            return res.status(500).json({ success: false, message: err.message });
+        }
+    },
+
+    /** Refresh resource usage (disk/bandwidth) from WHM for all hosting services. Call from cron every 15–30 min. */
+    async triggerUsageSync(_req: Request, res: Response) {
+        try {
+            const result = await automationTasksService.runUsageSync('manual');
+            return res.status(200).json({ success: true, message: 'Usage sync complete', data: result });
         } catch (err: any) {
             return res.status(500).json({ success: false, message: err.message });
         }
@@ -132,8 +145,8 @@ export const systemAdminController = {
 
     async triggerProvisioningWorker(_req: Request, res: Response) {
         try {
-            await provisioningWorker.processQueuedJobs();
-            return res.status(200).json({ success: true, message: 'Provisioning Worker forced execution complete' });
+            const result = await automationTasksService.runProvisioningWorker('manual');
+            return res.status(200).json({ success: true, message: 'Provisioning Worker forced execution complete', data: result });
         } catch (err: any) {
             return res.status(500).json({ success: false, message: err.message });
         }
@@ -141,8 +154,66 @@ export const systemAdminController = {
 
     async triggerActionWorker(_req: Request, res: Response) {
         try {
-            await serviceActionWorker.processQueuedJobs();
-            return res.status(200).json({ success: true, message: 'Service Action Worker forced execution complete' });
+            const result = await automationTasksService.runActionWorker('manual');
+            return res.status(200).json({ success: true, message: 'Service Action Worker forced execution complete', data: result });
+        } catch (err: any) {
+            return res.status(500).json({ success: false, message: err.message });
+        }
+    },
+
+    async triggerDomainSync(_req: Request, res: Response) {
+        try {
+            const result = await automationTasksService.runDomainSync('manual');
+            return res.status(200).json({ success: true, message: 'Domain sync forced execution complete', data: result });
+        } catch (err: any) {
+            return res.status(500).json({ success: false, message: err.message });
+        }
+    },
+
+    async triggerAutomationTask(req: Request, res: Response) {
+        try {
+            const taskKey = req.params.taskKey as AutomationTaskKey;
+            if (!getAutomationTaskRegistryItem(taskKey)) {
+                return res.status(400).json({ success: false, message: 'Invalid automation task key' });
+            }
+
+            const result = await automationTasksService.runTaskByKey(taskKey, 'manual');
+            return res.status(200).json({
+                success: true,
+                message: `Automation task ${taskKey} executed successfully`,
+                data: result,
+            });
+        } catch (err: any) {
+            return res.status(500).json({ success: false, message: err.message });
+        }
+    },
+
+    async getAutomationRuns(req: Request, res: Response) {
+        try {
+            const page = parseInt(req.query.page as string, 10) || 1;
+            const limit = parseInt(req.query.limit as string, 10) || 20;
+            const taskKey = req.query.taskKey as string | undefined;
+            const status = req.query.status as 'running' | 'success' | 'failure' | undefined;
+            const source = req.query.source as 'cron' | 'manual' | undefined;
+
+            const result = await automationRunService.listRuns({
+                page,
+                limit,
+                taskKey,
+                status,
+                source,
+            });
+
+            return res.status(200).json({ success: true, data: result });
+        } catch (err: any) {
+            return res.status(500).json({ success: false, message: err.message });
+        }
+    },
+
+    async getAutomationSummary(_req: Request, res: Response) {
+        try {
+            const result = await automationRunService.getSummary();
+            return res.status(200).json({ success: true, data: result });
         } catch (err: any) {
             return res.status(500).json({ success: false, message: err.message });
         }

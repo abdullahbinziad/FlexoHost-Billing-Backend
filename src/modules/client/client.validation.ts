@@ -133,6 +133,26 @@ export const getClientByIdValidation = [
     param('id').notEmpty().withMessage('Client ID is required').isMongoId().withMessage('Invalid client ID'),
 ];
 
+export const sendClientEmailValidation = [
+    ...getClientByIdValidation,
+    body('subject')
+        .trim()
+        .notEmpty()
+        .withMessage('Subject is required')
+        .isLength({ max: 200 })
+        .withMessage('Subject cannot exceed 200 characters'),
+    body('message')
+        .trim()
+        .notEmpty()
+        .withMessage('Message is required')
+        .isLength({ max: 10000 })
+        .withMessage('Message cannot exceed 10000 characters'),
+];
+
+export const actingAsClientIdValidation = [
+    param('clientId').notEmpty().withMessage('Client ID is required').isMongoId().withMessage('Invalid client ID'),
+];
+
 export const getClientByClientIdValidation = [
     param('clientId')
         .notEmpty()
@@ -149,4 +169,33 @@ export const getAllClientsValidation = [
     query('search').optional().trim(),
     query('supportPin').optional().trim(),
 ];
+
+// Grant access: path params for routes like /:clientId/access-grants/:grantId (reuse clientId param validation)
+const GRANT_SCOPES = ['all', 'service_type', 'specific_services'];
+const GRANT_PERMISSIONS = ['view', 'manage'];
+const GRANT_SERVICE_TYPES = ['HOSTING', 'VPS', 'DOMAIN', 'EMAIL', 'LICENSE'];
+
+export const accessGrantPathValidation = [
+    ...actingAsClientIdValidation,
+    param('grantId').notEmpty().withMessage('Grant ID is required').isMongoId().withMessage('Invalid grant ID'),
+];
+
+export const updateGrantValidation = [
+    ...accessGrantPathValidation,
+    body('scope').optional().isIn(GRANT_SCOPES).withMessage(`scope must be one of: ${GRANT_SCOPES.join(', ')}`),
+    body('serviceType').optional().isIn(GRANT_SERVICE_TYPES).withMessage(`serviceType must be one of: ${GRANT_SERVICE_TYPES.join(', ')}`),
+    body('serviceIds').optional().isArray().withMessage('serviceIds must be an array'),
+    body('serviceIds.*').optional().isMongoId().withMessage('Each serviceId must be a valid Mongo ID'),
+    body('permissions').optional().isArray().withMessage('permissions must be an array'),
+    body('permissions.*').optional().isIn(GRANT_PERMISSIONS).withMessage(`Each permission must be one of: ${GRANT_PERMISSIONS.join(', ')}`),
+    body('expiresAt')
+        .optional({ values: 'null' })
+        .custom((v) => v === null || v === undefined || v === '' || !isNaN(Date.parse(v)))
+        .withMessage('expiresAt must be a valid date or null'),
+    body('allowInvoices').optional().isBoolean().withMessage('allowInvoices must be a boolean'),
+    body('allowTickets').optional().isBoolean().withMessage('allowTickets must be a boolean'),
+    body('allowOrders').optional().isBoolean().withMessage('allowOrders must be a boolean'),
+];
+
+export const revokeGrantValidation = accessGrantPathValidation;
 

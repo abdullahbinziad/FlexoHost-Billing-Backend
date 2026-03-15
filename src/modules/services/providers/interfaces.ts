@@ -1,22 +1,3 @@
-export interface DomainRegistrationRequest {
-    domainName: string;
-    periodYears: number;
-    nameservers: string[];
-    contacts: any;
-}
-
-export interface DomainTransferRequest {
-    domainName: string;
-    eppCode: string;
-}
-
-export interface IDomainRegistrarProvider {
-    registerDomain(req: DomainRegistrationRequest): Promise<{ remoteId: string }>;
-    requestTransfer(req: DomainTransferRequest): Promise<{ remoteId: string }>;
-    getTransferStatus(domainName: string): Promise<{ status: 'PENDING' | 'COMPLETED' | 'REJECTED' | 'CANCELLED'; reason?: string; expiresAt?: Date; eppStatusCodes?: string[] }>;
-    getDomainInfo(domainName: string): Promise<{ status: string; expiresAt: Date; eppStatusCodes: string[] }>;
-}
-
 export interface HostingAccountRequest {
     domain: string;
     packageId: string;

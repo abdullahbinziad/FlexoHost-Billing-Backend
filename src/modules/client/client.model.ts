@@ -99,6 +99,17 @@ const clientSchema = new Schema<IClient>(
             type: Date,
             default: null,
         },
+        accountCreditBalance: {
+            type: Number,
+            min: 0,
+            default: 0,
+        },
+        accountCreditCurrency: {
+            type: String,
+            trim: true,
+            uppercase: true,
+            default: 'BDT',
+        },
     },
     {
         timestamps: true,

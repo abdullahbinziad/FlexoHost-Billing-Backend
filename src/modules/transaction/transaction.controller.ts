@@ -3,7 +3,7 @@ import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
 import PaymentTransaction from './transaction.model';
 import { getPagination, buildSort } from '../../utils/pagination';
-import Client from '../client/client.model';
+import { getEffectiveClientId } from '../client-access-grant/effective-client';
 import { AuthRequest } from '../../middlewares/auth';
 
 class TransactionController {
@@ -26,24 +26,16 @@ class TransactionController {
             filters.gateway = gateway;
         }
 
-        // If admin/staff, allow explicit clientId filter
-        // If client/user, always scope to their own client record
-        if (req.user && (req.user.role === 'admin' || req.user.role === 'staff')) {
+        // Admin/staff/superadmin: allow explicit clientId filter or see all
+        // Client/user: use effective client (own or acting-as with orders area)
+        if (req.user && ['admin', 'staff', 'superadmin'].includes(req.user.role)) {
             if (clientId) {
                 filters.clientId = clientId;
             }
         } else if (req.user) {
-            const client = await Client.findOne({ user: req.user._id }).select('_id');
-            if (!client) {
-                return ApiResponse.ok(res, 'Transactions retrieved', {
-                    results: [],
-                    page: safePage,
-                    limit: safeLimit,
-                    totalPages: 1,
-                    totalResults: 0,
-                });
-            }
-            filters.clientId = client._id;
+            const effectiveClientId = await getEffectiveClientId(req, res, 'orders');
+            if (!effectiveClientId) return;
+            filters.clientId = effectiveClientId;
         }
 
         const sort = buildSort('createdAt', 'desc');

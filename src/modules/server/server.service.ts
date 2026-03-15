@@ -62,6 +62,7 @@ class ServerService {
             useSSL: server.module.isSecure !== false,
             username: server.module.username,
             apiToken: server.module.apiToken,
+            rejectUnauthorized: server.module.rejectUnauthorized !== false,
         });
     }
 
@@ -195,6 +196,31 @@ class ServerService {
         } catch (err: any) {
             return { count: 0, error: err?.message || 'Failed to list accounts' };
         }
+    }
+
+    /**
+     * Sync account count from WHM for a cPanel server. Updates server.accountCount and accountCountSyncedAt; returns count and max for display.
+     */
+    async syncAccountCount(serverId: string): Promise<{ count: number; maxAccounts: number; syncedAt: string } | { error: string }> {
+        const server = await Server.findById(serverId).lean();
+        if (!server) {
+            return { error: 'Server not found' };
+        }
+        const moduleType = (server as any).module?.type;
+        if (moduleType !== 'cpanel') {
+            return { error: 'Account sync is only available for cPanel servers' };
+        }
+        const { count, error } = await this.getWhmAccountCount(serverId);
+        if (error) {
+            return { error };
+        }
+        const now = new Date();
+        await Server.findByIdAndUpdate(serverId, {
+            accountCount: count,
+            accountCountSyncedAt: now,
+        });
+        const maxAccounts = (server as any).maxAccounts ?? 200;
+        return { count, maxAccounts, syncedAt: now.toISOString() };
     }
 }
 

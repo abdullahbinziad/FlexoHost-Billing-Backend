@@ -24,19 +24,33 @@ const storage = multer.diskStorage({
     },
 });
 
-// File filter
+// Strict allowlist: extension -> expected MIME types (client mimetype can be spoofed; we validate extension strictly)
+const ALLOWED_EXT_MIME: Record<string, string[]> = {
+    '.jpg': ['image/jpeg', 'image/jpg'],
+    '.jpeg': ['image/jpeg', 'image/jpg'],
+    '.png': ['image/png'],
+    '.gif': ['image/gif'],
+    '.webp': ['image/webp'],
+    '.pdf': ['application/pdf'],
+    '.doc': ['application/msword'],
+    '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    '.txt': ['text/plain'],
+};
+
+// File filter – validate extension strictly and require matching MIME
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     void req;
-    // Allowed file types
-    const allowedTypes = /jpeg|jpg|png|gif|webp|pdf|doc|docx|txt/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-
-    if (mimetype && extname) {
-        return cb(null, true);
-    } else {
-        cb(new Error('Invalid file type. Only JPEG, PNG, GIF, PDF, DOC, DOCX, and TXT files are allowed.'));
+    const ext = path.extname(file.originalname).toLowerCase().replace(/\.+$/, '') || '';
+    const extWithDot = ext.startsWith('.') ? ext : '.' + ext;
+    const allowed = ALLOWED_EXT_MIME[extWithDot];
+    if (!allowed) {
+        return cb(new Error('Invalid file type. Only JPEG, PNG, GIF, WebP, PDF, DOC, DOCX, and TXT are allowed.'));
     }
+    const mimetype = (file.mimetype || '').toLowerCase().split(';')[0].trim();
+    if (!allowed.includes(mimetype)) {
+        return cb(new Error(`Invalid file: extension ${extWithDot} does not match MIME type ${mimetype}.`));
+    }
+    cb(null, true);
 };
 
 // Create multer upload instance

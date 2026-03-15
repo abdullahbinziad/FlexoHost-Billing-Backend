@@ -23,6 +23,14 @@ export class ServiceRepository {
         return await Service.findOne({ orderItemId }).exec();
     }
 
+    async updateById(id: string, data: Partial<IService>): Promise<IService | null> {
+        return await Service.findByIdAndUpdate(
+            id,
+            { $set: data },
+            { new: true, runValidators: true }
+        ).exec();
+    }
+
     async listByClientId(
         clientId: string,
         options: {
@@ -32,12 +40,22 @@ export class ServiceRepository {
             limit?: number;
             sortBy?: string;
             sortOrder?: 'asc' | 'desc';
+            /** Grant filter: only these service IDs (grantee with specific_services). */
+            serviceIds?: string[];
+            /** Grant filter: only these service types (grantee with service_type). */
+            types?: string[];
         } = {}
     ): Promise<{ services: IService[]; total: number; pages: number }> {
         const query: FilterQuery<IService> = { clientId };
 
         if (options.type) query.type = options.type;
         if (options.status) query.status = options.status;
+        if (options.serviceIds?.length || options.types?.length) {
+            const or: FilterQuery<IService>[] = [];
+            if (options.serviceIds?.length) or.push({ _id: { $in: options.serviceIds } } as FilterQuery<IService>);
+            if (options.types?.length) or.push({ type: { $in: options.types } } as FilterQuery<IService>);
+            (query as any).$or = or;
+        }
 
         const page = options.page || 1;
         const limit = options.limit || 10;

@@ -1,4 +1,4 @@
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type AuthProvider = 'local' | 'google' | 'facebook' | 'github';
 
@@ -9,7 +9,8 @@ export interface IUser extends Document {
     googleId?: string;
     provider?: AuthProvider;
     providerId?: string;
-    role: 'admin' | 'user' | 'moderator';
+    role: 'superadmin' | 'admin' | 'staff' | 'client' | 'user' | 'moderator';
+    roleId?: Types.ObjectId;
     active: boolean;
     verified: boolean;
     verificationToken?: string;
@@ -38,7 +39,7 @@ export interface IUserCreate {
     lastName: string;
     email: string;
     password: string;
-    role?: 'admin' | 'user' | 'moderator';
+    role?: 'superadmin' | 'admin' | 'staff' | 'client' | 'user' | 'moderator';
     phone?: string;
     companyName?: string;
     address?: {

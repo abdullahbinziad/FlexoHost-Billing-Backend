@@ -13,9 +13,12 @@ export const DOMAIN_CONFIG = {
         'com': 'Dynadot',
         'net': 'Dynadot',
         'org': 'Dynadot',
-        'io': 'Namely', // Example: Namely might be cheaper or better for .io
-        'bd': 'Namely', // Example: Specific local registrar for .bd
-        'xyz': 'ConnectReseller', // Example
-        // Add more mappings here
+        'io': 'Dynadot',
+        'bd': 'Dynadot',
+        'xyz': 'Dynadot',
+        // Future providers can be mapped here once their IRegistrarProvider implementation is complete.
+        // Example:
+        // 'io': 'Namely',
+        // 'xyz': 'ConnectReseller',
     } as Record<string, string>,
 };

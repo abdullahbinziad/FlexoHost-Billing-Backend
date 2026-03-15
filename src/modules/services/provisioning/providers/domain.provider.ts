@@ -1,7 +1,8 @@
 import { ServiceType } from '../../types/enums';
 import type { IProvisioningProvider, ProvisioningContext, ProvisioningResult } from '../types';
-import { domainRegistrarProvider } from '../../providers/stubs';
 import { DomainOperationType, DomainTransferStatus } from '../../models/domain-details.model';
+import { DOMAIN_CONFIG } from '../../../domain/domain.config';
+import { domainRegistrarService } from '../../../domain/registrar/domain-registrar.service';
 
 const STUB_CONTACT = {
     firstName: 'Stub',
@@ -25,28 +26,42 @@ export class DomainProvisioningProvider implements IProvisioningProvider {
         const isTransfer = orderItem?.actionType === 'TRANSFER';
 
         try {
+            const nameservers = Array.isArray(config.nameservers) && config.nameservers.length >= 2
+                ? config.nameservers
+                : ['ns1.dynadot.com', 'ns2.dynadot.com'];
+            const contacts = config.contacts && typeof config.contacts === 'object' ? config.contacts : undefined;
+
             let remoteId: string;
+            let registrarName: string;
             if (isTransfer) {
-                const res = await domainRegistrarProvider.requestTransfer({
-                    domainName,
-                    eppCode: config.eppCode || '',
-                });
+                const res = await domainRegistrarService.transferDomain({
+                    domain: domainName,
+                    authCode: config.eppCode || '',
+                    currency: 'USD',
+                }, config.registrar);
                 remoteId = res.remoteId;
+                registrarName = res.registrar;
             } else {
-                const res = await domainRegistrarProvider.registerDomain({
-                    domainName,
-                    periodYears: config.years ?? 1,
-                    nameservers: ['ns1.stub.com', 'ns2.stub.com'],
-                    contacts: {},
-                });
+                const res = await domainRegistrarService.registerDomain({
+                    domain: domainName,
+                    years: config.years ?? config.period ?? 1,
+                    currency: 'USD',
+                }, config.registrar);
                 remoteId = res.remoteId;
+                registrarName = res.registrar;
+                if (nameservers.length >= 2) {
+                    await domainRegistrarService.saveNameservers(domainName, nameservers, registrarName);
+                }
             }
+
+            const tld = (config.tld || '.com').toString().toLowerCase().replace(/^\./, '') || 'com';
+            const sld = domainName.replace(new RegExp(`\\.${tld}$`, 'i'), '') || domainName.split('.')[0] || 'unknown';
 
             const details: Record<string, unknown> = {
                 domainName,
-                sld: 'unknown',
-                tld: (config.tld || '.com').toString().toLowerCase().replace(/^\./, '') || 'com',
-                registrar: 'StubRegistrar',
+                sld,
+                tld,
+                registrar: registrarName || DOMAIN_CONFIG.defaultRegistrar,
                 operationType: isTransfer ? DomainOperationType.TRANSFER : DomainOperationType.REGISTER,
                 transferStatus: isTransfer ? DomainTransferStatus.PENDING : undefined,
                 eppCodeEncrypted: isTransfer && config.eppCode
@@ -58,8 +73,8 @@ export class DomainProvisioningProvider implements IProvisioningProvider {
                     tech: STUB_CONTACT,
                     billing: STUB_CONTACT,
                 },
-                contactsSameAsRegistrant: true,
-                nameservers: ['ns1.stub.com', 'ns2.stub.com'],
+                contactsSameAsRegistrant: !contacts,
+                nameservers,
                 registrarLock: true,
                 whoisPrivacy: false,
                 dnssecEnabled: false,
@@ -71,7 +86,7 @@ export class DomainProvisioningProvider implements IProvisioningProvider {
             return {
                 success: true,
                 remoteId,
-                providerName: 'StubRegistrar',
+                providerName: registrarName || DOMAIN_CONFIG.defaultRegistrar,
                 details,
             };
         } catch (err: any) {

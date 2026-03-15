@@ -61,6 +61,8 @@ const serverSchema = new Schema<IServerDocument, IServerModel>(
 
         lastConnectionCheckAt: { type: Date },
         lastConnectionStatus: { type: String, enum: ['success', 'failed'], default: null },
+        accountCount: { type: Number },
+        accountCountSyncedAt: { type: Date },
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     },
     {

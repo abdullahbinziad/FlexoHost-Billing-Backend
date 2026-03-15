@@ -32,7 +32,7 @@ export const TRIGGER_TO_TEMPLATE: Record<TriggerEvent, TemplateKey> = {
     'payment.success': 'billing.payment_success',
     'payment.failed': 'billing.payment_failed',
     'invoice.overdue': 'billing.overdue_reminder',
-    'hosting.provisioned': 'service.hosting_ready',
+    'hosting.provisioned': 'service.hosting_account_created',
     'account.suspension_warning': 'service.suspension_warning',
     'account.suspended': 'service.suspended',
     'domain.registered': 'domain.registration_confirmation',

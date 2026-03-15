@@ -74,7 +74,7 @@ export interface IEmailOptions {
 export async function sendEmail(options: IEmailOptions): Promise<SendResult> {
     if (!isTransportConfigured()) {
         logger.warn(`[Email-Stub] to ${options.to} | Subject: ${options.subject}`);
-        return { success: true };
+        return { success: false, error: 'SMTP not configured. Set SMTP_USER and SMTP_PASSWORD in .env.' };
     }
 
     return sendViaTransport({
@@ -120,7 +120,9 @@ export async function sendVerificationEmail(
 }
 
 /**
- * Send hosting account ready (new cPanel account details) after provisioning.
+ * Send hosting account ready (service.hosting_ready template, no password).
+ * For automatic post-provisioning email with login details, use
+ * sendHostingAccountCreatedEmail(serviceId) from the services module instead.
  */
 export async function sendHostingAccountReadyEmail(
     to: string,
@@ -216,6 +218,9 @@ const LEGACY_TEMPLATE_MAP: Record<string, TemplateKey> = {
     'invoice-payment-confirmation': 'billing.payment_success',
     'invoice-modified': 'billing.invoice_created',
     'support.ticket_opened': 'support.ticket_opened',
+    'domain.renewal_reminder': 'domain.renewal_reminder',
+    'domain.expired': 'domain.expired_notice',
+    'domain.expired_notice': 'domain.expired_notice',
 };
 
 export async function sendEmailByTemplate(
@@ -312,6 +317,25 @@ export async function sendEmailByTemplate(
             suspensionDate,
             paymentUrl: `${origin}/invoices/${invoice._id}/pay`,
             billingUrl: `${origin}/billing`,
+        };
+    } else if (templateKey === 'domain.renewal_reminder') {
+        props = {
+            customerName: context.customerName || 'Customer',
+            domain: context.domain || 'domain.com',
+            expirationDate: context.expirationDate || 'N/A',
+            daysRemaining: context.daysRemaining ?? 0,
+            renewalPrice: String(context.renewalPrice ?? '0'),
+            currency: context.currency || 'USD',
+            autoRenewEnabled: context.autoRenewEnabled ?? false,
+            renewUrl: context.renewUrl || `${origin}/domains`,
+        };
+    } else if (templateKey === 'domain.expired_notice') {
+        props = {
+            customerName: context.customerName || 'Customer',
+            domain: context.domain || 'domain.com',
+            expirationDate: context.expirationDate || 'N/A',
+            statusLabel: context.statusLabel || 'Expired',
+            restoreUrl: context.restoreUrl || `${origin}/domains`,
         };
     } else if (templateKey === 'support.ticket_opened') {
         const apiBase = process.env.API_URL ? new URL(process.env.API_URL).origin : 'http://localhost:5001';

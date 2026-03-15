@@ -7,9 +7,20 @@ import {
     updateClientValidation,
     completeProfileValidation,
     getClientByIdValidation,
+    sendClientEmailValidation,
     getClientByClientIdValidation,
     getAllClientsValidation,
+    actingAsClientIdValidation,
+    updateGrantValidation,
+    revokeGrantValidation,
 } from './client.validation';
+import {
+    createGrant,
+    listGrantsForClient,
+    updateGrant,
+    revokeGrant,
+    listGrantsSharedWithMe,
+} from '../client-access-grant/client-access-grant.controller';
 
 const router = Router();
 
@@ -18,6 +29,17 @@ router.post('/register', validate(registerClientValidation), clientController.re
 
 // Protected routes – client and user (social signup) roles
 router.use(protect);
+
+// Grant Access: "Shared with me" (must be before /:id to avoid matching "me")
+router.get('/me/access-grants', restrictTo('client', 'user', 'admin', 'staff', 'superadmin'), listGrantsSharedWithMe);
+
+// Acting as another client (grantee): get that client's profile. Must have grant access. Also used to validate rehydrated acting-as.
+router.get(
+    '/acting-as/:clientId',
+    restrictTo('client', 'user', 'admin', 'staff', 'superadmin'),
+    validate(actingAsClientIdValidation),
+    clientController.getClientProfileActingAs
+);
 
 // Client's own profile – any authenticated user can access their own (client, user, admin, staff, superadmin)
 router.get('/me', restrictTo('client', 'user', 'admin', 'staff', 'superadmin'), clientController.getMyProfile);
@@ -40,6 +62,13 @@ router.post(
     restrictTo('superadmin', 'admin', 'staff'),
     validate(getClientByIdValidation),
     clientController.regenerateSupportPinForClient
+);
+
+router.post(
+    '/:id/email',
+    restrictTo('superadmin', 'admin', 'staff'),
+    validate(sendClientEmailValidation),
+    clientController.sendClientEmail
 );
 
 // Admin/staff: verify support PIN and lookup client
@@ -83,6 +112,22 @@ router.delete(
     restrictTo('superadmin'),
     validate(getClientByIdValidation),
     clientController.permanentlyDeleteClient
+);
+
+// Grant Access: owner manages who has access to their client's services
+router.post('/:clientId/access-grants', restrictTo('client', 'user', 'admin', 'staff', 'superadmin'), createGrant);
+router.get('/:clientId/access-grants', restrictTo('client', 'user', 'admin', 'staff', 'superadmin'), listGrantsForClient);
+router.patch(
+    '/:clientId/access-grants/:grantId',
+    restrictTo('client', 'user', 'admin', 'staff', 'superadmin'),
+    validate(updateGrantValidation),
+    updateGrant
+);
+router.delete(
+    '/:clientId/access-grants/:grantId',
+    restrictTo('client', 'user', 'admin', 'staff', 'superadmin'),
+    validate(revokeGrantValidation),
+    revokeGrant
 );
 
 export default router;

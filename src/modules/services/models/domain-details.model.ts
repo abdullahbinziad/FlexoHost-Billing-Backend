@@ -52,6 +52,10 @@ export interface IDomainServiceDetails extends Document {
     registrarDomainId?: string;
     registrarOrderId?: string;
     eppStatusCodes: string[];
+    registrarStatus?: string;
+    syncStatus?: 'success' | 'failure' | 'pending';
+    syncMessage?: string;
+    source?: 'billing' | 'registrar_import';
     lastRegistrarSyncAt?: Date;
     createdAt: Date;
     updatedAt: Date;
@@ -108,8 +112,23 @@ const domainServiceDetailsSchema = new Schema<IDomainServiceDetails>({
     registrarDomainId: { type: String },
     registrarOrderId: { type: String },
     eppStatusCodes: { type: [String], default: [] },
+    registrarStatus: { type: String },
+    syncStatus: {
+        type: String,
+        enum: ['success', 'failure', 'pending'],
+        default: 'pending',
+    },
+    syncMessage: { type: String },
+    source: {
+        type: String,
+        enum: ['billing', 'registrar_import'],
+        default: 'billing',
+    },
     lastRegistrarSyncAt: { type: Date },
 }, { timestamps: true });
+
+domainServiceDetailsSchema.index({ domainName: 1 });
+domainServiceDetailsSchema.index({ registrar: 1, domainName: 1 });
 
 const DomainServiceDetails = mongoose.model<IDomainServiceDetails>('DomainServiceDetails', domainServiceDetailsSchema);
 export default DomainServiceDetails;

@@ -2,6 +2,7 @@ import { serviceRepository, provisioningJobRepository, hostingDetailsRepository 
 import ServiceAuditLog, { ServiceAdminAction } from '../models/service-audit-log.model';
 import { ServiceStatus, ProvisioningJobStatus, ServiceType } from '../types/enums';
 import { serverService } from '../../server/server.service';
+import provisioningWorker from '../jobs/provisioning.worker';
 
 export class ServiceAdminService {
     private async callWhmForHosting(serviceId: string, action: 'suspend' | 'unsuspend' | 'terminate' | 'changePackage', plan?: string): Promise<void> {
@@ -51,7 +52,7 @@ export class ServiceAdminService {
             if (job) {
                 await provisioningJobRepository.updateStatus((job._id as unknown) as string, ProvisioningJobStatus.QUEUED, { attempts: 0 });
             } else {
-                await provisioningJobRepository.create({
+                job = await provisioningJobRepository.create({
                     clientId: service.clientId as any,
                     orderId: service.orderId as any,
                     orderItemId: service.orderItemId as any,
@@ -64,6 +65,7 @@ export class ServiceAdminService {
                 });
             }
             await serviceRepository.updateStatus(serviceId, ServiceStatus.PROVISIONING);
+            provisioningWorker.processQueuedJobs().catch(() => {});
         }
 
         // Fetch mutated
@@ -81,7 +83,88 @@ export class ServiceAdminService {
             userAgent: actorUserAgent
         });
 
+        const { auditLogSafe } = await import('../../activity-log/activity-log.service');
+        const eventType =
+            action === ServiceAdminAction.SUSPEND
+                ? (service.type === ServiceType.HOSTING ? 'hosting_suspended' : service.type === ServiceType.VPS ? 'vps_suspended' : 'service_suspended')
+                : action === ServiceAdminAction.UNSUSPEND
+                    ? 'service_unsuspended'
+                    : action === ServiceAdminAction.TERMINATE
+                        ? (service.type === ServiceType.HOSTING ? 'hosting_terminated' : service.type === ServiceType.VPS ? 'vps_terminated' : 'service_terminated')
+                        : 'other';
+        auditLogSafe({
+            message: `Service ${serviceId} ${action}`,
+            type: eventType as any,
+            category: 'service',
+            actorType: 'user',
+            actorId: actorUserId,
+            targetType: 'service',
+            targetId: serviceId,
+            source: 'manual',
+            clientId: (service.clientId as any)?.toString(),
+            serviceId,
+            ipAddress: actorIp,
+            userAgent: actorUserAgent,
+        });
+
         return afterService;
+    }
+
+    async updateAutomationSchedule(
+        serviceId: string,
+        actorUserId: string,
+        payload: { autoSuspendAt?: string | null; autoTerminateAt?: string | null },
+        actorIp?: string,
+        actorUserAgent?: string
+    ) {
+        const service = await serviceRepository.findById(serviceId);
+        if (!service) throw new Error('Service not found');
+
+        const beforeSnapshot = service.toObject();
+        const currentMeta = (service.meta || {}) as Record<string, any>;
+
+        const parsedSuspendAt = payload.autoSuspendAt ? new Date(payload.autoSuspendAt) : null;
+        const parsedTerminateAt = payload.autoTerminateAt ? new Date(payload.autoTerminateAt) : null;
+
+        if (parsedSuspendAt && Number.isNaN(parsedSuspendAt.getTime())) {
+            throw new Error('Invalid autoSuspendAt date');
+        }
+        if (parsedTerminateAt && Number.isNaN(parsedTerminateAt.getTime())) {
+            throw new Error('Invalid autoTerminateAt date');
+        }
+        if (parsedSuspendAt && parsedTerminateAt && parsedTerminateAt < parsedSuspendAt) {
+            throw new Error('autoTerminateAt must be after autoSuspendAt');
+        }
+
+        const updatedMeta: Record<string, any> = {
+            ...currentMeta,
+            autoSuspendAt: parsedSuspendAt ? parsedSuspendAt.toISOString() : null,
+            autoTerminateAt: parsedTerminateAt ? parsedTerminateAt.toISOString() : null,
+            automationUpdatedAt: new Date().toISOString(),
+        };
+
+        const updated = await serviceRepository.updateById(serviceId, { meta: updatedMeta } as any);
+
+        await ServiceAuditLog.create({
+            actorUserId,
+            clientId: service.clientId,
+            serviceId: service._id,
+            action: ServiceAdminAction.UPDATE_AUTOMATION,
+            beforeSnapshot,
+            afterSnapshot: updated ? updated.toObject() : null,
+            ip: actorIp,
+            userAgent: actorUserAgent
+        });
+
+        return updated;
+    }
+
+    async updateAdminNotes(serviceId: string, adminNotes: string): Promise<any> {
+        const service = await serviceRepository.findById(serviceId);
+        if (!service) throw new Error('Service not found');
+        const currentMeta = (service.meta || {}) as Record<string, any>;
+        const updatedMeta = { ...currentMeta, adminNotes: adminNotes ?? '' };
+        return serviceRepository.updateById(serviceId, { meta: updatedMeta } as any);
     }
 }
 

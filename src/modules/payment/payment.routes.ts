@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import paymentController from './payment.controller';
-import { protect } from '../../middlewares/auth'; // Assuming authentication is required for initiating payment
+import { protect, restrictTo } from '../../middlewares/auth'; // Assuming authentication is required for initiating payment
 
 const router = Router();
 
@@ -24,6 +24,6 @@ router.get('/fail', paymentController.handleFail);
 router.get('/cancel', paymentController.handleCancel);
 
 // Mock payment success for testing
-router.post('/mock-success', protect, paymentController.handleMockSuccess);
+router.post('/mock-success', protect, restrictTo('admin', 'superadmin'), paymentController.handleMockSuccess);
 
 export default router;

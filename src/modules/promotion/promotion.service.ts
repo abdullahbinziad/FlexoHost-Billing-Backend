@@ -3,6 +3,8 @@ import Promotion from './promotion.model';
 import PromotionUsage from './promotion-usage.model';
 import type { IPromotion, IPromotionDocument, ValidateCouponResult } from './promotion.interface';
 import ApiError from '../../utils/apiError';
+import { escapeRegex } from '../../utils/escapeRegex';
+import { affiliateService } from '../affiliate/affiliate.service';
 
 export interface CreatePromotionPayload extends Omit<IPromotion, 'usageCount'> {
     usageCount?: number;
@@ -42,9 +44,10 @@ class PromotionService {
         const query: any = {};
         if (isActive !== undefined) query.isActive = isActive;
         if (search && search.trim()) {
+            const escaped = escapeRegex(search.trim());
             query.$or = [
-                { code: { $regex: search.trim(), $options: 'i' } },
-                { name: { $regex: search.trim(), $options: 'i' } },
+                { code: { $regex: escaped, $options: 'i' } },
+                { name: { $regex: escaped, $options: 'i' } },
             ];
         }
 
@@ -140,7 +143,29 @@ class PromotionService {
         });
 
         if (!promotion) {
-            return { valid: false, error: 'Invalid or expired coupon code' };
+            const affiliateResult = await affiliateService.validateReferralCodeDiscount({
+                code,
+                subtotal,
+                clientId,
+            });
+            if (!affiliateResult.valid) {
+                return { valid: false, error: affiliateResult.error || 'Invalid or expired coupon code' };
+            }
+            return {
+                valid: true,
+                discountAmount: affiliateResult.discountAmount,
+                code: affiliateResult.code,
+                name: affiliateResult.name,
+                source: 'affiliate',
+                affiliateProfile: affiliateResult.affiliateProfile
+                    ? {
+                        _id: affiliateResult.affiliateProfile._id,
+                        clientId: affiliateResult.affiliateProfile.clientId,
+                        referralCode: affiliateResult.affiliateProfile.referralCode,
+                        referralDiscountRate: affiliateResult.affiliateProfile.referralDiscountRate,
+                    }
+                    : undefined,
+            };
         }
 
         const now = new Date();
@@ -247,6 +272,9 @@ class PromotionService {
             valid: true,
             promotion,
             discountAmount: Math.round(discountAmount * 100) / 100,
+            code: promotion.code,
+            name: promotion.name,
+            source: 'promotion',
         };
     }
 

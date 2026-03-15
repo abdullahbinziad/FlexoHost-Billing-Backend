@@ -5,6 +5,7 @@ import ServiceActionJob from '../models/service-action-job.model';
 import RenewalLedger from '../models/renewal-ledger.model';
 import ServiceAuditLog from '../models/service-audit-log.model';
 import { ServiceStatus, ServiceActionType, ProvisioningJobStatus, BillingCycle } from '../types/enums';
+import { addBillingCycleToDate } from '../utils/billing-cycle.util';
 
 export class ServiceLifecycleService {
     /**
@@ -59,6 +60,18 @@ export class ServiceLifecycleService {
                 console.error('Failed to log UNSUSPEND audit log:', err);
             }
 
+            const { auditLogSafe } = await import('../../activity-log/activity-log.service');
+            auditLogSafe({
+                message: `Service ${svc._id} unsuspended after invoice paid`,
+                type: 'service_unsuspended',
+                category: 'service',
+                actorType: 'system',
+                source: 'system',
+                clientId: (svc.clientId as any)?.toString(),
+                serviceId: svc._id.toString(),
+                invoiceId: invoice._id.toString(),
+            });
+
             // Queue a Service Action Job for downstream Provider Execution (Unsuspend)
             const jobData = {
                 serviceId: svc._id,
@@ -101,18 +114,7 @@ export class ServiceLifecycleService {
      * Compute next billing date efficiently ensuring native alignment.
      */
     addBillingCycle(date: Date, cycle: BillingCycle): Date {
-        const next = new Date(date);
-        switch (cycle) {
-            case BillingCycle.MONTHLY: next.setMonth(next.getMonth() + 1); break;
-            case BillingCycle.QUARTERLY: next.setMonth(next.getMonth() + 3); break;
-            case BillingCycle.SEMIANNUALLY: next.setMonth(next.getMonth() + 6); break;
-            case BillingCycle.ANNUALLY: next.setFullYear(next.getFullYear() + 1); break;
-            case BillingCycle.BIENNIALLY: next.setFullYear(next.getFullYear() + 2); break;
-            case BillingCycle.TRIENNIALLY: next.setFullYear(next.getFullYear() + 3); break;
-            case BillingCycle.ONE_TIME: // noop
-                break;
-        }
-        return next;
+        return addBillingCycleToDate(date, cycle);
     }
 
     /**
@@ -135,15 +137,16 @@ export class ServiceLifecycleService {
         const servicesToRenew = await Service.find({ _id: { $in: mappedServiceIds } }).exec();
 
         for (const svc of servicesToRenew) {
+            const currentDueDate = svc.nextDueDate;
             // Check renewal_ledger for idempotency based on dueDate
-            const ledger = await RenewalLedger.findOne({ serviceId: svc._id, dueDate: svc.nextDueDate }).exec();
+            const ledger = await RenewalLedger.findOne({ serviceId: svc._id, dueDate: currentDueDate }).exec();
 
             if (ledger && ledger.paidInvoiceId) {
                 // Already paid and advanced for this cycle
                 continue;
             }
 
-            const nextTargetDate = this.addBillingCycle(svc.nextDueDate, svc.billingCycle as BillingCycle);
+            const nextTargetDate = this.addBillingCycle(currentDueDate, svc.billingCycle as BillingCycle);
             svc.nextDueDate = nextTargetDate;
 
             svc.graceUntil = undefined;
@@ -152,6 +155,18 @@ export class ServiceLifecycleService {
             svc.meta.lastPaidAt = new Date();
 
             await svc.save();
+
+            const { auditLogSafe } = await import('../../activity-log/activity-log.service');
+            auditLogSafe({
+                message: `Service ${svc._id} renewed`,
+                type: 'service_renewed',
+                category: 'service',
+                actorType: 'system',
+                source: 'system',
+                clientId: (svc.clientId as any)?.toString(),
+                serviceId: svc._id.toString(),
+                invoiceId: invoice._id.toString(),
+            });
 
             // Mark ledger as paid
             if (ledger) {
@@ -162,7 +177,7 @@ export class ServiceLifecycleService {
                 // Create backfilled ledger if it was missing to track it natively
                 await RenewalLedger.create({
                     serviceId: svc._id,
-                    dueDate: svc.nextDueDate, // We advanced it natively but we log the cycle paid
+                    dueDate: currentDueDate,
                     invoiceId: invoice._id,
                     paidAt: new Date(),
                     paidInvoiceId: invoice._id

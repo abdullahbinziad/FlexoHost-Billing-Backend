@@ -25,6 +25,8 @@ export interface IClient extends Document {
     supportPinLastVerifiedAt?: Date;
     /** Set when user completes the post-signup profile form (e.g. company, phone, address). */
     profileCompletedAt?: Date;
+    accountCreditBalance?: number;
+    accountCreditCurrency?: string;
     createdAt: Date;
     updatedAt: Date;
 }

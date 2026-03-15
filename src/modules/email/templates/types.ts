@@ -18,14 +18,18 @@ export type TemplateKey =
     | 'order.confirmation'
     // Service
     | 'service.hosting_ready'
+    | 'service.hosting_account_created'
     | 'service.suspension_warning'
     | 'service.suspended'
+    | 'service.termination_warning'
+    | 'service.terminated'
     // Domain
     | 'domain.registration_confirmation'
     | 'domain.renewal_reminder'
     | 'domain.expired_notice'
     // Support
     | 'support.ticket_opened'
+    | 'support.ticket_reply'
     // Incident
     | 'incident.maintenance_notice';
 

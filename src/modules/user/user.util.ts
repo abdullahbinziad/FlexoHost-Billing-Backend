@@ -1,10 +1,16 @@
 import path from 'path';
 import fs from 'fs';
 
+/**
+ * Safely delete a file. Prevents path traversal – filePath must resolve within process.cwd().
+ */
 export const deleteFile = (filePath: string): void => {
-    const fullPath = path.join(process.cwd(), filePath);
-
-    if (fs.existsSync(fullPath)) {
+    if (!filePath || typeof filePath !== 'string') return;
+    const normalized = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, '');
+    const fullPath = path.resolve(process.cwd(), normalized);
+    const cwd = path.resolve(process.cwd());
+    if (!fullPath.startsWith(cwd) || fullPath === cwd) return;
+    if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
         fs.unlinkSync(fullPath);
     }
 };

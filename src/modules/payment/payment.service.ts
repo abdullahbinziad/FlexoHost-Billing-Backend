@@ -3,6 +3,7 @@ import SslCommerzPayment from './gateways/sslcommerz';
 import ApiError from '../../utils/apiError';
 import Order from '../order/order.model';
 import Invoice from '../invoice/invoice.model';
+import invoiceService from '../invoice/invoice.service';
 import { OrderStatus } from '../order/order.interface';
 import { InvoiceStatus } from '../invoice/invoice.interface';
 import mongoose from 'mongoose';
@@ -12,11 +13,14 @@ import Client from '../client/client.model';
 import User from '../user/user.model';
 import PaymentTransaction from '../transaction/transaction.model';
 import { TransactionStatus, TransactionType } from '../transaction/transaction.interface';
+import { buildPaymentFxSnapshot } from '../exchange-rate/fx.service';
 import notificationService from '../notification/notification.service';
 import * as emailService from '../email/email.service';
 import { getInvoicePdfBuffer } from '../invoice/invoice-pdf.service';
 import config from '../../config';
 import logger from '../../utils/logger';
+import { affiliateService } from '../affiliate/affiliate.service';
+import { assertPaymentMatchesInvoice } from './payment-validation.util';
 
 class PaymentService {
     private gateways: Map<string, IPaymentGateway> = new Map();
@@ -24,9 +28,13 @@ class PaymentService {
 
     constructor() {
         // Initialize gateways with credentials from env
-        const sslStoreId = process.env.SSLCOMMERZ_STORE_ID || 'testbox';
-        const sslStorePassword = process.env.SSLCOMMERZ_STORE_PASSWORD || 'qwerty';
+        const sslStoreId = process.env.SSLCOMMERZ_STORE_ID || (config.env === 'production' ? '' : 'testbox');
+        const sslStorePassword = process.env.SSLCOMMERZ_STORE_PASSWORD || (config.env === 'production' ? '' : 'qwerty');
         const sslIsLive = process.env.SSLCOMMERZ_IS_LIVE === 'true';
+
+        if (config.env === 'production' && (!sslStoreId || !sslStorePassword)) {
+            throw new Error('SSLCOMMERZ_STORE_ID and SSLCOMMERZ_STORE_PASSWORD are required in production');
+        }
 
         const sslCommerz = new SslCommerzPayment(sslStoreId, sslStorePassword, sslIsLive);
         this.gateways.set(sslCommerz.name, sslCommerz);
@@ -52,10 +60,14 @@ class PaymentService {
         return gateway.validate(data);
     }
 
-    async payInvoice(invoiceId: string, gatewayName?: string): Promise<any> {
+    async payInvoice(invoiceId: string, gatewayName?: string, requesterClientId?: string): Promise<any> {
         const invoice = await Invoice.findById(invoiceId);
         if (!invoice) throw new ApiError(404, 'Invoice not found');
         if (invoice.status === InvoiceStatus.PAID) throw new ApiError(400, 'Invoice already paid');
+
+        if (requesterClientId && invoice.clientId?.toString() !== requesterClientId) {
+            throw new ApiError(403, 'You do not have permission to pay this invoice');
+        }
 
         const client = await Client.findById(invoice.clientId);
         if (!client) throw new ApiError(404, 'Client not found');
@@ -107,18 +119,43 @@ class PaymentService {
             const invoice = await Invoice.findById(invoiceId);
             if (!invoice) throw new ApiError(404, 'Invoice not found');
 
+            const gatewayId = gatewayName || this.defaultGateway;
+            const transactionId = typeof result.tran_id === 'string' ? result.tran_id.trim() : '';
+            if (!transactionId) {
+                throw new ApiError(400, 'Gateway transaction ID is missing');
+            }
+
+            const existingTransaction = await PaymentTransaction.findOne({
+                gateway: gatewayId,
+                externalTransactionId: transactionId,
+                status: TransactionStatus.SUCCESS,
+            })
+                .select('_id')
+                .lean()
+                .exec();
+
+            if (existingTransaction) {
+                return { message: 'Already processed', invoiceId: invoice._id, tran_id: transactionId };
+            }
+
+            const { amount, currency } = assertPaymentMatchesInvoice({
+                invoiceBalanceDue: invoice.balanceDue,
+                invoiceCurrency: invoice.currency,
+                paidAmount: result.amount,
+                paidCurrency: typeof result.currency === 'string' ? result.currency : result.currency_type,
+            });
+
             if (invoice.status === InvoiceStatus.PAID) {
-                return { message: 'Already paid', invoiceId: invoice._id };
+                return { message: 'Already paid', invoiceId: invoice._id, tran_id: transactionId };
             }
 
             const session = await mongoose.startSession();
             session.startTransaction();
 
             try {
-                const gatewayId = gatewayName || this.defaultGateway;
-
                 // 1. Update Invoice
                 invoice.status = InvoiceStatus.PAID;
+                invoice.credit = invoice.total;
                 invoice.balanceDue = 0;
                 invoice.paymentMethod = gatewayId;
                 await invoice.save({ session });
@@ -132,20 +169,19 @@ class PaymentService {
                         order.paidAt = new Date();
                         order.meta = order.meta || {};
                         order.meta.paymentMethod = gatewayId;
-                        order.meta.transactionId = result.tran_id;
+                        order.meta.transactionId = transactionId;
                         orderUserId = order.userId as any;
                         await order.save({ session });
                     }
                 }
 
-                // 3. Record payment transaction
-                const amount = Number(result.amount) || invoice.total;
-                const currency =
-                    typeof result.currency === 'string'
-                        ? result.currency
-                        : typeof result.currency_type === 'string'
-                        ? result.currency_type
-                        : invoice.currency;
+                // 3. Record payment transaction (with FX snapshot at payment date)
+                const paymentDate = new Date();
+                const { snapshot: paymentFx, isLegacy: paymentFxLegacy } = await buildPaymentFxSnapshot(
+                    amount,
+                    currency,
+                    paymentDate
+                );
 
                 await PaymentTransaction.create(
                     [
@@ -159,7 +195,10 @@ class PaymentService {
                             status: TransactionStatus.SUCCESS,
                             amount,
                             currency,
-                            externalTransactionId: result.tran_id,
+                            paymentDate,
+                            fxSnapshot: paymentFx,
+                            fxSnapshotLegacy: paymentFxLegacy,
+                            externalTransactionId: transactionId,
                             gatewayPayload: result,
                         },
                     ],
@@ -171,13 +210,19 @@ class PaymentService {
 
                 await session.commitTransaction();
 
+                // Sync invoice FX snapshot (balanceDueInBase = 0)
+                const updatedInvoice = await Invoice.findById(invoice._id);
+                if (updatedInvoice) await invoiceService.setInvoiceFxSnapshot(updatedInvoice);
+                await affiliateService.processPaidInvoice(invoice._id.toString());
+
                 // Unsuspend outside session because it might call HTTP hooks
                 await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
                 await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
 
-                // Notify user about successful payment
+                const clientDoc = await Client.findById(invoice.clientId).select('user contactEmail firstName lastName').lean();
+                const notificationUserId = clientDoc?.user || orderUserId || invoice.clientId;
                 await notificationService.create({
-                    userId: (invoice as any).clientId?.user || orderUserId || (invoice as any).clientId,
+                    userId: notificationUserId as any,
                     clientId: invoice.clientId as any,
                     category: 'billing',
                     title: `Payment received for Invoice ${invoice.invoiceNumber}`,
@@ -186,11 +231,9 @@ class PaymentService {
                     linkLabel: 'View invoice',
                     meta: {
                         invoiceId: invoice._id.toString(),
-                        tran_id: result.tran_id,
+                        tran_id: transactionId,
                     },
                 });
-
-                const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
                 const clientEmail = clientDoc?.contactEmail || '';
                 const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
                 const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
@@ -199,7 +242,7 @@ class PaymentService {
                     try {
                         const paidInvoice = await Invoice.findById(invoice._id).lean();
                         if (paidInvoice) {
-                            const pdfBuffer = await getInvoicePdfBuffer(paidInvoice);
+                            const pdfBuffer = await getInvoicePdfBuffer(paidInvoice as any);
                             attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
                         }
                     } catch (pdfErr: any) {
@@ -211,7 +254,7 @@ class PaymentService {
                         props: {
                             customerName,
                             invoiceNumber: invoice.invoiceNumber,
-                            transactionId: result.tran_id || 'N/A',
+                            transactionId: transactionId || 'N/A',
                             amountPaid: String(amount),
                             currency: currency || invoice.currency || 'BDT',
                             paymentDate: new Date().toLocaleDateString(),
@@ -222,14 +265,53 @@ class PaymentService {
                     }).catch(() => {});
                 }
 
-                return { message: 'Payment successful', invoiceId: invoice._id, tran_id: result.tran_id };
-            } catch (error) {
+                const { auditLogSafe } = await import('../activity-log/activity-log.service');
+                auditLogSafe({
+                    message: `Payment received for Invoice ${invoice.invoiceNumber} via ${gatewayId}: ${amount} ${currency}`,
+                    type: 'payment_received',
+                    category: 'payment',
+                    actorType: 'system',
+                    source: 'webhook',
+                    clientId: (invoice.clientId as any)?.toString(),
+                    invoiceId: invoice._id.toString(),
+                    status: 'success',
+                    meta: { gateway: gatewayId, transactionId: transactionId ? '[REDACTED]' : undefined },
+                });
+
+                return { message: 'Payment successful', invoiceId: invoice._id, tran_id: transactionId };
+            } catch (error: any) {
                 await session.abortTransaction();
+                if (error?.code === 11000) {
+                    return { message: 'Already processed', invoiceId: invoice._id, tran_id: transactionId };
+                }
                 throw error;
             } finally {
                 session.endSession();
             }
         } else {
+            const invoiceId = result?.value_a || validationData?.value_a;
+            const { auditLogSafe } = await import('../activity-log/activity-log.service');
+            let clientId: string | undefined;
+            if (invoiceId) {
+                try {
+                    const inv = await Invoice.findById(invoiceId).select('clientId invoiceNumber').lean();
+                    if (inv) clientId = (inv.clientId as any)?.toString?.();
+                } catch {
+                    // ignore
+                }
+            }
+            auditLogSafe({
+                message: `Payment failed or invalid for invoice ${invoiceId || 'unknown'}`,
+                type: 'payment_failed',
+                category: 'payment',
+                actorType: 'system',
+                source: 'webhook',
+                status: 'failure',
+                severity: 'medium',
+                clientId,
+                invoiceId: invoiceId ? String(invoiceId) : undefined,
+                meta: { gateway: gatewayName || this.defaultGateway, validationStatus: result?.status } as Record<string, unknown>,
+            });
             throw new ApiError(400, 'Payment validation failed');
         }
     }
@@ -239,6 +321,10 @@ class PaymentService {
      * Updates Order -> Invoice -> Service
      */
     async processMockPayment(orderId: string): Promise<any> {
+        if (config.env === 'production') {
+            throw new ApiError(403, 'Mock payments are disabled in production');
+        }
+
         const session = await mongoose.startSession();
         session.startTransaction();
 
@@ -265,11 +351,18 @@ class PaymentService {
             const invoice = await Invoice.findById(order.invoiceId).session(session);
             if (invoice) {
                 invoice.status = InvoiceStatus.PAID;
+                invoice.credit = invoice.total;
                 invoice.balanceDue = 0;
                 invoice.paymentMethod = 'MOCK_PAYMENT';
                 await invoice.save({ session });
 
-                // Record mock payment transaction
+                // Record mock payment transaction (with FX snapshot at payment date)
+                const paymentDate = new Date();
+                const { snapshot: mockFx, isLegacy: mockFxLegacy } = await buildPaymentFxSnapshot(
+                    invoice.total,
+                    invoice.currency,
+                    paymentDate
+                );
                 await PaymentTransaction.create(
                     [
                         {
@@ -282,6 +375,9 @@ class PaymentService {
                             status: TransactionStatus.SUCCESS,
                             amount: invoice.total,
                             currency: invoice.currency,
+                            paymentDate,
+                            fxSnapshot: mockFx,
+                            fxSnapshotLegacy: mockFxLegacy,
                             externalTransactionId: order.meta.transactionId,
                             gatewayPayload: null,
                         },
@@ -296,6 +392,13 @@ class PaymentService {
             }
 
             await session.commitTransaction();
+
+            const updatedInvoice = await Invoice.findById(order.invoiceId);
+            if (updatedInvoice) await invoiceService.setInvoiceFxSnapshot(updatedInvoice);
+            if (order.invoiceId) {
+                await affiliateService.processPaidInvoice(order.invoiceId.toString());
+            }
+
             return { message: 'Payment processed successfully', orderId };
         } catch (error) {
             await session.abortTransaction();

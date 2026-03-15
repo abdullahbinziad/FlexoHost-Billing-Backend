@@ -86,6 +86,19 @@ const invoiceSchema = new Schema<IInvoiceDocument, IInvoiceModel>(
             required: true,
             min: 0,
         },
+        fxSnapshot: {
+            baseCurrency: { type: String, trim: true },
+            fxRateToBase: { type: Number, min: 0 },
+            fxDate: { type: Date },
+            subtotalInBase: { type: Number, min: 0 },
+            taxInBase: { type: Number, min: 0, default: 0 },
+            totalInBase: { type: Number, min: 0 },
+            balanceDueInBase: { type: Number, min: 0 },
+        },
+        fxSnapshotLegacy: { type: Boolean, default: false },
+        baseCurrency: { type: String, trim: true },
+        totalInBase: { type: Number, min: 0 },
+        balanceDueInBase: { type: Number, min: 0 },
         orderId: {
             type: Schema.Types.ObjectId,
             ref: 'Order',
@@ -109,11 +122,10 @@ invoiceSchema.statics.isInvoiceNumberTaken = async function (
     return !!invoice;
 };
 
-// Pre-save middleware to validate totals and calculate balance
+// Pre-save middleware: validate totals and balance only. FX snapshot is set in service at invoice date.
 invoiceSchema.pre('save', function (next) {
     const invoice = this as IInvoiceDocument;
 
-    // Calculate subTotal from items
     const calculatedSubTotal = invoice.items.reduce((acc, item) => acc + item.amount, 0);
     const discount = invoice.discount ?? 0;
 

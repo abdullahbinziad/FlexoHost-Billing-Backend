@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { productService } from './product.service';
 import ApiResponse from '../../utils/apiResponse';
 import catchAsync from '../../utils/catchAsync';
+import { auditLogSafe } from '../activity-log/activity-log.service';
+import type { AuthRequest } from '../../middlewares/auth';
 
 /**
  * Product Controller Class
@@ -9,12 +11,43 @@ import catchAsync from '../../utils/catchAsync';
  */
 class ProductController {
     /**
+     * @desc    Get visible store products
+     * @route   GET /api/v1/store/products
+     * @access  Public
+     */
+    getPublicList = catchAsync(async (req: Request, res: Response) => {
+        const result = await productService.getPublicProducts(req.query);
+        return ApiResponse.success(res, 200, 'Store products retrieved successfully', result);
+    });
+
+    /**
+     * @desc    Get visible store product by ID
+     * @route   GET /api/v1/store/products/:id
+     * @access  Public
+     */
+    getPublicOne = catchAsync(async (req: Request, res: Response) => {
+        const product = await productService.getPublicProductById(req.params.id);
+        return ApiResponse.success(res, 200, 'Store product retrieved successfully', product);
+    });
+
+    /**
      * @desc    Create new product
      * @route   POST /api/v1/admin/products
      * @access  Private/Admin
      */
     create = catchAsync(async (req: Request, res: Response) => {
         const product = await productService.createProduct(req.body);
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Product created: ${(product as any).name ?? (product as any)._id}`,
+            type: 'product_created',
+            category: 'settings',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'product',
+            targetId: String((product as any)._id ?? ''),
+        });
         return ApiResponse.created(res, 'Product created successfully', product);
     });
 
@@ -45,6 +78,17 @@ class ProductController {
      */
     update = catchAsync(async (req: Request, res: Response) => {
         const product = await productService.updateProduct(req.params.id, req.body);
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Product updated: ${(product as any).name ?? req.params.id}`,
+            type: 'product_changed',
+            category: 'settings',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'product',
+            targetId: req.params.id,
+        });
         return ApiResponse.success(res, 200, 'Product updated successfully', product);
     });
 

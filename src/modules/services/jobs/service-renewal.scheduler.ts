@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Service from '../service.model';
 import Invoice from '../../invoice/invoice.model';
+import Client from '../../client/client.model';
 import ServiceActionJob from '../models/service-action-job.model';
 import RenewalLedger from '../models/renewal-ledger.model';
 import ServiceAuditLog from '../models/service-audit-log.model';
@@ -8,16 +9,21 @@ import { BillingCycle, ServiceStatus, ServiceActionType, ProvisioningJobStatus }
 import { InvoiceStatus, InvoiceItemType } from '../../invoice/invoice.interface';
 import { getNextSequence, formatSequenceId } from '../../../models/counter.model';
 import { DEFAULT_CURRENCY } from '../../../config/currency.config';
+import { getBillingSettings } from '../../settings/billing-settings.service';
+import config from '../../../config';
+import * as emailService from '../../email/email.service';
+import { getInvoicePdfBuffer } from '../../invoice/invoice-pdf.service';
+import logger from '../../../utils/logger';
 
 export class ServiceRenewalScheduler {
     /**
      * Finds active services due for renewal and creates invoices idempotently.
      */
     async processRenewals() {
-        // Find services where: status=ACTIVE, autoRenew=true, billingCycle != one-time
-        // nextDueDate <= now + leadDays (7 days default)
+        const settings = await getBillingSettings();
+        const leadDays = settings.renewalLeadDays ?? 7;
         const leadDaysOffset = new Date();
-        leadDaysOffset.setDate(leadDaysOffset.getDate() + 7);
+        leadDaysOffset.setDate(leadDaysOffset.getDate() + leadDays);
 
         const servicesDue = await Service.find({
             status: ServiceStatus.ACTIVE,
@@ -94,6 +100,17 @@ export class ServiceRenewalScheduler {
 
             await invoice.save();
             invoicesCreated++;
+            const { auditLogSafe } = await import('../../activity-log/activity-log.service');
+            auditLogSafe({
+                message: `Auto-generated renewal invoice ${invoice.invoiceNumber} for client ${clientId}`,
+                type: 'invoice_auto_generated',
+                category: 'invoice',
+                actorType: 'system',
+                source: 'cron',
+                clientId,
+                invoiceId: invoice._id.toString(),
+                meta: { serviceCount: services.length },
+            });
 
             // Idempotent sync tracker mapping
             const ledgerEntries = services.map(s => ({
@@ -107,6 +124,46 @@ export class ServiceRenewalScheduler {
             } catch (err: any) {
                 if (err.code !== 11000) console.error('Failed to write renewal ledgers:', err);
             }
+
+            // Send renewal invoice email to client
+            try {
+                const clientDoc = await Client.findById(clientId).select('contactEmail firstName lastName').lean();
+                const clientEmail = (clientDoc as any)?.contactEmail || '';
+                if (clientEmail) {
+                    const customerName = clientDoc
+                        ? `${(clientDoc as any).firstName || ''} ${(clientDoc as any).lastName || ''}`.trim() || 'Customer'
+                        : 'Customer';
+                    const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+                    const lineItems = invoiceItems.map((i: any) => ({ label: i.description || 'Item', amount: String(i.amount ?? 0) }));
+                    let attachments: { filename: string; content: Buffer }[] | undefined;
+                    try {
+                        const invDoc = await Invoice.findById(invoice._id).lean();
+                        if (invDoc) {
+                            const pdfBuffer = await getInvoicePdfBuffer(invDoc as any);
+                            attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
+                        }
+                    } catch (pdfErr: any) {
+                        logger.warn('[Renewal] PDF generation failed, sending email without attachment:', pdfErr?.message);
+                    }
+                    await emailService.sendTemplatedEmail({
+                        to: clientEmail,
+                        templateKey: 'billing.invoice_created',
+                        props: {
+                            customerName,
+                            invoiceNumber: invoice.invoiceNumber,
+                            dueDate: dueDate ? new Date(dueDate).toLocaleDateString() : 'N/A',
+                            amountDue: String(subTotal),
+                            currency: services[0].currency || DEFAULT_CURRENCY,
+                            invoiceUrl: `${baseUrl}/invoices/${invoice._id}`,
+                            billingUrl: `${baseUrl}/client`,
+                            lineItems,
+                        },
+                        attachments,
+                    });
+                }
+            } catch (emailErr: any) {
+                logger.warn('[Renewal] Invoice created email failed:', emailErr?.message || emailErr);
+            }
         }
 
         console.log(`[Scheduler] Renewals Processed. Services Found: ${servicesDue.length} | Invoices: ${invoicesCreated} | Items: ${itemsCreated}`);
@@ -117,12 +174,14 @@ export class ServiceRenewalScheduler {
      * Grace period evaluations suspending Unpaid overdue Active services explicitly linked securely.
      */
     async processOverdueEnforcements() {
+        const settings = await getBillingSettings();
+        const graceDays = settings.daysBeforeSuspend ?? 5;
         const graceDaysLimit = new Date();
-        graceDaysLimit.setDate(graceDaysLimit.getDate() - 5); // 5 Days strictly Grace
+        graceDaysLimit.setDate(graceDaysLimit.getDate() - graceDays);
 
-        // 1. Find purely unpaid invoices older than the 5 day grace limit natively hitting relational Webhooks
+        // 1. Find unpaid invoices older than the grace period (admin-configurable)
         const overdueInvoices = await Invoice.find({
-            status: InvoiceStatus.UNPAID,
+            status: { $in: [InvoiceStatus.UNPAID, InvoiceStatus.OVERDUE] },
             dueDate: { $lte: graceDaysLimit }
         }).lean().exec();
 
@@ -198,6 +257,44 @@ export class ServiceRenewalScheduler {
         }
 
         console.log(`[Scheduler] Overdue Enforcement Executed. Suspended ${suspendedCount} active services safely.`);
+
+        // 5. Explicit admin-configured auto-suspend dates
+        const now = new Date();
+        const explicitlyScheduled = await Service.find({
+            status: ServiceStatus.ACTIVE,
+            'meta.autoSuspendAt': { $exists: true, $ne: null, $lte: now.toISOString() }
+        }).exec();
+
+        for (const svc of explicitlyScheduled) {
+            const beforeStatus = svc.status;
+            svc.status = ServiceStatus.SUSPENDED;
+            svc.suspendedAt = new Date();
+            svc.meta = svc.meta || {};
+            svc.meta.suspendReason = 'Scheduled admin automation date reached';
+            await svc.save();
+
+            await ServiceAuditLog.create({
+                clientId: svc.clientId,
+                serviceId: svc._id,
+                action: 'SUSPEND',
+                beforeSnapshot: { status: beforeStatus, autoSuspendAt: svc.meta?.autoSuspendAt },
+                afterSnapshot: { status: svc.status, suspendedAt: svc.suspendedAt, reason: svc.meta?.suspendReason }
+            });
+
+            try {
+                await ServiceActionJob.create({
+                    serviceId: svc._id,
+                    action: ServiceActionType.SUSPEND,
+                    status: ProvisioningJobStatus.QUEUED,
+                });
+            } catch (err: any) {
+                if (err.code !== 11000) {
+                    console.error('Failed to create scheduled SUSPEND service action job: ', err);
+                }
+            }
+            suspendedCount++;
+        }
+
         return suspendedCount;
     }
 }

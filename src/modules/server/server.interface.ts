@@ -49,6 +49,9 @@ export interface IServer {
 
     lastConnectionCheckAt?: Date;
     lastConnectionStatus?: 'success' | 'failed' | null;
+    /** Last known cPanel account count from WHM (display only; provisioning uses live getWhmAccountCount). */
+    accountCount?: number;
+    accountCountSyncedAt?: Date;
     createdBy?: mongoose.Types.ObjectId;
 
     createdAt?: Date;

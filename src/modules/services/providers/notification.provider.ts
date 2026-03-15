@@ -9,7 +9,7 @@ export interface INotificationProvider {
 class NotificationStub implements INotificationProvider {
     async sendEmail(to: string, subject: string, template: string, _context: Record<string, any>): Promise<boolean> {
         console.log(`[Notification-Stub-Email] To: ${to} | Subject: ${subject} | Template: ${template}`);
-        return true;
+        return false;
     }
 
     async sendSms(to: string, message: string): Promise<boolean> {

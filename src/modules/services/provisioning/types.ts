@@ -13,6 +13,8 @@ export interface ProvisioningContext {
     client: any;
     /** Service document just created with status PROVISIONING (used for serviceId when persisting details) */
     service: any;
+    /** True when this is a reprovision of an existing service (not first-time create). */
+    reprovision?: boolean;
     /** Resolved product document if order item has productId (optional) */
     product?: any;
 }
@@ -31,6 +33,8 @@ export interface ProvisioningResult {
     details?: Record<string, unknown>;
     /** Error message when success is false */
     error?: string;
+    /** Transient password for hosting welcome email only; never persisted */
+    password?: string;
 }
 
 /**

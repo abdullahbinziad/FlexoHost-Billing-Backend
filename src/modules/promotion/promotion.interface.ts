@@ -55,4 +55,13 @@ export interface ValidateCouponResult {
     promotion?: IPromotionDocument;
     discountAmount?: number;
     error?: string;
+    code?: string;
+    name?: string;
+    source?: 'promotion' | 'affiliate';
+    affiliateProfile?: {
+        _id: Types.ObjectId;
+        clientId: Types.ObjectId;
+        referralCode: string;
+        referralDiscountRate: number;
+    };
 }

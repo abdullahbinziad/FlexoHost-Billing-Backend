@@ -9,16 +9,10 @@ import Client from '../client/client.model';
 import { TicketStatus } from './ticket.interface';
 import notificationService from '../notification/notification.service';
 import { notificationProvider } from '../services/providers/notification.provider';
+import { auditLogSafe } from '../activity-log/activity-log.service';
+import { getEffectiveClientId } from '../client-access-grant/effective-client';
 
 class TicketController {
-    private async resolveClientForUser(userId: string) {
-        const client = await Client.findOne({ user: userId }).select('_id firstName lastName contactEmail').lean();
-        if (!client) {
-            throw ApiResponse.notFound as any;
-        }
-        return client;
-    }
-
     createTicket = catchAsync(async (req: AuthRequest, res: Response) => {
         const user = req.user;
         if (!user) {
@@ -39,7 +33,12 @@ class TicketController {
             return ApiResponse.badRequest(res, 'Subject and message are required');
         }
 
-        const client = await this.resolveClientForUser(user._id.toString());
+        const effectiveClientId = await getEffectiveClientId(req, res, 'tickets');
+        if (effectiveClientId === null) return;
+        const client = await Client.findById(effectiveClientId).select('_id firstName lastName contactEmail').lean();
+        if (!client) {
+            return ApiResponse.notFound(res, 'Client not found');
+        }
 
         // Generate simple ticket number TKT-000001 style
         const count = await Ticket.countDocuments();
@@ -47,7 +46,7 @@ class TicketController {
 
         const ticket = await Ticket.create({
             ticketNumber,
-            clientId: client._id,
+            clientId: client._id as any,
             userId: user._id,
             subject,
             department: department || 'support',
@@ -77,7 +76,7 @@ class TicketController {
             internal: false,
         });
 
-        // Notification (in-app)
+        // Notification (in-app) – client who created
         await notificationService.create({
             userId: user._id,
             clientId: client._id,
@@ -87,6 +86,30 @@ class TicketController {
             linkPath: `/tickets/${ticket._id.toString()}`,
             linkLabel: 'View ticket',
             meta: { ticketId: ticket._id.toString(), ticketNumber },
+        });
+
+        // Notify all admin/staff – reusable helper
+        await notificationService.createForAdminStaff({
+            category: 'support',
+            title: `New ticket: ${ticket.ticketNumber}`,
+            message: `${client.firstName} ${client.lastName}: ${subject}`,
+            linkPath: `/admin/tickets/${ticket._id.toString()}`,
+            linkLabel: 'View ticket',
+            clientId: client._id as any,
+            meta: { ticketId: ticket._id.toString(), ticketNumber, event: 'ticket_opened' },
+        });
+
+        auditLogSafe({
+            message: `Ticket ${ticket.ticketNumber} opened: ${subject}`,
+            type: 'ticket_opened',
+            category: 'ticket',
+            actorType: 'user',
+            actorId: user._id.toString(),
+            targetType: 'ticket',
+            targetId: ticket._id.toString(),
+            source: 'manual',
+            clientId: client._id.toString(),
+            ticketId: ticket._id.toString(),
         });
 
         // Email acknowledgement (if configured)
@@ -128,12 +151,13 @@ class TicketController {
 
         const filters: any = {};
 
-        // Role-based scoping
-        if (req.user.role === 'admin' || req.user.role === 'staff') {
+        const isStaff = ['admin', 'staff', 'superadmin'].includes(req.user.role);
+        if (isStaff) {
             if (clientId) filters.clientId = clientId;
         } else {
-            const client = await this.resolveClientForUser(req.user._id.toString());
-            filters.clientId = client._id;
+            const effectiveClientId = await getEffectiveClientId(req, res, 'tickets');
+            if (effectiveClientId === null) return;
+            filters.clientId = effectiveClientId;
         }
 
         if (status) filters.status = status;
@@ -168,10 +192,10 @@ class TicketController {
             return ApiResponse.notFound(res, 'Ticket not found');
         }
 
-        // Scope check: clients can only see their own tickets
         if (req.user.role === 'client' || req.user.role === 'user') {
-            const client = await this.resolveClientForUser(req.user._id.toString());
-            if (ticket.clientId.toString() !== client._id.toString()) {
+            const effectiveClientId = await getEffectiveClientId(req, res, 'tickets');
+            if (effectiveClientId === null) return;
+            if (ticket.clientId.toString() !== effectiveClientId) {
                 return ApiResponse.forbidden(res);
             }
         }
@@ -182,7 +206,7 @@ class TicketController {
 
         // For admin/staff: include client details (name, email, phone, address)
         let clientInfo: { firstName: string; lastName: string; contactEmail?: string; phoneNumber?: string; address?: string } | null = null;
-        if (req.user.role === 'admin' || req.user.role === 'staff') {
+        if (['admin', 'staff', 'superadmin'].includes(req.user.role)) {
             const client = await Client.findById(ticket.clientId)
                 .select('firstName lastName contactEmail phoneNumber address')
                 .lean();
@@ -217,12 +241,12 @@ class TicketController {
             return ApiResponse.notFound(res, 'Ticket not found');
         }
 
-        const isStaff = req.user.role === 'admin' || req.user.role === 'staff';
+        const isStaff = ['admin', 'staff', 'superadmin'].includes(req.user.role);
 
-        // Scope check for client
         if (!isStaff) {
-            const client = await this.resolveClientForUser(req.user._id.toString());
-            if (ticket.clientId.toString() !== client._id.toString()) {
+            const effectiveClientId = await getEffectiveClientId(req, res, 'tickets');
+            if (effectiveClientId === null) return;
+            if (ticket.clientId.toString() !== effectiveClientId) {
                 return ApiResponse.forbidden(res);
             }
         }
@@ -259,6 +283,34 @@ class TicketController {
         }
         await ticket.save();
 
+        auditLogSafe({
+            message: `Reply added to ticket ${ticket.ticketNumber}`,
+            type: 'ticket_replied',
+            category: 'ticket',
+            actorType: 'user',
+            actorId: req.user._id.toString(),
+            targetType: 'ticket',
+            targetId: ticket._id.toString(),
+            source: 'manual',
+            clientId: ticket.clientId.toString(),
+            ticketId: ticket._id.toString(),
+        });
+
+        // Notify admin/staff when client replies
+        if (authorType === 'client') {
+            const client = await Client.findById(ticket.clientId).select('firstName lastName').lean();
+            const clientName = client ? `${client.firstName} ${client.lastName}` : 'Client';
+            await notificationService.createForAdminStaff({
+                category: 'support',
+                title: `Client replied: ${ticket.ticketNumber}`,
+                message: `${clientName}: ${message.substring(0, 150)}${message.length > 150 ? '...' : ''}`,
+                linkPath: `/admin/tickets/${ticket._id.toString()}`,
+                linkLabel: 'View ticket',
+                clientId: ticket.clientId as any,
+                meta: { ticketId: ticket._id.toString(), ticketNumber: ticket.ticketNumber, event: 'customer_reply' },
+            });
+        }
+
         // Notify client on staff reply
         if (authorType === 'staff') {
             const client = await Client.findById(ticket.clientId).populate('user', 'email').lean();
@@ -280,7 +332,7 @@ class TicketController {
                     await notificationProvider.sendEmail(
                         client.contactEmail,
                         `New reply on Ticket #${ticket.ticketNumber}`,
-                        'support.ticket_opened', // reuse template until a reply-specific one exists
+                        'support.ticket_reply',
                         {
                             customerName: `${client.firstName} ${client.lastName}`,
                             ticketId: ticket.ticketNumber,
@@ -290,7 +342,7 @@ class TicketController {
                             createdAt: new Date().toISOString(),
                             summaryMessage: message.substring(0, 200),
                             ticketUrl: `${frontendUrl}/tickets/${ticket._id.toString()}`,
-                            attachments,
+                            replyType: 'staff_reply',
                         }
                     );
                 }
@@ -316,6 +368,19 @@ class TicketController {
         ticket.status = status;
         await ticket.save();
 
+        auditLogSafe({
+            message: `Ticket ${ticket.ticketNumber} status changed to ${status}`,
+            type: 'ticket_status_changed',
+            category: 'ticket',
+            actorType: 'user',
+            actorId: req.user._id.toString(),
+            targetType: 'ticket',
+            targetId: ticket._id.toString(),
+            source: 'manual',
+            clientId: ticket.clientId.toString(),
+            ticketId: ticket._id.toString(),
+        });
+
         return ApiResponse.ok(res, `Ticket marked as ${status}`, ticket);
     });
 
@@ -327,18 +392,31 @@ class TicketController {
             return ApiResponse.notFound(res, 'Ticket not found');
         }
 
-        const isStaff = req.user.role === 'admin' || req.user.role === 'staff';
+        const isStaff = ['admin', 'staff', 'superadmin'].includes(req.user.role);
 
-        // Clients can only resolve their own tickets
         if (!isStaff) {
-            const client = await this.resolveClientForUser(req.user._id.toString());
-            if (ticket.clientId.toString() !== client._id.toString()) {
+            const effectiveClientId = await getEffectiveClientId(req, res, 'tickets');
+            if (effectiveClientId === null) return;
+            if (ticket.clientId.toString() !== effectiveClientId) {
                 return ApiResponse.forbidden(res);
             }
         }
 
         ticket.status = 'resolved';
         await ticket.save();
+
+        auditLogSafe({
+            message: `Ticket ${ticket.ticketNumber} closed (resolved)`,
+            type: 'ticket_closed',
+            category: 'ticket',
+            actorType: 'user',
+            actorId: req.user._id.toString(),
+            targetType: 'ticket',
+            targetId: ticket._id.toString(),
+            source: 'manual',
+            clientId: ticket.clientId.toString(),
+            ticketId: ticket._id.toString(),
+        });
 
         return ApiResponse.ok(res, 'Ticket marked as resolved', ticket);
     });

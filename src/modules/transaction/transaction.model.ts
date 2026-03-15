@@ -56,6 +56,14 @@ const paymentTransactionSchema = new Schema<IPaymentTransactionDocument, IPaymen
             required: true,
             trim: true,
         },
+        paymentDate: { type: Date },
+        fxSnapshot: {
+            baseCurrency: { type: String, trim: true },
+            fxRateToBase: { type: Number, min: 0 },
+            fxDate: { type: Date },
+            amountInBase: { type: Number, min: 0 },
+        },
+        fxSnapshotLegacy: { type: Boolean, default: false },
         externalTransactionId: {
             type: String,
             trim: true,
@@ -67,6 +75,16 @@ const paymentTransactionSchema = new Schema<IPaymentTransactionDocument, IPaymen
     },
     {
         timestamps: true,
+    }
+);
+
+paymentTransactionSchema.index(
+    { gateway: 1, externalTransactionId: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            externalTransactionId: { $exists: true, $type: 'string', $ne: '' },
+        },
     }
 );
 

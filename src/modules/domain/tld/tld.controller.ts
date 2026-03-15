@@ -2,11 +2,25 @@ import { Request, Response } from 'express';
 import catchAsync from '../../../utils/catchAsync';
 import ApiResponse from '../../../utils/apiResponse';
 import tldService from './tld.service';
+import { auditLogSafe } from '../../activity-log/activity-log.service';
+import type { AuthRequest } from '../../../middlewares/auth';
 
 class TLDController {
     createTLD = catchAsync(async (req: Request, res: Response) => {
         const tld = await tldService.createTLD(req.body);
-        ApiResponse.created(res, 'TLD created successfully', tld);
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `TLD created: ${(tld as any).extension ?? (tld as any)._id}`,
+            type: 'settings_changed',
+            category: 'settings',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'tld',
+            targetId: (tld as any)._id?.toString?.(),
+            meta: { action: 'created' } as Record<string, unknown>,
+        });
+        return ApiResponse.created(res, 'TLD created successfully', tld);
     });
 
     getAllTLDs = catchAsync(async (req: Request, res: Response) => {

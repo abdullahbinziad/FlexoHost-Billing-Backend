@@ -4,12 +4,21 @@ import { OrderStatus } from './order.interface';
 import ApiResponse from '../../utils/apiResponse';
 import catchAsync from '../../utils/catchAsync';
 import { AuthRequest } from '../../middlewares/auth';
+import { getEffectiveClientId } from '../client-access-grant/effective-client';
 
 export class OrderController {
+    /** Get order/checkout config: server locations, payment methods, supported currencies (for admin new order) */
+    getOrderConfig = catchAsync(async (_req: Request, res: Response) => {
+        const config = await orderService.getOrderConfig();
+        return ApiResponse.success(res, 200, 'Order config retrieved', config);
+    });
+
     createOrder = catchAsync(async (req: Request, res: Response) => {
-        const currentUserId = (req as AuthRequest).user?.id;
+        const user = (req as AuthRequest).user!;
+        const currentUserId = user._id?.toString?.() ?? user.id;
+        const isAdmin = ['admin', 'superadmin', 'staff'].includes(user.role);
         const payload = req.body;
-        const orderResult = await orderService.createOrder(payload, currentUserId);
+        const orderResult = await orderService.createOrder(payload, currentUserId, isAdmin);
 
         ApiResponse.created(res, 'Order created successfully. Redirecting to payment...', {
             order: orderResult,
@@ -19,23 +28,26 @@ export class OrderController {
 
     getOrders = catchAsync(async (req: Request, res: Response) => {
         const user = (req as AuthRequest).user!;
-        const clientId = req.query.clientId as string | undefined;
-
         const filter: any = {};
-
         const isAdmin = ['admin', 'superadmin', 'staff'].includes(user.role);
+        const page = Math.max(Number(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
 
         if (!isAdmin) {
-            filter.userId = user.id;
-        } else if (req.query.userId) {
-            filter.userId = req.query.userId;
+            const effectiveClientId = await getEffectiveClientId(req, res, 'orders');
+            if (effectiveClientId === null) return;
+            filter.clientId = effectiveClientId;
+        } else {
+            if (req.query.userId) filter.userId = req.query.userId;
+            const clientId = req.query.clientId as string | undefined;
+            if (clientId) filter.clientId = clientId;
         }
 
-        if (clientId) {
-            filter.clientId = clientId;
-        }
+        if (req.query.search) filter.search = req.query.search;
+        if (req.query.status) filter.status = req.query.status;
+        if (req.query.paymentStatus) filter.paymentStatus = req.query.paymentStatus;
 
-        const orders = await orderService.getOrders(filter);
+        const orders = await orderService.getOrders(filter, { page, limit });
         ApiResponse.success(res, 200, 'Orders retrieved successfully', orders);
     });
 
@@ -47,13 +59,14 @@ export class OrderController {
             return ApiResponse.error(res, 404, 'Order not found');
         }
 
-        // Check if user owns the order (using userId field)
-        const orderUserId = order.userId?.toString();
-        const requestUserId = (req as AuthRequest).user!.id;
-
-        if (orderUserId !== requestUserId &&
-            !['admin', 'superadmin', 'staff'].includes((req as AuthRequest).user!.role)) {
-            return ApiResponse.error(res, 403, 'Unauthorized access to order');
+        const user = (req as AuthRequest).user!;
+        if (!['admin', 'superadmin', 'staff'].includes(user.role)) {
+            const effectiveClientId = await getEffectiveClientId(req, res, 'orders');
+            if (effectiveClientId === null) return;
+            const orderClientId = (order as any).clientId?.toString?.();
+            if (orderClientId !== effectiveClientId) {
+                return ApiResponse.error(res, 403, 'Unauthorized access to order');
+            }
         }
 
         return ApiResponse.success(res, 200, 'Order retrieved successfully', order);
@@ -85,7 +98,7 @@ export class OrderController {
         }
         const body = req.body as { items: Array<{ itemIndex: number; orderItemId?: string; serverId?: string; whmPackage?: string; username?: string; password?: string; runModuleCreate?: boolean; sendWelcomeEmail?: boolean }> };
         const result = await orderService.runModuleCreate(orderId, body, user.id);
-        ApiResponse.success(res, 200, 'Run module create completed', result);
+        return ApiResponse.success(res, 200, 'Run module create completed', result);
     });
 }
 

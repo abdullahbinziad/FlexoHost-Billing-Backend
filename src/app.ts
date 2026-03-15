@@ -9,6 +9,8 @@ import morgan from 'morgan';
 import path from 'path';
 import config from './config';
 import errorHandler from './middlewares/errorHandler';
+import { serveUploadsWithDisposition } from './middlewares/serveUploadsWithDisposition';
+import { csrfProtection } from './middlewares/csrf';
 import ApiResponse from './utils/apiResponse';
 
 // Import routes
@@ -29,6 +31,15 @@ import transactionRoutes from './modules/transaction/transaction.routes';
 import notificationRoutes from './modules/notification/notification.routes';
 import ticketRoutes from './modules/ticket/ticket.routes';
 import uploadRoutes from './modules/upload/upload.routes';
+import exchangeRateRoutes from './modules/exchange-rate/exchange-rate.routes';
+import dashboardRoutes from './modules/dashboard/dashboard.routes';
+import activityLogRoutes from './modules/activity-log/activity-log.routes';
+import affiliateRoutes from './modules/affiliate/affiliate.routes';
+import settingsRoutes from './modules/settings/settings.routes';
+import whmcsMigrationRoutes from './modules/whmcs-migration/whmcs-migration.routes';
+import roleRoutes from './modules/role/role.routes';
+import billableItemRoutes from './modules/billable-item/billable-item.routes';
+import csrfRoutes from './modules/csrf/csrf.routes';
 
 
 const app: Application = express();
@@ -41,6 +52,7 @@ app.use(
     cors({
         origin: config.cors.origin,
         credentials: true,
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Acting-As', 'X-Requested-With'],
     })
 );
 
@@ -53,7 +65,17 @@ const limiter = rateLimit({
     legacyHeaders: false,
 });
 
+// Stricter rate limit for auth endpoints (brute-force protection)
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20, // 20 attempts per 15 min for login/register/forgot-password
+    message: 'Too many authentication attempts. Please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 app.use('/api', limiter);
+app.use(`/api/${config.apiVersion}/auth`, authLimiter);
 
 // Body parser
 app.use(express.json({ limit: '10mb' }));
@@ -75,8 +97,8 @@ if (config.env === 'development') {
     app.use(morgan('combined'));
 }
 
-// Serve static files
-app.use('/uploads', express.static(path.join(process.cwd(), config.upload.uploadPath)));
+// Serve static files (non-images get Content-Disposition: attachment)
+app.use('/uploads', serveUploadsWithDisposition, express.static(path.join(process.cwd(), config.upload.uploadPath)));
 
 // Health check route
 app.get('/health', (req: Request, res: Response) => {
@@ -94,6 +116,9 @@ import storeRoutes from './modules/product/store.routes';
 
 const apiBase = `/api/${config.apiVersion}`;
 
+// CSRF protection for cookie-based auth (skips GET/HEAD/OPTIONS, Bearer auth, exempt paths)
+app.use(apiBase, csrfProtection);
+app.use(apiBase, csrfRoutes);
 app.use(`${apiBase}/auth`, authRoutes);
 app.use(`${apiBase}/users`, userRoutes);
 app.use(`${apiBase}/clients`, clientRoutes);
@@ -112,6 +137,14 @@ app.use(`${apiBase}/transactions`, transactionRoutes);
 app.use(`${apiBase}/notifications`, notificationRoutes);
 app.use(`${apiBase}/tickets`, ticketRoutes);
 app.use(`${apiBase}/upload`, uploadRoutes);
+app.use(`${apiBase}/exchange-rates`, exchangeRateRoutes);
+app.use(`${apiBase}/dashboard`, dashboardRoutes);
+app.use(`${apiBase}/activity-log`, activityLogRoutes);
+app.use(`${apiBase}/affiliate`, affiliateRoutes);
+app.use(`${apiBase}/admin/settings`, settingsRoutes);
+app.use(`${apiBase}/admin/migration/whmcs`, whmcsMigrationRoutes);
+app.use(`${apiBase}/roles`, roleRoutes);
+app.use(`${apiBase}/billable-items`, billableItemRoutes);
 
 
 // 404 handler

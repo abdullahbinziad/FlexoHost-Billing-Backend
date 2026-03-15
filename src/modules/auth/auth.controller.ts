@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Request, Response } from 'express';
 import fetch from 'node-fetch';
 import { AuthRequest } from '../../middlewares/auth';
@@ -8,6 +9,8 @@ import authService from './auth.service';
 import type { GoogleProfile } from './auth.service';
 
 const apiBase = `/api/${config.apiVersion}`;
+const OAUTH_STATE_COOKIE = 'oauth_state';
+const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
 
 const baseCookieOptions = {
     httpOnly: true,
@@ -41,22 +44,58 @@ class AuthController {
 
         this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
 
-        return ApiResponse.created(res, 'User registered successfully', {
-            user,
-            accessToken: tokens.accessToken,
-        });
+        const payload: Record<string, unknown> = { user };
+        if (!config.cookieOnlyAuth) {
+            payload.accessToken = tokens.accessToken;
+            payload.refreshToken = tokens.refreshToken;
+        }
+        return ApiResponse.created(res, 'User registered successfully', payload);
     });
 
     // Login user
     login = catchAsync(async (req: AuthRequest, res: Response) => {
-        const { user, tokens } = await authService.login(req.body);
-
-        this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
-
-        return ApiResponse.ok(res, 'Login successful', {
-            user,
-            accessToken: tokens.accessToken,
-        });
+        try {
+            const { user, tokens } = await authService.login(req.body);
+            const { auditLogSafe } = await import('../activity-log/activity-log.service');
+            const { default: Client } = await import('../client/client.model');
+            const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || '';
+            const client = await Client.findOne({ user: user._id }).select('_id').lean();
+            auditLogSafe({
+                message: 'Login successful',
+                type: 'login_success',
+                category: 'auth',
+                actorType: 'user',
+                actorId: user._id?.toString(),
+                clientId: (client as { _id?: { toString(): string } } | null)?._id?.toString(),
+                source: 'manual',
+                ipAddress: ip,
+                userAgent: (req.headers['user-agent'] as string) || '',
+            });
+            this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
+            const payload: Record<string, unknown> = { user };
+            if (!config.cookieOnlyAuth) {
+                payload.accessToken = tokens.accessToken;
+                payload.refreshToken = tokens.refreshToken;
+            }
+            return ApiResponse.ok(res, 'Login successful', payload);
+        } catch (err: any) {
+            if (err?.statusCode === 401) {
+                const { auditLogSafe } = await import('../activity-log/activity-log.service');
+                const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || '-';
+                auditLogSafe({
+                    message: 'Failed login attempt',
+                    type: 'login_failed',
+                    category: 'auth',
+                    actorType: 'system',
+                    source: 'manual',
+                    status: 'failure',
+                    severity: 'medium',
+                    ipAddress: ip,
+                    userAgent: (req.headers['user-agent'] as string) || '',
+                });
+            }
+            throw err;
+        }
     });
 
     // Logout user
@@ -76,9 +115,9 @@ class AuthController {
 
         this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
 
-        return ApiResponse.ok(res, 'Token refreshed successfully', {
-            accessToken: tokens.accessToken,
-        });
+        const payload: Record<string, unknown> = {};
+        if (!config.cookieOnlyAuth) payload.accessToken = tokens.accessToken;
+        return ApiResponse.ok(res, 'Token refreshed successfully', payload);
     });
 
     // Get current user
@@ -97,20 +136,10 @@ class AuthController {
         return ApiResponse.ok(res, 'Password changed successfully');
     });
 
-    // Forgot password
+    // Forgot password - never expose reset token in API response (security)
     forgotPassword = catchAsync(async (req: AuthRequest, res: Response) => {
-        const resetToken = await authService.forgotPassword(req.body.email);
-
-        const response =
-            config.env === 'development'
-                ? { message: 'Password reset token sent', resetToken }
-                : { message: 'Password reset token sent to your email' };
-
-        return ApiResponse.ok(
-            res,
-            response.message,
-            config.env === 'development' ? { resetToken } : undefined
-        );
+        await authService.forgotPassword(req.body.email);
+        return ApiResponse.ok(res, 'Password reset token sent to your email');
     });
 
     // Reset password
@@ -132,12 +161,21 @@ class AuthController {
     /**
      * Redirect to Google OAuth consent screen.
      * state = optional frontend path to redirect after login (e.g. / or /admin).
+     * Generates secure state token and verifies it on callback to prevent CSRF.
      */
     getGoogleAuth = catchAsync(async (req: Request, res: Response) => {
         if (!config.google.clientId) {
             return ApiResponse.badRequest(res, 'Google sign-in is not configured');
         }
-        const state = typeof req.query.state === 'string' ? req.query.state : '';
+        const redirectPath = typeof req.query.state === 'string' ? req.query.state.trim() : '';
+        const stateToken = crypto.randomBytes(32).toString('base64url');
+        const state = `${stateToken}:${redirectPath || '/'}`;
+
+        res.cookie(OAUTH_STATE_COOKIE, stateToken, {
+            ...baseCookieOptions,
+            maxAge: OAUTH_STATE_MAX_AGE_MS,
+        });
+
         const callbackUrl = `${req.protocol}://${req.get('host')}${apiBase}/auth/google/callback`;
         const scope = 'openid email profile';
         const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -145,7 +183,7 @@ class AuthController {
         url.searchParams.set('redirect_uri', callbackUrl);
         url.searchParams.set('response_type', 'code');
         url.searchParams.set('scope', scope);
-        if (state) url.searchParams.set('state', state);
+        url.searchParams.set('state', state);
         url.searchParams.set('access_type', 'offline');
         url.searchParams.set('prompt', 'consent');
         return res.redirect(url.toString());
@@ -153,15 +191,26 @@ class AuthController {
 
     /**
      * Google OAuth callback: exchange code for profile, find/create user, redirect to frontend with token.
+     * Validates state to prevent CSRF.
      */
     getGoogleCallback = catchAsync(async (req: Request, res: Response) => {
         if (!config.google.clientId || !config.google.clientSecret) {
             return res.redirect(`${config.frontendUrl}/login?error=google_not_configured`);
         }
         const code = req.query.code as string;
-        const state = (typeof req.query.state === 'string' ? req.query.state : '').trim();
+        const stateParam = (typeof req.query.state === 'string' ? req.query.state : '').trim();
         if (!code) {
             return res.redirect(`${config.frontendUrl}/login?error=missing_code`);
+        }
+
+        const storedToken = req.cookies?.[OAUTH_STATE_COOKIE];
+        res.clearCookie(OAUTH_STATE_COOKIE, baseCookieOptions);
+        if (!storedToken || !stateParam) {
+            return res.redirect(`${config.frontendUrl}/login?error=invalid_state`);
+        }
+        const [stateToken, redirectPath] = stateParam.includes(':') ? stateParam.split(':') : [stateParam, '/'];
+        if (stateToken !== storedToken || stateToken.length < 16) {
+            return res.redirect(`${config.frontendUrl}/login?error=invalid_state`);
         }
 
         const callbackUrl = `${req.protocol}://${req.get('host')}${apiBase}/auth/google/callback`;
@@ -198,12 +247,13 @@ class AuthController {
         }
         const profile = (await userInfoRes.json()) as GoogleProfile;
 
-        const { user, tokens } = await authService.loginWithGoogle(profile);
+        const { tokens } = await authService.loginWithGoogle(profile);
 
         this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
 
-        const redirectPath = state || '/';
-        const hash = `accessToken=${encodeURIComponent(tokens.accessToken)}&redirect=${encodeURIComponent(redirectPath)}`;
+        const safeRedirect = (redirectPath || '/').replace(/^\/+/, '/') || '/';
+        // Include refreshToken so frontend can store it (cookies set here are for backend domain only)
+        const hash = `accessToken=${encodeURIComponent(tokens.accessToken)}&refreshToken=${encodeURIComponent(tokens.refreshToken)}&redirect=${encodeURIComponent(safeRedirect)}`;
         return res.redirect(`${config.frontendUrl}/login#${hash}`);
     });
 }

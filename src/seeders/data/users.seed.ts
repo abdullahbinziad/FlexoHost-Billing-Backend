@@ -2,10 +2,27 @@ import { USER_ROLES } from '../../modules/user/user.const';
 
 export const defaultUsers = [
     {
+        firstName: 'Super',
+        lastName: 'Admin',
+        email: 'superadmin@gmail.com',
+        password: 'SuperAdmin@123',
+        role: USER_ROLES.SUPERADMIN,
+        verified: true,
+        active: true,
+        phone: '+1234567888',
+        address: {
+            street: '1 Super Admin Lane',
+            city: 'Admin City',
+            state: 'Admin State',
+            country: 'USA',
+            postCode: '00001',
+        },
+    },
+    {
         firstName: 'Admin',
         lastName: 'User',
-        email: 'admin@example.com',
-        password: 'Admin@123456',
+        email: 'admin@gmail.com',
+        password: 'As@83.com',
         role: USER_ROLES.ADMIN,
         verified: true,
         active: true,

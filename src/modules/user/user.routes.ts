@@ -3,11 +3,13 @@ import userController from './user.controller';
 import { protect, restrictTo } from '../../middlewares/auth';
 import { validate } from '../../middlewares/validate';
 import { upload, handleMulterError } from '../../middlewares/upload';
+import { virusScanUpload } from '../../middlewares/virusScanUpload';
 import {
     updateUserValidation,
     adminUpdateUserValidation,
     getUserByIdValidation,
     getAllUsersValidation,
+    bulkAssignRoleValidation,
 } from './user.validation';
 
 const router = Router();
@@ -31,41 +33,50 @@ router.patch(
     '/me/avatar',
     upload.single('avatar'),
     handleMulterError,
+    virusScanUpload,
     userController.updateMe
 );
 
-// Admin only routes
+// Admin only routes (admin + superadmin)
+const adminRoles = ['admin', 'superadmin'];
 router.get(
     '/',
-    restrictTo('admin'),
+    restrictTo(...adminRoles),
     validate(getAllUsersValidation),
     userController.getAllUsers
 );
 
+router.patch(
+    '/bulk-role',
+    restrictTo(...adminRoles),
+    validate(bulkAssignRoleValidation),
+    userController.bulkAssignRole
+);
+
 router.get(
     '/:id',
-    restrictTo('admin'),
+    restrictTo(...adminRoles),
     validate(getUserByIdValidation),
     userController.getUserById
 );
 
 router.patch(
     '/:id',
-    restrictTo('admin'),
+    restrictTo(...adminRoles),
     validate(adminUpdateUserValidation),
     userController.updateUserById
 );
 
 router.delete(
     '/:id',
-    restrictTo('admin'),
+    restrictTo(...adminRoles),
     validate(getUserByIdValidation),
     userController.deleteUser
 );
 
 router.delete(
     '/:id/permanent',
-    restrictTo('admin'),
+    restrictTo(...adminRoles),
     validate(getUserByIdValidation),
     userController.permanentlyDeleteUser
 );

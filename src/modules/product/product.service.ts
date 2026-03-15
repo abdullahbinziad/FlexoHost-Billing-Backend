@@ -2,20 +2,39 @@ import mongoose from 'mongoose';
 import Product from './product.model';
 import { IProduct, IProductQueryFilter } from './product.interface';
 import ApiError from '../../utils/apiError';
+import { escapeRegex } from '../../utils/escapeRegex';
 
 /**
  * Product Service Class
  * Handles all business logic for product operations
  */
 class ProductService {
+    private buildProductQuery(filter: IProductQueryFilter = {}, options?: { publicOnly?: boolean }) {
+        const { type, group, isHidden } = filter;
+
+        const query: any = {};
+        if (type) query.type = type;
+        if (group) query.group = group;
+        if (options?.publicOnly) {
+            query.isHidden = false;
+        } else if (isHidden !== undefined) {
+            query.isHidden = isHidden;
+        }
+
+        return query;
+    }
+
     /**
      * Create a new product
      */
     async createProduct(productData: Partial<IProduct>): Promise<IProduct> {
         // Check if product name already exists (case-insensitive)
-        const existingProduct = await Product.findOne({
-            name: { $regex: new RegExp(`^${productData.name}$`, 'i') }
-        });
+        const name = productData?.name ? String(productData.name) : '';
+        const existingProduct = name
+            ? await Product.findOne({
+                  name: { $regex: new RegExp(`^${escapeRegex(name)}$`, 'i') },
+              })
+            : null;
 
         if (existingProduct) {
             throw new ApiError(409, 'A product with this name already exists');
@@ -31,11 +50,7 @@ class ProductService {
     async getProducts(filter: IProductQueryFilter = {}) {
         const { type, group, isHidden, page = 1, limit = 20, sort = '-createdAt' } = filter;
 
-        // Build query
-        const query: any = {};
-        if (type) query.type = type;
-        if (group) query.group = group;
-        if (isHidden !== undefined) query.isHidden = isHidden;
+        const query = this.buildProductQuery({ type, group, isHidden });
 
         // Execute query with pagination
         const products = await Product.find(query)
@@ -45,6 +60,32 @@ class ProductService {
             .exec();
 
         // Get total count
+        const count = await Product.countDocuments(query);
+
+        return {
+            products,
+            pagination: {
+                currentPage: Number(page),
+                totalPages: Math.ceil(count / Number(limit)),
+                totalItems: count,
+                itemsPerPage: Number(limit)
+            }
+        };
+    }
+
+    /**
+     * Get public store products. Hidden products are always excluded.
+     */
+    async getPublicProducts(filter: IProductQueryFilter = {}) {
+        const { type, group, page = 1, limit = 100, sort = 'name' } = filter;
+        const query = this.buildProductQuery({ type, group }, { publicOnly: true });
+
+        const products = await Product.find(query)
+            .sort(sort)
+            .limit(Number(limit))
+            .skip((Number(page) - 1) * Number(limit))
+            .exec();
+
         const count = await Product.countDocuments(query);
 
         return {
@@ -80,14 +121,28 @@ class ProductService {
     }
 
     /**
+     * Get one public store product by ID or PID.
+     */
+    async getPublicProductById(id: string): Promise<IProduct | null> {
+        const product = await this.getProductById(id);
+
+        if (!product || (product as any).isHidden) {
+            throw new ApiError(404, 'Product not found');
+        }
+
+        return product;
+    }
+
+    /**
      * Update product
      */
     async updateProduct(id: string, updateData: Partial<IProduct>): Promise<IProduct | null> {
         // If updating name, check for duplicates
         if (updateData.name) {
+            const name = String(updateData.name);
             const existingProduct = await Product.findOne({
-                name: { $regex: new RegExp(`^${updateData.name}$`, 'i') },
-                _id: { $ne: id }
+                name: { $regex: new RegExp(`^${escapeRegex(name)}$`, 'i') },
+                _id: { $ne: id },
             });
 
             if (existingProduct) {

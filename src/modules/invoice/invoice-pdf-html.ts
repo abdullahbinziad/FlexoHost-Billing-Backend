@@ -3,6 +3,8 @@
  * Mirrors: InvoiceDetail.tsx (container) + InvoiceHeader.tsx + InvoiceBody.tsx
  */
 
+import { escapeHtml } from '../../utils/string.util';
+
 export interface InvoicePdfData {
     invoiceNumber: string;
     status: string;
@@ -45,11 +47,6 @@ function statusClass(s: string): string {
     if (status === 'unpaid' || status === 'overdue') return 'invoice-status-unpaid';
     if (status === 'pending') return 'invoice-status-pending';
     return 'invoice-status-cancelled';
-}
-
-function escapeHtml(s: string): string {
-    const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-    return String(s).replace(/[&<>"']/g, (c) => map[c] || c);
 }
 
 export function buildInvoiceHtml(inv: InvoicePdfData): string {

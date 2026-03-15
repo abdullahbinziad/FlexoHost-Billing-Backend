@@ -1,12 +1,14 @@
 import express from 'express';
 import { orderController } from './order.controller';
-import { protect, optionalAuth } from '../../middlewares/auth';
+import { protect } from '../../middlewares/auth';
 
 const router = express.Router();
 
+router.get('/config', protect, orderController.getOrderConfig);
+
 router.post(
     '/',
-    optionalAuth,
+    protect,
     orderController.createOrder
 );
 

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 import User from './user.model';
 import Client from '../client/client.model';
+import Role from '../role/role.model';
 import clientService from '../client/client.service';
 import ApiError from '../../utils/apiError';
 import {
@@ -83,20 +84,19 @@ class UserService {
     async login(credentials: IUserLogin): Promise<{ user: any; tokens: IAuthTokens }> {
         const { email, password } = credentials;
 
-        // Find user and include password
+        // Find user and include password, loginAttempts, lockUntil for brute-force protection
         const user = await User.findOne({ email })
-            .select('+password +active');
+            .select('+password +active +loginAttempts +lockUntil');
 
         if (!user) {
             throw ApiError.unauthorized('Invalid email or password');
         }
 
-        // Check if account is locked (DISABLED FOR NOW)
-        // if (user.isLocked()) {
-        //     throw ApiError.unauthorized(
-        //         'Account is locked due to too many failed login attempts. Please try again later.'
-        //     );
-        // }
+        if (user.isLocked()) {
+            throw ApiError.unauthorized(
+                'Account is locked due to too many failed login attempts. Please try again later.'
+            );
+        }
 
         // Check if account is active
         if (!user.active) {
@@ -107,7 +107,7 @@ class UserService {
         const isPasswordCorrect = await user.comparePassword(password);
 
         if (!isPasswordCorrect) {
-            // await user.incrementLoginAttempts(); // DISABLED FOR NOW
+            await user.incrementLoginAttempts();
             throw ApiError.unauthorized('Invalid email or password');
         }
 
@@ -121,10 +121,9 @@ class UserService {
         // Fetch Client Profile to include in payload (includes new support PIN)
         const clientProfile = await Client.findOne({ user: user._id }).lean();
 
-        // Reset login attempts on successful login (DISABLED FOR NOW)
-        // if (user.loginAttempts > 0) {
-        //     await user.resetLoginAttempts();
-        // }
+        if (user.loginAttempts > 0) {
+            await user.resetLoginAttempts();
+        }
 
         // Generate auth tokens
         const tokens = generateAuthTokens(user._id.toString(), user.role);
@@ -135,9 +134,10 @@ class UserService {
 
         const sanitizedUser = sanitizeUser(user);
         const profileCompleted = !!(clientProfile?.profileCompletedAt);
+        const userWithRole = await this.enrichUserWithRole({ ...sanitizedUser, client: clientProfile, profileCompleted });
 
         return {
-            user: { ...sanitizedUser, client: clientProfile, profileCompleted },
+            user: userWithRole,
             tokens,
         };
     }
@@ -292,8 +292,40 @@ class UserService {
         const clientProfile = await Client.findOne({ user: user._id }).lean() as any;
         const sanitizedUser = sanitizeUser(user);
         const profileCompleted = !!(clientProfile?.profileCompletedAt);
+        const base = { ...sanitizedUser, client: clientProfile, profileCompleted };
+        return this.enrichUserWithRole(base);
+    }
 
-        return { ...sanitizedUser, client: clientProfile, profileCompleted };
+    /** Attach roleData (permissions, hasFullAccess) for admin-panel users */
+    async enrichUserWithRole(userObj: any): Promise<any> {
+        const adminRoles = ['superadmin', 'admin', 'staff'];
+        if (!adminRoles.includes(userObj.role)) {
+            return userObj;
+        }
+        if (userObj.roleId) {
+            try {
+                const role = await Role.findById(userObj.roleId).lean();
+                if (role) {
+                    userObj.roleData = {
+                        _id: role._id,
+                        name: role.name,
+                        permissions: role.permissions || [],
+                        hasFullAccess: role.hasFullAccess || false,
+                    };
+                    // Superadmin and admin ALWAYS have full access regardless of role document
+                    if (userObj.role === 'superadmin' || userObj.role === 'admin') {
+                        userObj.roleData.hasFullAccess = true;
+                    }
+                    return userObj;
+                }
+            } catch {
+                // Role collection may not exist yet
+            }
+        }
+        if (userObj.role === 'superadmin' || userObj.role === 'admin') {
+            userObj.roleData = { hasFullAccess: true };
+        }
+        return userObj;
     }
 
     // Update user
@@ -322,10 +354,11 @@ class UserService {
     }
 
     // Update user (admin only)
-    async updateUserByAdmin(userId: string, updateData: any): Promise<any> {
+    async updateUserByAdmin(userId: string, updateData: any, currentUserRole?: string): Promise<any> {
         const allowedUpdates = [
             'email',
             'role',
+            'roleId',
             'active',
             'verified',
         ];
@@ -335,6 +368,24 @@ class UserService {
 
         if (!isValidOperation) {
             throw ApiError.badRequest('Invalid updates. Contact information updates must go through the Client service.');
+        }
+
+        if (updateData.roleId !== undefined) {
+            const role = await Role.findById(updateData.roleId).lean();
+            if (!role) throw ApiError.badRequest('Invalid role');
+            if (role.archived) throw ApiError.badRequest('Cannot assign archived role');
+            if (role.slug === 'super_admin' && currentUserRole !== 'superadmin') {
+                throw ApiError.forbidden('Only superadmin can assign Super Admin role');
+            }
+        } else if (updateData.role === 'staff') {
+            const { getBillingSettings } = await import('../settings/billing-settings.service');
+            const settings = await getBillingSettings();
+            if (settings.defaultStaffRoleId) {
+                const role = await Role.findById(settings.defaultStaffRoleId).lean();
+                if (role && !role.archived) {
+                    updateData.roleId = settings.defaultStaffRoleId;
+                }
+            }
         }
 
         if (updateData.email) {
@@ -360,6 +411,21 @@ class UserService {
         }
 
         return sanitizeUser(user);
+    }
+
+    async bulkAssignRole(userIds: string[], roleId: string, currentUserRole?: string): Promise<{ updated: number }> {
+        const role = await Role.findById(roleId).lean();
+        if (!role) throw ApiError.badRequest('Invalid role');
+        if (role.archived) throw ApiError.badRequest('Cannot assign archived role');
+        if (role.slug === 'super_admin' && currentUserRole !== 'superadmin') {
+            throw ApiError.forbidden('Only superadmin can assign Super Admin role');
+        }
+
+        const result = await User.updateMany(
+            { _id: { $in: userIds } },
+            { $set: { roleId: new mongoose.Types.ObjectId(roleId) } }
+        );
+        return { updated: result.modifiedCount };
     }
 
     // Change password
@@ -481,25 +547,60 @@ class UserService {
     }
 
     // Delete user (soft delete)
-    async deleteUser(userId: string): Promise<void> {
-        const user = await User.findByIdAndUpdate(
-            userId,
-            { active: false },
-            { new: true }
-        );
-
-        if (!user) {
+    async deleteUser(userId: string, currentUserRole?: string): Promise<void> {
+        const targetUser = await User.findById(userId).setOptions({ includeInactive: true });
+        if (!targetUser) {
             throw ApiError.notFound('User not found');
         }
+
+        const isTargetSuperadmin =
+            targetUser.role === 'superadmin' ||
+            (targetUser.roleId && (await Role.findById(targetUser.roleId).then((r) => r?.slug === 'super_admin')));
+
+        if (isTargetSuperadmin) {
+            if (currentUserRole !== 'superadmin') {
+                throw ApiError.forbidden('Only superadmin can delete or deactivate superadmin users');
+            }
+            const superAdminRole = await Role.findOne({ slug: 'super_admin' });
+            const otherSuperadminCount = await User.countDocuments({
+                $or: [{ role: 'superadmin' }, { roleId: superAdminRole?._id }],
+                active: true,
+                _id: { $ne: userId },
+            });
+            if (otherSuperadminCount < 1) {
+                throw ApiError.badRequest('Cannot deactivate the last superadmin');
+            }
+        }
+
+        await User.findByIdAndUpdate(userId, { active: false });
     }
 
     // Permanently delete user (admin only)
-    async permanentlyDeleteUser(userId: string): Promise<void> {
-        const user = await User.findByIdAndDelete(userId).setOptions({ includeInactive: true });
-
-        if (!user) {
+    async permanentlyDeleteUser(userId: string, currentUserRole?: string): Promise<void> {
+        const targetUser = await User.findById(userId).setOptions({ includeInactive: true });
+        if (!targetUser) {
             throw ApiError.notFound('User not found');
         }
+
+        const isTargetSuperadmin =
+            targetUser.role === 'superadmin' ||
+            (targetUser.roleId && (await Role.findById(targetUser.roleId).then((r) => r?.slug === 'super_admin')));
+
+        if (isTargetSuperadmin) {
+            if (currentUserRole !== 'superadmin') {
+                throw ApiError.forbidden('Only superadmin can permanently delete superadmin users');
+            }
+            const superAdminRole = await Role.findOne({ slug: 'super_admin' });
+            const otherSuperadminCount = await User.countDocuments({
+                $or: [{ role: 'superadmin' }, { roleId: superAdminRole?._id }],
+                _id: { $ne: userId },
+            });
+            if (otherSuperadminCount < 1) {
+                throw ApiError.badRequest('Cannot delete the last superadmin');
+            }
+        }
+
+        await User.findByIdAndDelete(userId).setOptions({ includeInactive: true });
     }
 }
 

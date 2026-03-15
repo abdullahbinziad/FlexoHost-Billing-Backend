@@ -31,6 +31,12 @@ async function persistHostingDetails(
     serviceId: mongoose.Types.ObjectId,
     details: Record<string, unknown>
 ): Promise<void> {
+    const serviceIdStr = serviceId.toString();
+    const existing = await hostingDetailsRepository.findByServiceId(serviceIdStr);
+    if (existing) {
+        await hostingDetailsRepository.updateByServiceId(serviceIdStr, details as any);
+        return;
+    }
     await hostingDetailsRepository.create({
         serviceId,
         ...details,

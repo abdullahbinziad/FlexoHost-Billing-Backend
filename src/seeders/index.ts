@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import config from '../config';
 import { seedUsers, clearUsers } from './user.seeder';
+import { seedRoles, migrateUsersToRoles } from './role.seeder';
 import logger from '../utils/logger';
 
 /**
@@ -32,8 +33,14 @@ const seedAll = async (force: boolean = false): Promise<void> => {
             logger.info('='.repeat(50));
         }
 
+        // Seed roles first (required for user migration)
+        await seedRoles();
+
         // Seed users
         await seedUsers();
+
+        // Migrate existing users to roles (assign roleId)
+        await migrateUsersToRoles();
 
         // Add more seed functions here as you create more seeders
         // Example:

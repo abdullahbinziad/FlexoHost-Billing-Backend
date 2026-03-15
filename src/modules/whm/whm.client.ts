@@ -8,10 +8,9 @@ const WHM_HOST = config.whm.host.replace(/\/$/, ''); // Remove trailing slash if
 const WHM_USER = config.whm.username.trim();
 const WHM_TOKEN = config.whm.apiToken.trim();
 
-// Create an agent that ignores SSL certificate errors (common for WHM/cPanel self-signed certs)
-// Create agents for both HTTP and HTTPS to handle various environments
+// HTTPS agent: verify SSL by default. Set WHM_REJECT_UNAUTHORIZED=false for self-signed WHM only.
 const httpsAgent = new https.Agent({
-    rejectUnauthorized: false
+    rejectUnauthorized: config.whm.rejectUnauthorized,
 });
 const httpAgent = new http.Agent();
 

@@ -1,40 +1,13 @@
 import {
-    IDomainRegistrarProvider,
     IHostingPanelProvider,
     IVpsProvider,
     IEmailProvider,
     ILicenseProvider,
-    DomainRegistrationRequest,
-    DomainTransferRequest,
     HostingAccountRequest,
     VpsInstanceRequest,
     EmailTenantRequest,
     LicenseIssueRequest
 } from './interfaces';
-
-export class DomainRegistrarStub implements IDomainRegistrarProvider {
-    async registerDomain(_req: DomainRegistrationRequest) {
-        return { remoteId: `dom_${Date.now()}` };
-    }
-    async requestTransfer(_req: DomainTransferRequest) {
-        return { remoteId: `trn_${Date.now()}` };
-    }
-    async getTransferStatus(_domainName: string): Promise<{ status: 'PENDING' | 'COMPLETED' | 'REJECTED' | 'CANCELLED'; reason?: string; expiresAt?: Date; eppStatusCodes?: string[] }> {
-        // Randomly succeed or stay pending in mock environments
-        const isReady = Math.random() > 0.5;
-        if (isReady) {
-            const mockExpiry = new Date();
-            mockExpiry.setFullYear(mockExpiry.getFullYear() + 1);
-            return { status: 'COMPLETED', expiresAt: mockExpiry, eppStatusCodes: ['clientTransferProhibited'] };
-        }
-        return { status: 'PENDING' };
-    }
-    async getDomainInfo(_domainName: string): Promise<{ status: string; expiresAt: Date; eppStatusCodes: string[] }> {
-        const mockExpiry = new Date();
-        mockExpiry.setFullYear(mockExpiry.getFullYear() + 1);
-        return { status: 'ACTIVE', expiresAt: mockExpiry, eppStatusCodes: ['clientTransferProhibited'] };
-    }
-}
 
 export class HostingPanelStub implements IHostingPanelProvider {
     async createAccount(_req: HostingAccountRequest) {
@@ -82,7 +55,6 @@ export class LicenseProviderStub implements ILicenseProvider {
     async enableLicense(_remoteId: string) { return true; }
 }
 
-export const domainRegistrarProvider = new DomainRegistrarStub();
 export const hostingPanelProvider = new HostingPanelStub();
 export const vpsProvider = new VpsProviderStub();
 export const emailProvider = new EmailProviderStub();

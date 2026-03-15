@@ -4,6 +4,8 @@ import User from '../user/user.model';
 import ApiError from '../../utils/apiError';
 import { IRegisterClientData, IClientUpdate } from './client.interface';
 import { USER_ROLES } from '../user/user.const';
+import { generateAuthTokens } from '../user/user.helper';
+import { sanitizeUser } from '../user/user.helper';
 
 import emailService from '../email/email.service';
 import logger from '../../utils/logger';
@@ -114,8 +116,18 @@ class ClientService {
                 }
             }
 
+            // Generate tokens for auto-login after registration
+            const tokens = generateAuthTokens(user._id.toString(), user.role);
+            user.refreshToken = tokens.refreshToken;
+            await user.save({ validateBeforeSave: false });
+
+            const sanitizedUser = sanitizeUser(user);
+
             return {
                 client: populatedClient,
+                user: { ...sanitizedUser, client: populatedClient, profileCompleted: true },
+                accessToken: tokens.accessToken,
+                refreshToken: tokens.refreshToken,
                 isNewUser,
                 message: isNewUser
                     ? 'Client registered successfully with new user account'

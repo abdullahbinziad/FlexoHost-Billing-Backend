@@ -17,15 +17,18 @@ import {
 import { orderConfirmationTemplate } from './order';
 import {
     hostingReadyTemplate,
+    hostingAccountCreatedTemplate,
     suspensionWarningTemplate,
     suspendedTemplate,
+    terminatedTemplate,
+    terminationWarningTemplate,
 } from './service';
 import {
     domainRegistrationConfirmationTemplate,
     domainRenewalReminderTemplate,
     domainExpiredNoticeTemplate,
 } from './domain';
-import { ticketOpenedTemplate } from './support';
+import { ticketOpenedTemplate, ticketReplyTemplate } from './support';
 import { maintenanceNoticeTemplate } from './incident';
 
 /** Central registry - all templates in one place */
@@ -39,12 +42,16 @@ export const TEMPLATE_REGISTRY: Record<TemplateKey, BaseEmailTemplate<any>> = {
     'billing.overdue_reminder': overdueReminderTemplate,
     'order.confirmation': orderConfirmationTemplate,
     'service.hosting_ready': hostingReadyTemplate,
+    'service.hosting_account_created': hostingAccountCreatedTemplate,
     'service.suspension_warning': suspensionWarningTemplate,
     'service.suspended': suspendedTemplate,
+    'service.termination_warning': terminationWarningTemplate,
+    'service.terminated': terminatedTemplate,
     'domain.registration_confirmation': domainRegistrationConfirmationTemplate,
     'domain.renewal_reminder': domainRenewalReminderTemplate,
     'domain.expired_notice': domainExpiredNoticeTemplate,
     'support.ticket_opened': ticketOpenedTemplate,
+    'support.ticket_reply': ticketReplyTemplate,
     'incident.maintenance_notice': maintenanceNoticeTemplate,
 };
 
@@ -59,12 +66,16 @@ export const TEMPLATE_KEYS: TemplateKey[] = [
     'billing.payment_failed',
     'billing.overdue_reminder',
     'service.hosting_ready',
+    'service.hosting_account_created',
     'service.suspension_warning',
     'service.suspended',
+    'service.termination_warning',
+    'service.terminated',
     'domain.registration_confirmation',
     'domain.renewal_reminder',
     'domain.expired_notice',
     'support.ticket_opened',
+    'support.ticket_reply',
     'incident.maintenance_notice',
 ];
 

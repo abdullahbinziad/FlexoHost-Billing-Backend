@@ -10,6 +10,7 @@ export enum InvoiceStatus {
 export enum InvoiceItemType {
     HOSTING = 'HOSTING',
     DOMAIN = 'DOMAIN',
+    LATE_FEE = 'LATE_FEE',
 }
 
 export interface IBilledTo {
@@ -44,6 +45,22 @@ export interface IInvoice {
     credit: number;
     total: number;
     balanceDue: number;
+    /** Historical FX snapshot at invoice date – do not recalc with current rate */
+    fxSnapshot?: {
+        baseCurrency: string;
+        fxRateToBase: number;
+        fxDate: Date;
+        subtotalInBase: number;
+        taxInBase: number;
+        totalInBase: number;
+        balanceDueInBase: number;
+    };
+    /** True when snapshot was backfilled or used fallback rate (legacy) */
+    fxSnapshotLegacy?: boolean;
+    /** Convenience fields for aggregation – always derived from fxSnapshot when present */
+    baseCurrency?: string;
+    totalInBase?: number;
+    balanceDueInBase?: number;
     orderId?: Types.ObjectId;
     paymentMethod?: string;
     createdAt?: Date;

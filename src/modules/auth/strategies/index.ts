@@ -4,13 +4,12 @@
  * and add normalizers to the registry below.
  */
 import type { OAuthProfile } from '../types/oauth.types';
-import type { GoogleProfile } from '../types/google.types';
 import { normalizeGoogleProfile } from './google.strategy';
 
 export type OAuthNormalizer<T = unknown> = (profile: T) => OAuthProfile;
 
-const normalizers: Record<string, OAuthNormalizer> = {
-    google: normalizeGoogleProfile as OAuthNormalizer<GoogleProfile>,
+const normalizers: Record<string, OAuthNormalizer<unknown>> = {
+    google: normalizeGoogleProfile as OAuthNormalizer<unknown>,
     // facebook: normalizeFacebookProfile,
     // github: normalizeGithubProfile,
 };

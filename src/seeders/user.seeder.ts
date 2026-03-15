@@ -45,15 +45,18 @@ export const seedUsers = async (): Promise<void> => {
                 password: defaultUser.password,
                 role: defaultUser.role,
                 verified: defaultUser.verified,
-                active: defaultUser.active
+                active: defaultUser.active,
+                provider: 'local',
+                providerId: `local_${defaultUser.email}`,
             }]);
 
             await Client.create({
                 user: user._id,
                 firstName: defaultUser.firstName,
                 lastName: defaultUser.lastName,
-                phone: defaultUser.phone,
-                address: defaultUser.address || undefined
+                contactEmail: defaultUser.email,
+                phoneNumber: defaultUser.phone || undefined,
+                address: defaultUser.address || undefined,
             });
 
             createdUsers.push(user);
@@ -64,7 +67,7 @@ export const seedUsers = async (): Promise<void> => {
             logger.info(`   - ${defaultUsers[i].firstName} ${defaultUsers[i].lastName} (${createdUsers[i].email}) - Role: ${createdUsers[i].role}`);
         }
     } catch (error: any) {
-        logger.error('❌ Error seeding users:', error.message);
+        logger.error('❌ Error seeding users:', error?.message ?? error);
         throw error;
     }
 };

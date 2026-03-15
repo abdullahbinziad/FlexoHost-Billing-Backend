@@ -22,9 +22,11 @@ interface Config {
     cors: {
         origin: string;
     };
+    cookieOnlyAuth?: boolean;
     upload: {
         maxFileSize: number;
         uploadPath: string;
+        enableClamavScan?: boolean;
     };
     rateLimit: {
         windowMs: number;
@@ -42,16 +44,26 @@ interface Config {
     };
     security: {
         bcryptSaltRounds: number;
+        /** CSRF protection for cookie-based auth. Default true when cookieOnlyAuth. */
+        csrfEnabled: boolean;
+        /** Token length in bytes (32 = 256 bits). */
+        csrfTokenBytes: number;
     };
     whm: {
         host: string;
         username: string;
         apiToken: string;
+        /** When true (default), verify SSL certificates. Set WHM_REJECT_UNAUTHORIZED=false only for self-signed WHM. */
+        rejectUnauthorized: boolean;
     };
     dynadot: {
         apiKey: string;
         apiSecret: string;
         baseUrl: string;
+        useSandbox: boolean;
+        timeoutMs: number;
+        /** https://api.dynadot.com/api3.json (production) */
+        api3Url: string;
     };
     namely: {
         apiKey: string;
@@ -60,6 +72,33 @@ interface Config {
     google: {
         clientId: string;
         clientSecret: string;
+    };
+    cron: {
+        enabled: boolean;
+        runOnStart: boolean;
+        renewalsIntervalMs: number;
+        overdueSuspensionsIntervalMs: number;
+        invoiceRemindersIntervalMs: number;
+        terminationsIntervalMs: number;
+        usageSyncIntervalMs: number;
+        actionWorkerIntervalMs: number;
+        provisioningWorkerIntervalMs: number;
+        domainSyncIntervalMs: number;
+    };
+    automationAlerts: {
+        enabled: boolean;
+        failureThreshold: number;
+        repeatEveryFailures: number;
+        sendRecovery: boolean;
+        emailTo: string[];
+        webhookUrl: string;
+    };
+    automationDigest: {
+        enabled: boolean;
+        emailTo: string[];
+        intervalMs: number;
+        periodHours: number;
+        includeEmpty: boolean;
     };
     frontendUrl: string;
 }
@@ -85,10 +124,12 @@ const config: Config = {
     cors: {
         origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     },
+    cookieOnlyAuth: (process.env.COOKIE_ONLY_AUTH || '').toLowerCase() === 'true',
 
     upload: {
         maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880', 10), // 5MB default
         uploadPath: process.env.UPLOAD_PATH || 'uploads',
+        enableClamavScan: (process.env.ENABLE_CLAMAV_SCAN || '').toLowerCase() === 'true',
     },
 
     rateLimit: {
@@ -109,16 +150,22 @@ const config: Config = {
 
     security: {
         bcryptSaltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS || '12', 10),
+        csrfEnabled: (process.env.ENABLE_CSRF || '').toLowerCase() !== 'false',
+        csrfTokenBytes: 32,
     },
     whm: {
         host: process.env.WHM_HOST || '',
         username: process.env.WHM_USERNAME || '',
         apiToken: process.env.WHM_API_TOKEN || '',
+        rejectUnauthorized: process.env.WHM_REJECT_UNAUTHORIZED !== 'false',
     },
     dynadot: {
         apiKey: process.env.DYNADOT_API_KEY || '',
         apiSecret: process.env.DYNADOT_API_SECRET || '',
         baseUrl: process.env.DYNADOT_BASE_URL || 'https://api.dynadot.com/restful/v2',
+        useSandbox: false,
+        timeoutMs: parseInt(process.env.DYNADOT_TIMEOUT_MS || '30000', 10),
+        api3Url: process.env.DYNADOT_API3_URL || 'https://api.dynadot.com/api3.json',
     },
     namely: {
         apiKey: process.env.NAMELY_API_KEY || '',
@@ -127,6 +174,39 @@ const config: Config = {
     google: {
         clientId: process.env.GOOGLE_CLIENT_ID || '',
         clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    },
+    cron: {
+        enabled: (process.env.CRON_ENABLED || 'true').toLowerCase() !== 'false',
+        runOnStart: (process.env.CRON_RUN_ON_START || 'false').toLowerCase() === 'true',
+        renewalsIntervalMs: parseInt(process.env.CRON_RENEWALS_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
+        overdueSuspensionsIntervalMs: parseInt(process.env.CRON_OVERDUE_SUSPENSIONS_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
+        invoiceRemindersIntervalMs: parseInt(process.env.CRON_INVOICE_REMINDERS_INTERVAL_MS || `${6 * 60 * 60 * 1000}`, 10),
+        terminationsIntervalMs: parseInt(process.env.CRON_TERMINATIONS_INTERVAL_MS || `${12 * 60 * 60 * 1000}`, 10),
+        usageSyncIntervalMs: parseInt(process.env.CRON_USAGE_SYNC_INTERVAL_MS || `${30 * 60 * 1000}`, 10),
+        actionWorkerIntervalMs: parseInt(process.env.CRON_ACTION_WORKER_INTERVAL_MS || `${5 * 60 * 1000}`, 10),
+        provisioningWorkerIntervalMs: parseInt(process.env.CRON_PROVISIONING_WORKER_INTERVAL_MS || `${2 * 60 * 1000}`, 10),
+        domainSyncIntervalMs: parseInt(process.env.CRON_DOMAIN_SYNC_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
+    },
+    automationAlerts: {
+        enabled: (process.env.AUTOMATION_ALERTS_ENABLED || 'true').toLowerCase() !== 'false',
+        failureThreshold: parseInt(process.env.AUTOMATION_ALERT_FAILURE_THRESHOLD || '3', 10),
+        repeatEveryFailures: parseInt(process.env.AUTOMATION_ALERT_REPEAT_EVERY_FAILURES || '3', 10),
+        sendRecovery: (process.env.AUTOMATION_ALERT_SEND_RECOVERY || 'true').toLowerCase() !== 'false',
+        emailTo: (process.env.AUTOMATION_ALERT_EMAIL_TO || '')
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean),
+        webhookUrl: process.env.AUTOMATION_ALERT_WEBHOOK_URL || '',
+    },
+    automationDigest: {
+        enabled: (process.env.AUTOMATION_DIGEST_ENABLED || 'true').toLowerCase() !== 'false',
+        emailTo: (process.env.AUTOMATION_DIGEST_EMAIL_TO || '')
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean),
+        intervalMs: parseInt(process.env.AUTOMATION_DIGEST_INTERVAL_MS || `${24 * 60 * 60 * 1000}`, 10),
+        periodHours: parseInt(process.env.AUTOMATION_DIGEST_PERIOD_HOURS || '24', 10),
+        includeEmpty: (process.env.AUTOMATION_DIGEST_INCLUDE_EMPTY || 'false').toLowerCase() === 'true',
     },
     frontendUrl: process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:3000',
 };
@@ -146,6 +226,21 @@ if (config.env === 'production') {
     if (missingEnvVars.length > 0) {
         throw new Error(
             `Missing required environment variables: ${missingEnvVars.join(', ')}`
+        );
+    }
+
+    if (config.jwt.secret === 'your-secret-key' || config.jwt.refreshSecret === 'your-refresh-secret-key') {
+        throw new Error('JWT secrets must be set to non-default values in production');
+    }
+}
+
+// Warn when using default JWT secrets in development
+if (config.env !== 'production') {
+    const defaultSecrets = ['your-secret-key', 'your-refresh-secret-key'];
+    if (defaultSecrets.includes(config.jwt.secret) || defaultSecrets.includes(config.jwt.refreshSecret)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+            '[Config] Using default JWT secrets. Set JWT_SECRET and JWT_REFRESH_SECRET in .env for production.'
         );
     }
 }

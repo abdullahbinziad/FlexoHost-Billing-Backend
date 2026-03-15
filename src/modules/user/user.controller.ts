@@ -4,6 +4,7 @@ import userService from './user.service';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
 import config from '../../config';
+import { auditLogSafe } from '../activity-log/activity-log.service';
 
 const baseCookieOptions = {
     httpOnly: true,
@@ -98,14 +99,14 @@ class UserController {
         return ApiResponse.ok(res, 'User retrieved successfully', { user });
     });
 
-    // Update current user
+    // Update current user - whitelist to prevent mass assignment (role, active, etc.)
     updateMe = catchAsync(async (req: AuthRequest, res: Response) => {
-        const file = (req as any).file as Express.Multer.File | undefined;
-        if (file?.filename) {
-            req.body.avatar = `/uploads/${file.filename}`;
+        const allowed = ['email'];
+        const updates: Record<string, unknown> = {};
+        for (const k of allowed) {
+            if (req.body[k] !== undefined) updates[k] = req.body[k];
         }
-
-        const user = await userService.updateUser(req.user._id.toString(), req.body);
+        const user = await userService.updateUser(req.user._id.toString(), updates as any);
 
         return ApiResponse.ok(res, 'User updated successfully', { user });
     });
@@ -173,23 +174,65 @@ class UserController {
 
     // Update user by ID (admin only)
     updateUserById = catchAsync(async (req: AuthRequest, res: Response) => {
-        const user = await userService.updateUserByAdmin(req.params.id, req.body);
+        const user = await userService.updateUserByAdmin(
+            req.params.id,
+            req.body,
+            req.user?.role as string
+        );
+
+        if (req.body.roleId) {
+            auditLogSafe({
+                message: `Role assigned to user ${req.params.id}`,
+                type: 'user_role_assigned',
+                category: 'settings',
+                actorType: 'user',
+                actorId: req.user?._id?.toString(),
+                targetType: 'user',
+                targetId: req.params.id,
+                source: 'manual',
+                meta: { roleId: req.body.roleId },
+            });
+        }
 
         return ApiResponse.ok(res, 'User updated successfully', { user });
     });
 
     // Delete user by ID (admin only)
     deleteUser = catchAsync(async (req: AuthRequest, res: Response) => {
-        await userService.deleteUser(req.params.id);
+        await userService.deleteUser(req.params.id, req.user?.role as string);
 
         return ApiResponse.ok(res, 'User deleted successfully');
     });
 
     // Permanently delete user (admin only)
     permanentlyDeleteUser = catchAsync(async (req: AuthRequest, res: Response) => {
-        await userService.permanentlyDeleteUser(req.params.id);
+        await userService.permanentlyDeleteUser(req.params.id, req.user?.role as string);
 
         return ApiResponse.ok(res, 'User permanently deleted');
+    });
+
+    // Bulk assign role to users
+    bulkAssignRole = catchAsync(async (req: AuthRequest, res: Response) => {
+        const { userIds, roleId } = req.body;
+        const result = await userService.bulkAssignRole(
+            userIds,
+            roleId,
+            req.user?.role as string
+        );
+
+        if (result.updated > 0) {
+            auditLogSafe({
+                message: `Role assigned to ${result.updated} user(s)`,
+                type: 'user_role_assigned',
+                category: 'settings',
+                actorType: 'user',
+                actorId: req.user?._id?.toString(),
+                source: 'manual',
+                meta: { roleId, userIds, updated: result.updated },
+            });
+        }
+
+        return ApiResponse.ok(res, 'Role assigned successfully', result);
     });
 }
 

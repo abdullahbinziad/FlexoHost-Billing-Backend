@@ -14,8 +14,36 @@ import * as emailService from '../email/email.service';
 import { getInvoicePdfBuffer } from './invoice-pdf.service';
 import config from '../../config';
 import logger from '../../utils/logger';
+import { BASE_REPORTING_CURRENCY } from '../../config/currency.config';
+import { buildInvoiceFxSnapshot, fallbackToBase, getRateFromBaseToDisplay } from '../exchange-rate/fx.service';
+import { affiliateService } from '../affiliate/affiliate.service';
+import type { ClientSession } from 'mongoose';
+
+interface CreateInvoiceOptions {
+    session?: ClientSession;
+    sendEmail?: boolean;
+}
 
 class InvoiceService {
+    /**
+     * Set historical FX snapshot at invoice date and sync totalInBase/balanceDueInBase. Never use current rate.
+     */
+    async setInvoiceFxSnapshot(invoice: IInvoiceDocument, options: { session?: ClientSession } = {}): Promise<void> {
+        const { snapshot, isLegacy } = await buildInvoiceFxSnapshot({
+            invoiceDate: invoice.invoiceDate,
+            currency: invoice.currency,
+            subTotal: invoice.subTotal,
+            total: invoice.total,
+            balanceDue: invoice.balanceDue,
+        });
+        invoice.fxSnapshot = snapshot;
+        invoice.fxSnapshotLegacy = isLegacy;
+        invoice.baseCurrency = snapshot.baseCurrency;
+        invoice.totalInBase = snapshot.totalInBase;
+        invoice.balanceDueInBase = snapshot.balanceDueInBase;
+        await invoice.save(options.session ? { session: options.session } : undefined);
+    }
+
     /**
      * Generate a sequential invoice number: INV-000001, INV-000002, ...
      */
@@ -29,7 +57,10 @@ class InvoiceService {
      * @param invoiceData Partial invoice data
      * @returns Created invoice document
      */
-    async createInvoice(invoiceData: Partial<IInvoice>): Promise<IInvoiceDocument> {
+    async createInvoice(
+        invoiceData: Partial<IInvoice>,
+        options: CreateInvoiceOptions = {}
+    ): Promise<IInvoiceDocument> {
         // Calculate totals first to ensure validation passes or simple overwrite
         const subTotal = invoiceData.items?.reduce((acc, item) => acc + item.amount, 0) || 0;
         const discount = invoiceData.discount ?? 0;
@@ -39,17 +70,29 @@ class InvoiceService {
 
         const invoiceNumber = await this.generateInvoiceNumber();
 
-        const invoice = await Invoice.create({
-            ...invoiceData,
-            invoiceNumber,
-            status: InvoiceStatus.UNPAID,
-            subTotal,
-            discount,
-            total,
-            balanceDue,
-        });
+        const invoice = options.session
+            ? await new Invoice({
+                ...invoiceData,
+                invoiceNumber,
+                status: InvoiceStatus.UNPAID,
+                subTotal,
+                discount,
+                total,
+                balanceDue,
+            }).save({ session: options.session })
+            : await Invoice.create({
+                ...invoiceData,
+                invoiceNumber,
+                status: InvoiceStatus.UNPAID,
+                subTotal,
+                discount,
+                total,
+                balanceDue,
+            });
 
-        if (!invoice.orderId) {
+        await this.setInvoiceFxSnapshot(invoice, { session: options.session });
+
+        if ((options.sendEmail ?? true) && !invoice.orderId && !options.session) {
             const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
             const clientEmail = clientDoc?.contactEmail || '';
             const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
@@ -133,6 +176,7 @@ class InvoiceService {
      */
     async updateInvoiceStatus(id: string, status: InvoiceStatus): Promise<IInvoiceDocument> {
         const invoice = await this.getInvoiceById(id);
+        const wasPaid = invoice.status === InvoiceStatus.PAID;
 
         invoice.status = status;
         if (status === InvoiceStatus.PAID) {
@@ -153,6 +197,13 @@ class InvoiceService {
         }
 
         await invoice.save();
+        await this.setInvoiceFxSnapshot(invoice);
+
+        if (status === InvoiceStatus.PAID) {
+            await affiliateService.processPaidInvoice(invoice._id.toString());
+        } else if (wasPaid) {
+            await affiliateService.reverseCommissionsForInvoice(invoice._id.toString(), `Invoice status changed to ${status}`);
+        }
 
         if (status === InvoiceStatus.PAID) {
             const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
@@ -220,6 +271,7 @@ class InvoiceService {
         if (updates.currency) invoice.currency = updates.currency;
 
         await invoice.save();
+        await this.setInvoiceFxSnapshot(invoice);
         return invoice;
     }
 
@@ -301,8 +353,16 @@ class InvoiceService {
         }
 
         await invoice.save();
+        await this.setInvoiceFxSnapshot(invoice);
 
-        // Record manual payment transaction
+        // Record manual payment transaction (with FX snapshot at payment date)
+        const paymentDate = data.date ? new Date(data.date) : new Date();
+        const { buildPaymentFxSnapshot } = await import('../exchange-rate/fx.service');
+        const { snapshot: paymentFx, isLegacy: paymentFxLegacy } = await buildPaymentFxSnapshot(
+            amount,
+            invoice.currency,
+            paymentDate
+        );
         await PaymentTransaction.create({
             invoiceId: invoice._id,
             orderId: invoice.orderId,
@@ -313,6 +373,9 @@ class InvoiceService {
             status: TransactionStatus.SUCCESS,
             amount,
             currency: invoice.currency,
+            paymentDate,
+            fxSnapshot: paymentFx,
+            fxSnapshotLegacy: paymentFxLegacy,
             externalTransactionId: data.transactionId,
             gatewayPayload: {
                 date: data.date,
@@ -324,6 +387,7 @@ class InvoiceService {
             if (invoice.orderId) {
                 await handleInvoicePaid(invoice._id as any);
             }
+            await affiliateService.processPaidInvoice(invoice._id.toString());
             await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
             await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
 
@@ -372,7 +436,8 @@ class InvoiceService {
             }
         }
 
-        if (data.sendEmail) {
+        // Only send via notificationProvider when sendEmail requested AND we did not already send (avoids duplicate when fullyPaid)
+        if (data.sendEmail && !fullyPaid) {
             try {
                 const inv = await Invoice.findById(id)
                     .populate({ path: 'clientId', select: 'contactEmail user', populate: { path: 'user', select: 'email' } })
@@ -416,6 +481,76 @@ class InvoiceService {
             totalPages: Math.ceil(totalCounts / safeLimit),
             totalResults: totalCounts,
         };
+    }
+
+    /**
+     * Aggregated sales stats in base (reporting) currency. Uses only stored base amounts (no recalc with current rate).
+     * Optional displayCurrency: converts base totals for display only via current rate.
+     */
+    async getDashboardStats(options?: { displayCurrency?: string }): Promise<{
+        baseCurrency: string;
+        totalRevenueInBase: number;
+        unpaidInBase: number;
+        paidCount: number;
+        unpaidCount: number;
+        hasLegacyData: boolean;
+        displayCurrency?: string;
+        displayFxRate?: number;
+        displayTotals?: { totalRevenue: number; unpaid: number };
+    }> {
+        const paid = await Invoice.find({ status: InvoiceStatus.PAID })
+            .select('total totalInBase currency balanceDue balanceDueInBase fxSnapshot fxSnapshotLegacy')
+            .lean();
+        const unpaid = await Invoice.find({ status: { $in: [InvoiceStatus.UNPAID, InvoiceStatus.OVERDUE] } })
+            .select('balanceDue balanceDueInBase currency fxSnapshot fxSnapshotLegacy')
+            .lean();
+
+        let hasLegacyData = false;
+        const totalRevenueInBase = paid.reduce((sum, doc) => {
+            const inBase = doc.totalInBase ?? doc.fxSnapshot?.totalInBase;
+            if (inBase != null) return sum + inBase;
+            hasLegacyData = true;
+            return sum + fallbackToBase(doc.total ?? 0, doc.currency ?? '');
+        }, 0);
+        const unpaidInBase = unpaid.reduce((sum, doc) => {
+            const inBase = doc.balanceDueInBase ?? doc.fxSnapshot?.balanceDueInBase;
+            if (inBase != null) return sum + inBase;
+            hasLegacyData = true;
+            return sum + fallbackToBase(doc.balanceDue ?? 0, doc.currency ?? '');
+        }, 0);
+
+        const round2 = (n: number) => Math.round(n * 100) / 100;
+        const result: {
+            baseCurrency: string;
+            totalRevenueInBase: number;
+            unpaidInBase: number;
+            paidCount: number;
+            unpaidCount: number;
+            hasLegacyData: boolean;
+            displayCurrency?: string;
+            displayFxRate?: number;
+            displayTotals?: { totalRevenue: number; unpaid: number };
+        } = {
+            baseCurrency: BASE_REPORTING_CURRENCY,
+            totalRevenueInBase: round2(totalRevenueInBase),
+            unpaidInBase: round2(unpaidInBase),
+            paidCount: paid.length,
+            unpaidCount: unpaid.length,
+            hasLegacyData,
+        };
+
+        const displayCurrency = options?.displayCurrency?.trim();
+        if (displayCurrency && displayCurrency !== BASE_REPORTING_CURRENCY) {
+            const rate = getRateFromBaseToDisplay(displayCurrency);
+            result.displayCurrency = displayCurrency;
+            result.displayFxRate = rate;
+            result.displayTotals = {
+                totalRevenue: round2(totalRevenueInBase * rate),
+                unpaid: round2(unpaidInBase * rate),
+            };
+        }
+
+        return result;
     }
 }
 

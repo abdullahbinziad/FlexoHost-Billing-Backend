@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import mongoose from 'mongoose';
 import config from '../../config';
 import { DEFAULT_CURRENCY } from '../../config/currency.config';
@@ -10,6 +11,7 @@ import Client from '../client/client.model';
 import Server from '../server/server.model';
 import { serverService } from '../server/server.service';
 import invoiceService from '../invoice/invoice.service';
+import Invoice from '../invoice/invoice.model';
 import { getInvoicePdfBuffer } from '../invoice/invoice-pdf.service';
 import notificationService from '../notification/notification.service';
 import * as emailService from '../email/email.service';
@@ -20,6 +22,22 @@ import { TLDModel } from '../domain/tld/tld.model';
 import { ServiceType, normalizeBillingCycle } from '../services/types/enums';
 import { ControlPanelType } from '../services/models/hosting-details.model';
 import logger from '../../utils/logger';
+import { escapeRegex } from '../../utils/string.util';
+import { affiliateService } from '../affiliate/affiliate.service';
+import { AffiliateReferralSource } from '../affiliate/affiliate.types';
+import { getBillingSettings } from '../settings/billing-settings.service';
+import { SUPPORTED_CURRENCIES } from '../../config/currency.config';
+
+/** Default payment methods for admin order creation (extend via settings if needed) */
+const DEFAULT_PAYMENT_METHODS = [
+    { id: 'manual', name: 'Manual / Bank Transfer' },
+    { id: 'invoice', name: 'Invoice' },
+    { id: 'stripe', name: 'Stripe' },
+    { id: 'paypal', name: 'PayPal' },
+    { id: 'sslcommerz', name: 'SSLCommerz' },
+    { id: 'bkash', name: 'bKash' },
+    { id: 'nagad', name: 'Nagad' },
+];
 
 /** Result of creating one hosting account (for runModuleCreate and provisioning provider). */
 export interface CreateHostingAccountResult {
@@ -31,13 +49,60 @@ export interface CreateHostingAccountResult {
     details: Record<string, unknown>;
     /** True when WHM createAccount was called this run; false when returning existing meta only */
     actuallyCreated?: boolean;
+    /** Transient password for welcome email only; never persisted to DB */
+    password?: string;
+}
+
+/** Generate a strong random password for new cPanel/WHM accounts (alphanumeric + safe symbols). */
+function generateHostingAccountPassword(): string {
+    const length = 16;
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*';
+    const bytes = crypto.randomBytes(length);
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += charset[bytes[i] % charset.length];
+    }
+    return result;
+}
+
+function normalizeCodeSafe(value: unknown): string {
+    return typeof value === 'string' ? value.trim().toUpperCase() : '';
 }
 
 class OrderService {
+    /** Get order config for admin new order: server locations, payment methods, currencies */
+    async getOrderConfig(): Promise<{
+        serverLocations: Array<{ id: string; name: string }>;
+        paymentMethods: Array<{ id: string; name: string }>;
+        supportedCurrencies: string[];
+    }> {
+        const locations = await Server.distinct('location').lean();
+        const serverLocations = (locations || []).length > 0
+            ? locations.map((loc: string) => ({ id: loc, name: loc }))
+            : [
+                { id: 'Auto', name: 'Auto' },
+                { id: 'USA', name: 'USA' },
+                { id: 'Malaysia', name: 'Malaysia' },
+                { id: 'Singapore', name: 'Singapore' },
+                { id: 'Bangladesh', name: 'Bangladesh' },
+                { id: 'Germany', name: 'Germany' },
+                { id: 'Finland', name: 'Finland' },
+            ];
+        return {
+            serverLocations,
+            paymentMethods: DEFAULT_PAYMENT_METHODS,
+            supportedCurrencies: [...SUPPORTED_CURRENCIES],
+        };
+    }
+
     // -------------------------
     // YOUR EXISTING METHODS
     // -------------------------
-    async createOrder(payload: any, currentUserId?: string) {
+    async createOrder(payload: any, currentUserId?: string, isAdminContext?: boolean) {
+        if (!currentUserId) {
+            throw new Error('Authentication required to create order');
+        }
+
         const session = await mongoose.startSession();
         session.startTransaction();
 
@@ -46,89 +111,124 @@ class OrderService {
             let clientId: mongoose.Types.ObjectId;
             let userId: mongoose.Types.ObjectId;
 
-            if (payload.client?.type === 'existing') {
-                // The frontend currently sends user.id as payload.client.clientId
-                userId = new mongoose.Types.ObjectId(payload.client.clientId);
+            if (payload.client?.type === 'admin_selected' && isAdminContext) {
+                // Admin creating order for any client. clientId is Client document _id.
+                const requestedClientId = payload.client?.clientId;
+                if (!requestedClientId) throw new Error('Client is required for admin order creation');
+                const clientDoc = await Client.findById(requestedClientId).session(session);
+                if (!clientDoc) throw new Error('Client not found');
+                clientId = clientDoc._id as mongoose.Types.ObjectId;
+                userId = clientDoc.user as mongoose.Types.ObjectId;
+            } else if (payload.client?.type === 'existing') {
+                // The frontend sends user.id as payload.client.clientId. Must match authenticated user.
+                const requestedUserId = payload.client?.clientId;
+                if (!requestedUserId || String(requestedUserId) !== String(currentUserId)) {
+                    throw new Error('Client identity must match authenticated user');
+                }
+                userId = new mongoose.Types.ObjectId(requestedUserId);
                 const clientDoc = await Client.findOne({ user: userId }).session(session);
                 if (!clientDoc) throw new Error('Client not found');
                 clientId = clientDoc._id as mongoose.Types.ObjectId;
-            } else if (payload.client?.type === 'new' || currentUserId) {
-                // In a real flow, if 'new', registration happens before or during this.
-                // Assuming userId is provided or resolved from existing client session
+            } else {
+                // type === 'new' or default: use authenticated user
                 userId = new mongoose.Types.ObjectId(currentUserId);
                 const clientDoc = await Client.findOne({ user: userId }).session(session);
                 if (!clientDoc) throw new Error('Client record missing for user');
                 clientId = clientDoc._id as mongoose.Types.ObjectId;
-            } else {
-                throw new Error('User identity required to create order');
             }
-
-            // 2. Resolve Product and Pricing (Hosting)
-            const product = await Product.findById(payload.productId).session(session);
-            if (!product) throw new Error('Product not found');
 
             const currency = payload.currency || DEFAULT_CURRENCY;
-            const billingCycle = normalizeBillingCycle(payload.billingCycle || 'monthly');
+            const billingCycle = payload.billingCycle
+                ? normalizeBillingCycle(payload.billingCycle)
+                : undefined;
+            const requiresProduct = Boolean(payload.productId);
+            const isStandaloneDomainOrder = !requiresProduct && (
+                payload.domain?.action === 'register' || payload.domain?.action === 'transfer'
+            );
 
-            const currencyPricing = product.pricing?.find(p => p.currency === currency);
-            if (!currencyPricing && product.paymentType !== 'free') {
-                throw new Error(`Pricing not available for currency: ${currency}`);
+            if (!requiresProduct && !isStandaloneDomainOrder) {
+                throw new Error('Product not found. Please try again.');
             }
 
-            const cyclePricing = currencyPricing ? (currencyPricing as any)[billingCycle] : null;
-            if (cyclePricing && !cyclePricing.enable) {
-                throw new Error(`Billing cycle ${billingCycle} not enabled for this product`);
-            }
-
-            const hostingSubtotal = cyclePricing?.price || 0;
-            const hostingSetupFee = cyclePricing?.setupFee || 0;
-            const hostingTotal = hostingSubtotal + hostingSetupFee;
-
-            let total = hostingTotal;
-            let subtotal = hostingSubtotal;
+            let product: any = null;
+            let total = 0;
+            let subtotal = 0;
 
             // Prepare Order Items
             const orderItemsPayloads: any[] = [];
             const invoiceItemsPayloads: any[] = [];
 
-            // Add Hosting Item: store chosen domain as primaryDomain (for cPanel / provisioning).
-            // Source: Use Owned Domain, Register, or Transfer at checkout.
-            const primaryDomainRaw = payload.domain?.ownDomain?.domainName ||
-                payload.domain?.registration?.domainName ||
-                payload.domain?.transfer?.domainName;
-            const primaryDomain = typeof primaryDomainRaw === 'string' && primaryDomainRaw.trim()
-                ? primaryDomainRaw.trim()
-                : '';
-            const hostingConfigSnapshot: any = {
-                serverLocation: payload.serverLocation,
-                serverGroup: product.module?.serverGroup,
-                primaryDomain,
-            };
+            if (requiresProduct) {
+                // 2. Resolve Product and Pricing (Hosting / Product-backed checkout)
+                product = await Product.findById(payload.productId).session(session);
+                if (!product) throw new Error('Product not found');
+                if (!billingCycle) throw new Error('Billing cycle is required');
 
-            orderItemsPayloads.push({
-                clientId,
-                type: product.type.toUpperCase() as any, // e.g., HOSTING
-                productId: product._id,
-                nameSnapshot: product.name,
-                billingCycle: billingCycle as any,
-                qty: 1,
-                pricingSnapshot: {
-                    setup: hostingSetupFee,
-                    recurring: hostingSubtotal,
-                    discount: 0,
-                    tax: 0,
-                    total: hostingTotal,
-                    currency
-                },
-                configSnapshot: hostingConfigSnapshot
-            });
+                const currencyPricing = product.pricing?.find((p: any) => p.currency === currency);
+                if (!currencyPricing && product.paymentType !== 'free') {
+                    throw new Error(`Pricing not available for currency: ${currency}`);
+                }
 
-            invoiceItemsPayloads.push({
-                type: product.type.toUpperCase() as any,
-                description: `${product.name} - ${billingCycle}`,
-                amount: hostingTotal,
-                meta: { type: 'HOSTING' }
-            });
+                const cyclePricing = currencyPricing ? (currencyPricing as any)[billingCycle] : null;
+                if (cyclePricing && !cyclePricing.enable) {
+                    throw new Error(`Billing cycle ${billingCycle} not enabled for this product`);
+                }
+
+                let hostingSubtotal = cyclePricing?.price || 0;
+                let hostingSetupFee = cyclePricing?.setupFee || 0;
+                const productPriceOverride = payload.productPriceOverride != null
+                    ? parseFloat(String(payload.productPriceOverride))
+                    : NaN;
+                if (isAdminContext && !Number.isNaN(productPriceOverride) && productPriceOverride >= 0) {
+                    hostingSubtotal = productPriceOverride;
+                    hostingSetupFee = 0;
+                }
+                const qty = Math.max(1, parseInt(String(payload.qty || 1), 10) || 1);
+                const hostingTotalSingle = hostingSubtotal + hostingSetupFee;
+                const hostingTotal = hostingTotalSingle * qty;
+
+                total = hostingTotal;
+                subtotal = hostingSubtotal * qty;
+
+                // Add Hosting Item: store chosen domain as primaryDomain (for cPanel / provisioning).
+                // Source: Use Owned Domain, Register, or Transfer at checkout.
+                const primaryDomainRaw = payload.domain?.ownDomain?.domainName ||
+                    payload.domain?.registration?.domainName ||
+                    payload.domain?.transfer?.domainName;
+                const primaryDomain = typeof primaryDomainRaw === 'string' && primaryDomainRaw.trim()
+                    ? primaryDomainRaw.trim()
+                    : '';
+                const hostingConfigSnapshot: any = {
+                    serverLocation: payload.serverLocation,
+                    serverGroup: product.module?.serverGroup,
+                    primaryDomain,
+                };
+
+                orderItemsPayloads.push({
+                    clientId,
+                    type: product.type.toUpperCase() as any, // e.g., HOSTING
+                    productId: product._id,
+                    nameSnapshot: product.name,
+                    billingCycle: billingCycle as any,
+                    qty,
+                    pricingSnapshot: {
+                        setup: hostingSetupFee * qty,
+                        recurring: hostingSubtotal * qty,
+                        discount: 0,
+                        tax: 0,
+                        total: hostingTotal,
+                        currency
+                    },
+                    configSnapshot: hostingConfigSnapshot
+                });
+
+                invoiceItemsPayloads.push({
+                    type: product.type.toUpperCase() as any,
+                    description: qty > 1 ? `${product.name} - ${billingCycle} (×${qty})` : `${product.name} - ${billingCycle}`,
+                    amount: hostingTotal,
+                    meta: { type: 'HOSTING' }
+                });
+            }
 
             // 3. Resolve Domain Pricing (if applicable)
             if (payload.domain?.action === 'register' || payload.domain?.action === 'transfer') {
@@ -152,7 +252,13 @@ class OrderService {
                     throw new Error(`Pricing not available for ${period} year(s) in currency ${currency} for TLD ${tld}`);
                 }
 
-                const domainPrice = isRegister ? periodPricing.register : periodPricing.transfer;
+                let domainPrice = isRegister ? periodPricing.register : periodPricing.transfer;
+                const domainPriceOverride = domainData.priceOverride != null
+                    ? parseFloat(String(domainData.priceOverride))
+                    : NaN;
+                if (isAdminContext && !Number.isNaN(domainPriceOverride) && domainPriceOverride >= 0) {
+                    domainPrice = domainPriceOverride;
+                }
 
                 total += domainPrice;
                 subtotal += domainPrice;
@@ -179,13 +285,14 @@ class OrderService {
                         domainName: domainData.domainName,
                         tld: tld,
                         period: parseInt(period),
+                        years: parseInt(period),
                         eppCode: isRegister ? undefined : domainData.eppCode
                     }
                 });
 
                 invoiceItemsPayloads.push({
                     type: ServiceType.DOMAIN,
-                    description: `Domain ${isRegister ? 'Registration' : 'Transfer'} - ${domainData.domainName}${tld} (${period} Year)`,
+                    description: `Domain ${isRegister ? 'Registration' : 'Transfer'} - ${domainData.domainName} (${period} Year)`,
                     amount: domainPrice,
                     meta: { type: 'DOMAIN' }
                 });
@@ -194,13 +301,14 @@ class OrderService {
             // 3b. Apply coupon if provided
             let discountTotal = 0;
             let appliedPromotionId: string | null = null;
+            let appliedAffiliateReferralCode: string | null = null;
 
             const couponCode = typeof payload.coupon === 'string' ? payload.coupon : payload.coupon?.code;
             if (couponCode) {
                 const isFirstOrder = (await Order.countDocuments({ clientId }).session(session)) === 0;
-                const productIds = [product._id.toString()];
-                const productTypes = [product.type];
-                const productBillingCycle = billingCycle;
+                const productIds = product?._id ? [product._id.toString()] : [];
+                const productTypes = product?.type ? [product.type] : [];
+                const productBillingCycle = product && billingCycle ? billingCycle : undefined;
 
                 const domainTlds: string[] = [];
                 let domainBillingCycle: string | undefined;
@@ -233,6 +341,9 @@ class OrderService {
                 }
                 discountTotal = couponResult.discountAmount ?? 0;
                 appliedPromotionId = couponResult.promotion?._id?.toString() ?? null;
+                appliedAffiliateReferralCode = couponResult.source === 'affiliate'
+                    ? (couponResult.code || couponCode).toUpperCase()
+                    : null;
             }
 
             total = Math.max(0, total - discountTotal);
@@ -242,13 +353,19 @@ class OrderService {
             const orderId = formatSequenceId('ORD', orderSeq);
             const orderNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
 
+            // Admin may override initial status (only when admin context)
+            const validStatuses = Object.values(OrderStatus);
+            const requestedStatus = payload.status && isAdminContext && validStatuses.includes(payload.status)
+                ? payload.status
+                : OrderStatus.PENDING_PAYMENT;
+
             // 5. Create Order
             const [order] = await Order.create([{
                 orderId,
                 orderNumber,
                 clientId,
                 userId,
-                status: OrderStatus.PENDING_PAYMENT,
+                status: requestedStatus,
                 currency,
                 subtotal,
                 discountTotal,
@@ -259,48 +376,67 @@ class OrderService {
                     serverLocation: payload.serverLocation,
                     coupon: payload.coupon,
                     referral: payload.referral,
-                    promotionId: appliedPromotionId
+                    promotionId: appliedPromotionId,
+                    affiliateReferralCode: appliedAffiliateReferralCode,
                 }
             }], { session, ordered: true });
 
             // 6. Create Order Items
             await OrderItem.create(orderItemsPayloads.map(item => ({ ...item, orderId: order._id })), { session, ordered: true });
 
-            // 7. Create Invoice
-            const clientDoc = await Client.findById(clientId).session(session);
-            invoiceItemsPayloads.forEach(item => item.meta.orderId = order._id); // tag logic
+            const skipInvoice = isAdminContext && payload.generateInvoice === false;
+            let invoice: any = null;
 
-            const invoice = await invoiceService.createInvoice({
-                clientId,
-                orderId: order._id as any,
-                currency,
-                dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-                billedTo: {
-                    customerName: `${clientDoc?.firstName || 'Customer'} ${clientDoc?.lastName || ''}`.trim(),
-                    address: clientDoc?.address?.street || 'Address',
-                    country: clientDoc?.address?.country || 'Country'
-                },
-                items: invoiceItemsPayloads,
-                discount: discountTotal,
-                paymentMethod: payload.paymentMethod
-            });
+            if (!skipInvoice) {
+                // 7. Create Invoice
+                const clientDoc = await Client.findById(clientId).session(session);
+                invoiceItemsPayloads.forEach(item => item.meta.orderId = order._id); // tag logic
 
-            // Notify user about new invoice
-            await notificationService.create({
-                userId,
-                clientId,
-                category: 'billing',
-                title: `New invoice ${invoice.invoiceNumber} created`,
-                message: `An invoice has been created for your order #${order.orderId}.`,
-                linkPath: `/invoices/${invoice._id.toString()}`,
-                linkLabel: 'View invoice',
-                meta: {
-                    invoiceId: invoice._id.toString(),
-                    orderId: order._id.toString(),
-                },
-            });
+                const billingSettings = await getBillingSettings();
+                const invoiceDueDays = billingSettings.invoiceDueDays ?? 7;
 
-            // Record promotion usage for analytics (inside transaction)
+                invoice = await invoiceService.createInvoice(
+                    {
+                        clientId,
+                        orderId: order._id as any,
+                        currency,
+                        dueDate: new Date(Date.now() + invoiceDueDays * 24 * 60 * 60 * 1000),
+                        billedTo: {
+                            customerName: `${clientDoc?.firstName || 'Customer'} ${clientDoc?.lastName || ''}`.trim(),
+                            address: clientDoc?.address?.street || 'Address',
+                            country: clientDoc?.address?.country || 'Country'
+                        },
+                        items: invoiceItemsPayloads,
+                        discount: discountTotal,
+                        paymentMethod: payload.paymentMethod
+                    },
+                    {
+                        session,
+                        sendEmail: false,
+                    }
+                );
+
+                // Notify user about new invoice
+                await notificationService.create({
+                    userId,
+                    clientId,
+                    category: 'billing',
+                    title: `New invoice ${invoice.invoiceNumber} created`,
+                    message: `An invoice has been created for your order #${order.orderId}.`,
+                    linkPath: `/invoices/${invoice._id.toString()}`,
+                    linkLabel: 'View invoice',
+                    meta: {
+                        invoiceId: invoice._id.toString(),
+                        orderId: order._id.toString(),
+                    },
+                });
+
+                // Update order with invoiceId
+                order.invoiceId = invoice._id as any;
+                await order.save({ session });
+            }
+
+            // Record promotion usage for analytics (inside transaction) - even when invoice is skipped
             if (appliedPromotionId && discountTotal > 0) {
                 await promotionService.recordUsage(
                     appliedPromotionId,
@@ -311,11 +447,40 @@ class OrderService {
                 );
             }
 
-            // Update order with invoiceId
-            order.invoiceId = invoice._id as any;
-            await order.save({ session });
-
             await session.commitTransaction();
+
+            const { auditLogSafe } = await import('../activity-log/activity-log.service');
+            auditLogSafe({
+                message: `Order ${order.orderNumber} created`,
+                type: 'order_created',
+                category: 'order',
+                actorType: currentUserId ? 'user' : 'system',
+                actorId: currentUserId,
+                targetType: 'order',
+                targetId: order._id.toString(),
+                source: 'manual',
+                clientId: clientId.toString(),
+                orderId: order._id.toString(),
+                ...(invoice && { invoiceId: invoice._id.toString() }),
+            });
+
+            const trackedReferralCode = typeof payload.referral === 'string' && payload.referral.trim()
+                ? payload.referral
+                : appliedAffiliateReferralCode;
+            const referralSource = appliedAffiliateReferralCode && (!payload.referral || normalizeCodeSafe(payload.referral) === appliedAffiliateReferralCode)
+                ? AffiliateReferralSource.COUPON
+                : AffiliateReferralSource.CODE;
+            if (trackedReferralCode && invoice) {
+                affiliateService.trackReferralAttribution({
+                    buyerClientId: clientId.toString(),
+                    orderId: order._id.toString(),
+                    invoiceId: invoice._id.toString(),
+                    referralCode: trackedReferralCode,
+                    source: referralSource,
+                }).catch((error: any) => {
+                    logger.warn('[Affiliate] Failed to track order referral attribution:', error?.message || error);
+                });
+            }
 
             const clientForEmail = await Client.findById(clientId)
                 .select('contactEmail firstName lastName')
@@ -327,11 +492,14 @@ class OrderService {
                 : 'Customer';
             const baseUrl = config.frontendUrl || config.cors?.origin || 'http://localhost:3000';
 
+            const shouldSendEmail = payload.sendEmail !== false && Boolean(clientEmail);
             if (!clientEmail) {
                 logger.warn(`[Order] No email for client ${clientId}; skipping order confirmation and invoice emails for order ${order.orderNumber}`);
+            } else if (payload.sendEmail === false) {
+                logger.info(`[Order] sendEmail=false; skipping order confirmation and invoice emails for order ${order.orderNumber}`);
             }
 
-            if (clientEmail) {
+            if (shouldSendEmail) {
                 try {
                     const orderConfirmResult = await emailService.sendTemplatedEmail({
                         to: clientEmail,
@@ -347,9 +515,9 @@ class OrderService {
                                 quantity: p.qty || 1,
                                 price: String(p.pricingSnapshot?.total ?? 0),
                             })),
-                            subtotal: String(invoice.subTotal ?? order.subtotal ?? 0),
+                            subtotal: String(invoice?.subTotal ?? order.subtotal ?? 0),
                             tax: '0',
-                            total: String(invoice.total ?? 0),
+                            total: String(invoice?.total ?? order.total ?? 0),
                             currency: currency,
                             paymentStatus: 'Pending Payment',
                             clientAreaUrl: `${baseUrl}/client`,
@@ -362,39 +530,41 @@ class OrderService {
                 } catch (e: any) {
                     logger.warn('[Order] Order confirmation email error:', e?.message || e);
                 }
-                try {
-                    const lineItems = (invoice.items || []).map((i: any) => ({
-                        label: i.description || 'Item',
-                        amount: String(i.amount ?? 0),
-                    }));
-                    if (lineItems.length === 0) lineItems.push({ label: 'Total', amount: String(invoice.total ?? 0) });
-                    let attachments: { filename: string; content: Buffer }[] | undefined;
+                if (invoice) {
                     try {
-                        const pdfBuffer = await getInvoicePdfBuffer(invoice);
-                        attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
-                    } catch (pdfErr: any) {
-                        logger.warn('[Order] Invoice PDF generation failed, sending email without attachment:', pdfErr?.message);
+                        const lineItems = (invoice.items || []).map((i: any) => ({
+                            label: i.description || 'Item',
+                            amount: String(i.amount ?? 0),
+                        }));
+                        if (lineItems.length === 0) lineItems.push({ label: 'Total', amount: String(invoice.total ?? 0) });
+                        let attachments: { filename: string; content: Buffer }[] | undefined;
+                        try {
+                            const pdfBuffer = await getInvoicePdfBuffer(invoice);
+                            attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
+                        } catch (pdfErr: any) {
+                            logger.warn('[Order] Invoice PDF generation failed, sending email without attachment:', pdfErr?.message);
+                        }
+                        const invoiceCreatedResult = await emailService.sendTemplatedEmail({
+                            to: clientEmail,
+                            templateKey: 'billing.invoice_created',
+                            props: {
+                                customerName,
+                                invoiceNumber: invoice.invoiceNumber,
+                                dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A',
+                                amountDue: String(invoice.balanceDue ?? invoice.total ?? 0),
+                                currency,
+                                invoiceUrl: `${baseUrl}/invoices/${invoice._id}`,
+                                billingUrl: `${baseUrl}/client`,
+                                lineItems,
+                            },
+                            attachments,
+                        });
+                        if (!invoiceCreatedResult.success) {
+                            logger.warn(`[Order] Invoice created email failed for ${clientEmail}: ${invoiceCreatedResult.error}`);
+                        }
+                    } catch (e: any) {
+                        logger.warn('[Order] Invoice created email error:', e?.message || e);
                     }
-                    const invoiceCreatedResult = await emailService.sendTemplatedEmail({
-                        to: clientEmail,
-                        templateKey: 'billing.invoice_created',
-                        props: {
-                            customerName,
-                            invoiceNumber: invoice.invoiceNumber,
-                            dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A',
-                            amountDue: String(invoice.balanceDue ?? invoice.total ?? 0),
-                            currency,
-                            invoiceUrl: `${baseUrl}/invoices/${invoice._id}`,
-                            billingUrl: `${baseUrl}/client`,
-                            lineItems,
-                        },
-                        attachments,
-                    });
-                    if (!invoiceCreatedResult.success) {
-                        logger.warn(`[Order] Invoice created email failed for ${clientEmail}: ${invoiceCreatedResult.error}`);
-                    }
-                } catch (e: any) {
-                    logger.warn('[Order] Invoice created email error:', e?.message || e);
                 }
             }
 
@@ -402,7 +572,7 @@ class OrderService {
                 id: order._id,
                 orderId: order.orderId,
                 orderNumber: order.orderNumber,
-                invoiceId: invoice._id
+                ...(invoice && { invoiceId: invoice._id }),
             };
 
         } catch (error) {
@@ -423,17 +593,119 @@ class OrderService {
         }
     }
 
-    async getOrders(filter: any) {
-        const orders: any[] = await Order.find(filter)
-            .populate('clientId', 'firstName lastName contactEmail')
-            .populate('invoiceId', 'paymentMethod total status')
-            .sort({ createdAt: -1 })
-            .lean();
+    async getOrders(filter: any, options: { page?: number; limit?: number } = {}) {
+        const query: any = {};
+        const page = Math.max(Number(options.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(options.limit) || 20, 1), 100);
+        const skip = (page - 1) * limit;
 
-        return orders.map((order) => ({
+        if (filter.clientId) query.clientId = filter.clientId;
+        if (filter.userId) query.userId = filter.userId;
+
+        if (filter.status) {
+            const normalizedStatus = String(filter.status).trim().toLowerCase();
+            if (normalizedStatus === 'active') query.status = OrderStatus.ACTIVE;
+            else if (normalizedStatus === 'cancelled') query.status = OrderStatus.CANCELLED;
+            else if (normalizedStatus === 'fraud') query.status = OrderStatus.FRAUD;
+            else if (normalizedStatus === 'pending') {
+                query.status = {
+                    $in: [
+                        OrderStatus.DRAFT,
+                        OrderStatus.PENDING_PAYMENT,
+                        OrderStatus.PROCESSING,
+                        OrderStatus.ON_HOLD,
+                    ],
+                };
+            }
+        }
+
+        if (filter.paymentStatus) {
+            const normalizedPaymentStatus = String(filter.paymentStatus).trim().toUpperCase();
+            const matchingInvoices = await Invoice.find({ status: normalizedPaymentStatus }).select('_id').lean();
+            if (matchingInvoices.length === 0) {
+                return { results: [], page, limit, totalPages: 0, totalResults: 0 };
+            }
+            query.invoiceId = { $in: matchingInvoices.map((invoice: any) => invoice._id) };
+        }
+
+        if (filter.search && String(filter.search).trim()) {
+            const rawSearch = String(filter.search).trim();
+            const escapedSearch = escapeRegex(rawSearch);
+            const searchRegex = new RegExp(escapedSearch, 'i');
+            const orConditions: any[] = [
+                { orderId: searchRegex },
+                { orderNumber: searchRegex },
+            ];
+
+            if (mongoose.Types.ObjectId.isValid(rawSearch)) {
+                const objectId = new mongoose.Types.ObjectId(rawSearch);
+                orConditions.push(
+                    { _id: objectId },
+                    { userId: objectId },
+                    { clientId: objectId },
+                    { invoiceId: objectId }
+                );
+            }
+
+            const matchingClients = await Client.find({
+                $or: [
+                    { firstName: searchRegex },
+                    { lastName: searchRegex },
+                    { companyName: searchRegex },
+                    { contactEmail: searchRegex },
+                    { phoneNumber: searchRegex },
+                    {
+                        $expr: {
+                            $regexMatch: {
+                                input: {
+                                    $trim: {
+                                        input: {
+                                            $concat: [
+                                                { $ifNull: ['$firstName', ''] },
+                                                ' ',
+                                                { $ifNull: ['$lastName', ''] },
+                                            ],
+                                        },
+                                    },
+                                },
+                                regex: escapedSearch,
+                                options: 'i',
+                            },
+                        },
+                    },
+                ],
+            })
+                .select('_id')
+                .lean();
+
+            if (matchingClients.length > 0) {
+                orConditions.push({ clientId: { $in: matchingClients.map((client: any) => client._id) } });
+            }
+
+            const matchingInvoices = await Invoice.find({ invoiceNumber: searchRegex }).select('_id').lean();
+            if (matchingInvoices.length > 0) {
+                orConditions.push({ invoiceId: { $in: matchingInvoices.map((invoice: any) => invoice._id) } });
+            }
+
+            query.$or = orConditions;
+        }
+
+        const [orders, totalResults]: [any[], number] = await Promise.all([
+            Order.find(query)
+                .populate('clientId', 'firstName lastName contactEmail')
+                .populate('invoiceId', 'paymentMethod total status')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Order.countDocuments(query),
+        ]);
+
+        const results = orders.map((order) => ({
             _id: order._id,
             orderId: order.orderId,
             orderNumber: order.orderNumber,
+            clientId: order.clientId?._id || order.clientId,
             client: {
                 name: order.clientId ? `${order.clientId.firstName} ${order.clientId.lastName}`.trim() : 'N/A',
                 email: order.clientId?.contactEmail || 'N/A',
@@ -447,6 +719,14 @@ class OrderService {
             currency: order.currency || DEFAULT_CURRENCY,
             status: order.status,
         }));
+
+        return {
+            results,
+            page,
+            limit,
+            totalPages: Math.ceil(totalResults / limit),
+            totalResults,
+        };
     }
 
     // -------------------------
@@ -600,9 +880,13 @@ class OrderService {
         orderData.items = orderData.items.map((item: any) => {
             const sid = item._id?.toString();
             const service = sid ? serviceByOrderItemId.get(sid) : null;
+            const { meta, ...rest } = item;
+            const safeMeta = meta ? { ...meta } : {};
+            delete safeMeta.password;
             return {
-                ...item,
-                username: item.meta?.accountUsername ?? null,
+                ...rest,
+                meta: Object.keys(safeMeta).length ? safeMeta : undefined,
+                username: meta?.accountUsername ?? null,
                 domain: item.configSnapshot?.primaryDomain ?? item.configSnapshot?.domain ?? item.domain ?? null,
                 provisioningStatus: service?.status ?? null,
                 provisioningError: service?.provisioning?.lastError ?? null,
@@ -627,6 +911,7 @@ class OrderService {
             password?: string;
             updateOrderItemMeta?: boolean;
             sendWelcomeEmail?: boolean;
+            forceCreate?: boolean;
         } = {}
     ): Promise<CreateHostingAccountResult> {
         const {
@@ -636,10 +921,11 @@ class OrderService {
             password: chosenPassword,
             updateOrderItemMeta = true,
             sendWelcomeEmail = false,
+            forceCreate = false,
         } = options;
 
         const existingMeta = orderItem?.meta;
-        if (existingMeta?.accountUsername) {
+        if (!forceCreate && existingMeta?.accountUsername) {
             const primaryDomain = String(orderItem?.configSnapshot?.primaryDomain ?? orderItem?.configSnapshot?.domain ?? '').trim();
             const whmPackageName = existingMeta.whmPackage || '';
             return {
@@ -692,15 +978,23 @@ class OrderService {
             const serversToConsider = eligible.length > 0 ? eligible : candidateServers;
             const withCount = await Promise.all(serversToConsider.map(async (s: any) => {
                 const { count, error } = await serverService.getWhmAccountCount(s._id.toString());
-                return { server: s, count: error ? 999999 : count, maxAccounts: s.maxAccounts ?? 200 };
+                // When WHM account count cannot be read (error), use 0 so the server can still be selected; createAccount will fail with a clear error if WHM is unreachable.
+                const effectiveCount = error ? 0 : count;
+                return { server: s, count: effectiveCount, maxAccounts: s.maxAccounts ?? 200, countError: error };
             }));
             const withCapacity = withCount.filter((w: any) => w.count < w.maxAccounts);
-            withCapacity.sort((a: any, b: any) => b.count - a.count);
+            withCapacity.sort((a: any, b: any) => a.count - b.count);
             const picked = withCapacity[0]?.server;
             if (!picked) {
-                throw new Error('No server with capacity. Either all servers are full (max accounts reached) or WHM account count could not be read. Check Admin → Servers and WHM API token.');
+                const allHadCountErrors = withCount.every((w: any) => w.countError);
+                throw new Error(allHadCountErrors
+                    ? 'WHM account count could not be read for any server. Check Admin → Servers: WHM API token and connectivity.'
+                    : 'No server with capacity (all servers at or over max accounts). Increase Max Accounts in Admin → Servers or add another server.');
             }
             serverId = picked._id.toString();
+        }
+        if (!serverId) {
+            throw new Error('No server selected for hosting account');
         }
 
         const whmResult = await serverService.getWhmClientOrError(serverId);
@@ -719,12 +1013,14 @@ class OrderService {
             throw new Error('Username required');
         }
 
+        const password = chosenPassword || generateHostingAccountPassword();
         const email = clientEmail || `admin@${primaryDomain}`;
         await whmClient.createAccount({
             username,
             domain: primaryDomain,
             plan: whmPackageName || 'default',
             email,
+            password,
         });
 
         if (updateOrderItemMeta && orderItem?._id) {
@@ -734,7 +1030,7 @@ class OrderService {
                         serverId,
                         accountUsername: username,
                         whmPackage: whmPackageName,
-                        ...(chosenPassword ? { password: chosenPassword } : {}),
+                        /* password intentionally omitted - never persist credentials */
                     },
                 },
             });
@@ -747,6 +1043,19 @@ class OrderService {
             } catch (_) { /* optional */ }
         }
 
+        const nameservers: string[] = [];
+        try {
+            const serverDoc = await Server.findById(serverId).select('nameservers').lean();
+            const ns = (serverDoc as any)?.nameservers;
+            if (ns) {
+                if (ns.ns1) nameservers.push(ns.ns1);
+                if (ns.ns2) nameservers.push(ns.ns2);
+                if (ns.ns3) nameservers.push(ns.ns3);
+                if (ns.ns4) nameservers.push(ns.ns4);
+                if (ns.ns5) nameservers.push(ns.ns5);
+            }
+        } catch (_) { /* optional */ }
+
         const details: Record<string, unknown> = {
             primaryDomain,
             serverId,
@@ -755,13 +1064,13 @@ class OrderService {
             accountUsername: username,
             accountRemoteId: username,
             assignedIp: undefined,
-            nameservers: [],
+            nameservers,
             resourceLimits: { diskMb: 10000, bandwidthMb: 100000, inodeLimit: 100000 },
             sslEnabled: true,
             dedicatedIp: false,
         };
 
-        return { serverId, accountUsername: username, primaryDomain, whmPackageName, details, actuallyCreated: true };
+        return { serverId, accountUsername: username, primaryDomain, whmPackageName, details, actuallyCreated: true, password };
     }
 
     /**
@@ -818,6 +1127,20 @@ class OrderService {
                         sendWelcomeEmail: !!sendWelcomeEmail,
                     }
                 );
+                const { auditLogSafe } = await import('../activity-log/activity-log.service');
+                auditLogSafe({
+                    message: created.actuallyCreated !== false ? `Hosting module created for order ${orderId}: ${created.accountUsername}@${created.primaryDomain}` : `Hosting module linked for order ${orderId}`,
+                    type: 'module_created',
+                    category: 'service',
+                    actorType: _userId ? 'user' : 'system',
+                    actorId: _userId,
+                    source: 'manual',
+                    targetType: 'order',
+                    targetId: orderId,
+                    clientId: (order as any).clientId?.toString?.(),
+                    orderId,
+                    meta: { serverId: created.serverId, accountUsername: created.accountUsername, primaryDomain: created.primaryDomain, actuallyCreated: created.actuallyCreated } as Record<string, unknown>,
+                });
                 results.push({
                     itemIndex,
                     success: true,

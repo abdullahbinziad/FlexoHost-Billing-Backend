@@ -28,6 +28,14 @@ export interface IHostingServiceDetails extends Document {
     sslEnabled: boolean;
     dedicatedIp: boolean;
     credentialSecretId?: string;
+    /** Cached disk/bandwidth usage from WHM; updated on refresh or by usage-sync scheduler. */
+    usageSnapshot?: {
+        diskUsedMb: number;
+        diskLimitMb: number;
+        bandwidthUsedMb: number;
+        bandwidthLimitMb: number;
+        updatedAt: Date;
+    };
     createdAt: Date;
     updatedAt: Date;
 }
@@ -53,6 +61,13 @@ const hostingServiceDetailsSchema = new Schema<IHostingServiceDetails>({
     sslEnabled: { type: Boolean, default: false },
     dedicatedIp: { type: Boolean, default: false },
     credentialSecretId: { type: String, select: false }, // Never return raw credentials reference
+    usageSnapshot: {
+        diskUsedMb: { type: Number },
+        diskLimitMb: { type: Number },
+        bandwidthUsedMb: { type: Number },
+        bandwidthLimitMb: { type: Number },
+        updatedAt: { type: Date },
+    },
 }, { timestamps: true });
 
 const HostingServiceDetails = mongoose.model<IHostingServiceDetails>('HostingServiceDetails', hostingServiceDetailsSchema);

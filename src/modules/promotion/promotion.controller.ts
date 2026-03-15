@@ -2,10 +2,24 @@ import { Request, Response } from 'express';
 import { promotionService } from './promotion.service';
 import ApiResponse from '../../utils/apiResponse';
 import catchAsync from '../../utils/catchAsync';
+import { auditLogSafe } from '../activity-log/activity-log.service';
+import type { AuthRequest } from '../../middlewares/auth';
 
 class PromotionController {
     create = catchAsync(async (req: Request, res: Response) => {
         const promotion = await promotionService.create(req.body);
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Promotion created: ${(promotion as any).code ?? (promotion as any)._id}`,
+            type: 'settings_changed',
+            category: 'settings',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'promotion',
+            targetId: (promotion as any)._id?.toString?.(),
+            meta: { action: 'created' } as Record<string, unknown>,
+        });
         return ApiResponse.created(res, 'Promotion created successfully', promotion);
     });
 
@@ -70,9 +84,10 @@ class PromotionController {
         return ApiResponse.success(res, 200, 'Coupon applied', {
             valid: true,
             promotionId: result.promotion?._id,
-            code: result.promotion?.code,
+            code: result.code || result.promotion?.code,
             discountAmount: result.discountAmount,
-            name: result.promotion?.name,
+            name: result.name || result.promotion?.name,
+            source: result.source,
         });
     });
 }

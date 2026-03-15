@@ -21,5 +21,6 @@ router
 
 router.post('/:id/test-connection', serverController.testConnection);
 router.get('/:id/packages', serverController.getPackages);
+router.post('/:id/sync-accounts', serverController.syncAccounts);
 
 export default router;

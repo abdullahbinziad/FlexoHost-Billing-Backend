@@ -45,6 +45,11 @@ const userSchema = new Schema<IUser>(
             enum: Object.values(USER_ROLES),
             default: USER_ROLES.USER,
         },
+        roleId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Role',
+            default: null,
+        },
         active: {
             type: Boolean,
             default: true,
@@ -98,6 +103,7 @@ const userSchema = new Schema<IUser>(
 // Indexes
 
 userSchema.index({ role: 1 });
+userSchema.index({ roleId: 1 });
 userSchema.index({ active: 1 });
 userSchema.index({ provider: 1, providerId: 1 }, { sparse: true, unique: true });
 

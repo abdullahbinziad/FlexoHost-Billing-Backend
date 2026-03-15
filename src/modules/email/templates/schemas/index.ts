@@ -14,13 +14,13 @@ import {
     overdueReminderSchema,
 } from './billing.schemas';
 import { orderConfirmationSchema } from './order.schemas';
-import { hostingReadySchema, suspensionWarningSchema, suspendedSchema } from './service.schemas';
+import { hostingReadySchema, hostingAccountCreatedSchema, suspensionWarningSchema, suspendedSchema, terminationWarningSchema, terminatedSchema } from './service.schemas';
 import {
     domainRegistrationConfirmationSchema,
     domainRenewalReminderSchema,
     domainExpiredNoticeSchema,
 } from './domain.schemas';
-import { ticketOpenedSchema } from './support.schemas';
+import { ticketOpenedSchema, ticketReplySchema } from './support.schemas';
 import { maintenanceNoticeSchema } from './incident.schemas';
 
 /** Schema map: template key -> Zod schema (props only, no brand) */
@@ -34,12 +34,16 @@ const SCHEMA_MAP: Record<TemplateKey, z.ZodTypeAny> = {
     'billing.overdue_reminder': overdueReminderSchema,
     'order.confirmation': orderConfirmationSchema,
     'service.hosting_ready': hostingReadySchema,
+    'service.hosting_account_created': hostingAccountCreatedSchema,
     'service.suspension_warning': suspensionWarningSchema,
     'service.suspended': suspendedSchema,
+    'service.termination_warning': terminationWarningSchema,
+    'service.terminated': terminatedSchema,
     'domain.registration_confirmation': domainRegistrationConfirmationSchema,
     'domain.renewal_reminder': domainRenewalReminderSchema,
     'domain.expired_notice': domainExpiredNoticeSchema,
     'support.ticket_opened': ticketOpenedSchema,
+    'support.ticket_reply': ticketReplySchema,
     'incident.maintenance_notice': maintenanceNoticeSchema,
 };
 
@@ -120,11 +124,11 @@ export function validatePropsOrThrow<K extends TemplateKey>(
 export { brandSchema, welcomeSchema, verifyEmailSchema, passwordResetSchema };
 export { invoiceCreatedSchema, paymentSuccessSchema, paymentFailedSchema, overdueReminderSchema };
 export { orderConfirmationSchema };
-export { hostingReadySchema, suspensionWarningSchema, suspendedSchema };
+export { hostingReadySchema, hostingAccountCreatedSchema, suspensionWarningSchema, suspendedSchema, terminationWarningSchema, terminatedSchema };
 export {
     domainRegistrationConfirmationSchema,
     domainRenewalReminderSchema,
     domainExpiredNoticeSchema,
 };
-export { ticketOpenedSchema };
+export { ticketOpenedSchema, ticketReplySchema };
 export { maintenanceNoticeSchema };

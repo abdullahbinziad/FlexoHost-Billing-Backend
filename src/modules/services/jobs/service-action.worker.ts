@@ -1,5 +1,6 @@
 import ServiceActionJob from '../models/service-action-job.model';
 import Service from '../service.model';
+import Client from '../../client/client.model';
 import { ProvisioningJobStatus, ServiceActionType, ServiceType } from '../types/enums';
 import {
     hostingPanelProvider,
@@ -7,6 +8,11 @@ import {
     emailProvider,
     licenseProvider
 } from '../providers/stubs';
+import { hostingDetailsRepository } from '../repositories';
+import { serverService } from '../../server/server.service';
+import * as emailService from '../../email/email.service';
+import config from '../../../config';
+import logger from '../../../utils/logger';
 import crypto from 'crypto';
 
 export class ServiceActionWorker {
@@ -86,16 +92,14 @@ export class ServiceActionWorker {
 
         const remoteId = service.provisioning?.remoteId;
 
-        // Note: For domains we avoid explicitly suspending the registry if not needed, or lock management only.
-        if (!remoteId && service.type !== ServiceType.DOMAIN) {
+        // HOSTING uses hosting details (serverId, accountUsername); DOMAIN has no remote action.
+        if (!remoteId && service.type !== ServiceType.DOMAIN && service.type !== ServiceType.HOSTING) {
             throw new Error('Service missing remoteId to execute action');
         }
 
         switch (service.type) {
             case ServiceType.HOSTING:
-                if (job.action === ServiceActionType.SUSPEND) await hostingPanelProvider.suspendAccount(remoteId as string, 'Automated Suspension');
-                if (job.action === ServiceActionType.UNSUSPEND) await hostingPanelProvider.unsuspendAccount(remoteId as string);
-                if (job.action === ServiceActionType.TERMINATE) await hostingPanelProvider.terminateAccount(remoteId as string);
+                await this.executeHostingAction(job, service);
                 break;
             case ServiceType.VPS:
                 if (job.action === ServiceActionType.SUSPEND) await vpsProvider.powerOff(remoteId as string);
@@ -122,6 +126,99 @@ export class ServiceActionWorker {
             default:
                 throw new Error('Unsupported ServiceType mapped in ActionWorker');
         }
+
+        // Send service.suspended email after successful SUSPEND action
+        if (job.action === ServiceActionType.SUSPEND) {
+            this.sendSuspendedEmail(service, job).catch((err) =>
+                logger.warn('[ServiceAction] Failed to send suspended email:', err?.message)
+            );
+        }
+    }
+
+    /**
+     * Execute suspend/unsuspend/terminate for HOSTING via real WHM API.
+     * Uses hosting details (serverId, accountUsername) to call the correct server.
+     */
+    private async executeHostingAction(job: any, service: any): Promise<void> {
+        const details = await hostingDetailsRepository.findByServiceId(service._id.toString());
+        if (!details?.serverId || !details?.accountUsername) {
+            logger.warn(`[ServiceAction] Hosting service ${service._id} has no serverId or accountUsername, falling back to stub`);
+            const remoteId = service.provisioning?.remoteId || details?.accountUsername;
+            if (remoteId) {
+                if (job.action === ServiceActionType.SUSPEND) await hostingPanelProvider.suspendAccount(remoteId, 'Automated Suspension');
+                if (job.action === ServiceActionType.UNSUSPEND) await hostingPanelProvider.unsuspendAccount(remoteId);
+                if (job.action === ServiceActionType.TERMINATE) await hostingPanelProvider.terminateAccount(remoteId);
+            }
+            return;
+        }
+
+        const client = await serverService.getWhmClient(details.serverId.toString());
+        if (!client) {
+            throw new Error(`WHM client unavailable for server ${details.serverId}. Configure API token in Admin → Servers.`);
+        }
+
+        const username = details.accountUsername;
+        if (job.action === ServiceActionType.SUSPEND) {
+            await client.suspendAccount(username, 'Automated Suspension');
+            logger.info(`[ServiceAction] WHM suspended account ${username} for service ${service._id}`);
+        } else if (job.action === ServiceActionType.UNSUSPEND) {
+            await client.unsuspendAccount(username);
+            logger.info(`[ServiceAction] WHM unsuspended account ${username} for service ${service._id}`);
+            const { auditLogSafe } = await import('../../activity-log/activity-log.service');
+            auditLogSafe({
+                message: `cPanel account ${username} auto-unsuspended via WHM after invoice paid`,
+                type: 'service_unsuspended',
+                category: 'service',
+                actorType: 'system',
+                source: 'cron',
+                clientId: (service.clientId as any)?.toString?.(),
+                serviceId: service._id.toString(),
+                meta: { action: 'UNSUSPEND', accountUsername: username, invoiceId: job.invoiceId?.toString?.() },
+            });
+        } else if (job.action === ServiceActionType.TERMINATE) {
+            await client.terminateAccount(username);
+            logger.info(`[ServiceAction] WHM terminated account ${username} for service ${service._id}`);
+        }
+    }
+
+    private async sendSuspendedEmail(service: any, job: any): Promise<void> {
+        const client = await Client.findById(service.clientId).select('contactEmail firstName lastName').lean();
+        if (!client) return;
+        const clientEmail = (client as any).contactEmail;
+        if (!clientEmail) return;
+
+        const customerName = [((client as any).firstName || '').trim(), ((client as any).lastName || '').trim()]
+            .filter(Boolean).join(' ') || 'Customer';
+
+        const serviceTypeLabels: Record<string, string> = {
+            [ServiceType.HOSTING]: 'Hosting Service',
+            [ServiceType.VPS]: 'VPS',
+            [ServiceType.EMAIL]: 'Email Service',
+            [ServiceType.LICENSE]: 'License',
+            [ServiceType.DOMAIN]: 'Domain',
+        };
+        const serviceName = serviceTypeLabels[service.type] || 'Service';
+        const serviceIdentifier = service.serviceNumber || service._id?.toString() || 'N/A';
+        const suspensionReason = (service.meta as any)?.suspendReason || 'Unpaid invoice';
+
+        const baseUrl = (config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000').replace(/\/$/, '');
+        const restoreActionUrl = job.invoiceId
+            ? `${baseUrl}/invoices/${job.invoiceId}/pay`
+            : `${baseUrl}/client`;
+        const supportUrl = `${baseUrl}/support`;
+
+        await emailService.sendTemplatedEmail({
+            to: clientEmail,
+            templateKey: 'service.suspended',
+            props: {
+                customerName,
+                serviceName,
+                serviceIdentifier,
+                suspensionReason,
+                restoreActionUrl,
+                supportUrl,
+            },
+        });
     }
 }
 
