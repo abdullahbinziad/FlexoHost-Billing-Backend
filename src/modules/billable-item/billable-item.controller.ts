@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { billableItemService } from './billable-item.service';
 import ApiResponse from '../../utils/apiResponse';
 import catchAsync from '../../utils/catchAsync';
+import { auditLogSafe } from '../activity-log/activity-log.service';
+import type { AuthRequest } from '../../middlewares/auth';
 
 export class BillableItemController {
     create = catchAsync(async (req: Request, res: Response) => {
@@ -19,6 +21,19 @@ export class BillableItemController {
             recurUnit: body.recurUnit,
             recurCount: body.recurCount ? parseInt(body.recurCount, 10) : undefined,
             currency: body.currency || 'USD',
+        });
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Billable item created for client ${body.clientId}`,
+            type: 'settings_changed',
+            category: 'invoice',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'billable_item',
+            targetId: (item as any)._id?.toString?.(),
+            clientId: body.clientId,
+            meta: { action: 'created' } as Record<string, unknown>,
         });
         return ApiResponse.created(res, 'Billable item created', item);
     });
@@ -56,11 +71,35 @@ export class BillableItemController {
             recurCount: body.recurCount != null ? parseInt(body.recurCount, 10) : undefined,
             currency: body.currency,
         });
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Billable item updated: ${req.params.id}`,
+            type: 'settings_changed',
+            category: 'invoice',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'billable_item',
+            targetId: req.params.id,
+            meta: { action: 'updated' } as Record<string, unknown>,
+        });
         return ApiResponse.success(res, 200, 'Billable item updated', item);
     });
 
     delete = catchAsync(async (req: Request, res: Response) => {
+        const authReq = req as AuthRequest;
         await billableItemService.delete(req.params.id);
+        auditLogSafe({
+            message: `Billable item deleted: ${req.params.id}`,
+            type: 'settings_changed',
+            category: 'invoice',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'billable_item',
+            targetId: req.params.id,
+            meta: { action: 'deleted' } as Record<string, unknown>,
+        });
         return ApiResponse.success(res, 200, 'Billable item deleted');
     });
 
@@ -79,6 +118,16 @@ export class BillableItemController {
             return ApiResponse.badRequest(res, 'ids array is required');
         }
         await billableItemService.bulkDelete(ids);
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Billable items bulk deleted: ${ids.length} items`,
+            type: 'settings_changed',
+            category: 'invoice',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            meta: { action: 'bulk_deleted', count: ids.length } as Record<string, unknown>,
+        });
         return ApiResponse.success(res, 200, 'Items deleted');
     });
 }

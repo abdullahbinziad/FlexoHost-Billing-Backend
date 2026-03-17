@@ -3,23 +3,12 @@ import mongoose from 'mongoose';
 import { AuthRequest } from '../../middlewares/auth';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
-import { escapeHtml } from '../../utils/string.util';
 import Client from '../client/client.model';
 import emailService from './email.service';
+import { buildCustomEmailHtml } from './build-custom-email';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 
 const MAX_RECIPIENTS = 100;
-
-function buildCustomEmailHtml(clientName: string, message: string, senderLabel: string): string {
-    const escapedMessage = escapeHtml(message).replace(/\n/g, '<br />');
-    return `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
-            <p>Hello ${escapeHtml(clientName)},</p>
-            <div>${escapedMessage}</div>
-            <p style="margin-top: 24px;">Best regards,<br />${escapeHtml(senderLabel)}</p>
-        </div>
-    `;
-}
 
 function personalizeMessage(message: string, firstName?: string, lastName?: string): string {
     let out = message;
@@ -80,8 +69,13 @@ class EmailController {
             const clientName = [client.firstName, client.lastName].filter(Boolean).join(' ').trim() || 'Client';
             const personalizedMessage = personalizeMessage(message || '', client.firstName, client.lastName);
             const htmlBody = html
-                ? personalizeMessage(html, client.firstName, client.lastName)
-                : buildCustomEmailHtml(clientName, personalizedMessage, senderLabel);
+                ? buildCustomEmailHtml({
+                      clientName,
+                      message: personalizeMessage(html, client.firstName, client.lastName),
+                      senderLabel,
+                      bodyIsHtml: true,
+                  })
+                : buildCustomEmailHtml({ clientName, message: personalizedMessage, senderLabel });
 
             const result = await emailService.sendEmail({
                 to: recipientEmail,

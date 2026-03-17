@@ -41,17 +41,53 @@ class PromotionController {
 
     update = catchAsync(async (req: Request, res: Response) => {
         const promotion = await promotionService.update(req.params.id, req.body);
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Promotion updated: ${(promotion as any).code ?? req.params.id}`,
+            type: 'settings_changed',
+            category: 'settings',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'promotion',
+            targetId: (promotion as any)._id?.toString?.(),
+            meta: { action: 'updated' } as Record<string, unknown>,
+        });
         return ApiResponse.success(res, 200, 'Promotion updated successfully', promotion);
     });
 
     delete = catchAsync(async (req: Request, res: Response) => {
+        const authReq = req as AuthRequest;
         await promotionService.delete(req.params.id);
+        auditLogSafe({
+            message: `Promotion deleted: ${req.params.id}`,
+            type: 'settings_changed',
+            category: 'settings',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'promotion',
+            targetId: req.params.id,
+            meta: { action: 'deleted' } as Record<string, unknown>,
+        });
         return ApiResponse.success(res, 200, 'Promotion deleted successfully', null);
     });
 
     toggleActive = catchAsync(async (req: Request, res: Response) => {
         const { isActive } = req.body;
         const promotion = await promotionService.toggleActive(req.params.id, isActive);
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Promotion ${isActive ? 'activated' : 'deactivated'}: ${(promotion as any).code ?? req.params.id}`,
+            type: 'settings_changed',
+            category: 'settings',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'promotion',
+            targetId: (promotion as any)._id?.toString?.(),
+            meta: { action: 'toggle_active', isActive } as Record<string, unknown>,
+        });
         return ApiResponse.success(res, 200, 'Promotion status updated', {
             id: promotion?._id,
             isActive: promotion?.isActive,

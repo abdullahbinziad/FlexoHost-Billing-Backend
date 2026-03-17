@@ -15,6 +15,7 @@ import Invoice from '../invoice/invoice.model';
 import { getInvoicePdfBuffer } from '../invoice/invoice-pdf.service';
 import notificationService from '../notification/notification.service';
 import * as emailService from '../email/email.service';
+import { buildCustomEmailHtml } from '../email/build-custom-email';
 import { promotionService } from '../promotion/promotion.service';
 import { OrderStatus } from './order.interface';
 import { DomainActionType } from './order-item.interface';
@@ -837,7 +838,8 @@ class OrderService {
                 failed++;
                 continue;
             }
-            const html = `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:20px;"><p>${(message || '').replace(/\n/g, '<br>')}</p><hr/><p style="color:#666;font-size:12px;">Sent by ${senderLabel}</p></body></html>`;
+            const clientName = [c.firstName, c.lastName].filter(Boolean).join(' ').trim() || 'Client';
+            const html = buildCustomEmailHtml({ clientName, message: message || '', senderLabel });
             const result = await emailService.sendEmail({
                 to: email,
                 subject: subject || 'Message from Support',

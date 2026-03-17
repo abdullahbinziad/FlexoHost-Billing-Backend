@@ -3,11 +3,11 @@ import { AuthRequest } from '../../middlewares/auth';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
 import ApiError from '../../utils/apiError';
-import { escapeHtml } from '../../utils/string.util';
 import config from '../../config';
 import clientService from './client.service';
 import { requireClientAccess } from '../client-access-grant/require-client-access';
 import emailService from '../email/email.service';
+import { buildCustomEmailHtml } from '../email/build-custom-email';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 
 const baseCookieOptions = {
@@ -15,17 +15,6 @@ const baseCookieOptions = {
     secure: config.env === 'production',
     sameSite: 'lax' as const,
 };
-
-function buildCustomEmailHtml(clientName: string, message: string, senderLabel: string): string {
-    const escapedMessage = escapeHtml(message).replace(/\n/g, '<br />');
-    return `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
-            <p>Hello ${escapeHtml(clientName)},</p>
-            <div>${escapedMessage}</div>
-            <p style="margin-top: 24px;">Best regards,<br />${escapeHtml(senderLabel)}</p>
-        </div>
-    `;
-}
 
 class ClientController {
     // Register a new client (returns tokens for auto-login)
@@ -139,7 +128,7 @@ class ClientController {
             to: recipientEmail,
             subject,
             text: message,
-            html: buildCustomEmailHtml(clientName, message, senderLabel),
+            html: buildCustomEmailHtml({ clientName, message, senderLabel }),
         });
 
         const bodyPreview = message.length > 500 ? `${message.slice(0, 500)}...` : message;

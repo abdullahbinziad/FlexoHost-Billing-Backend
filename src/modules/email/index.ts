@@ -24,3 +24,4 @@ export {
 export type { TemplatePropsMap, TemplateProps } from './templates/props-map';
 export { previewTemplate } from './preview';
 export { getTemplateForTrigger } from './triggers';
+export { buildCustomEmailHtml } from './build-custom-email';
