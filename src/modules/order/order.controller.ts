@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { orderService } from './order.service';
+import { OrderStatus } from './order.interface';
 import ApiResponse from '../../utils/apiResponse';
 import catchAsync from '../../utils/catchAsync';
 import { AuthRequest } from '../../middlewares/auth';

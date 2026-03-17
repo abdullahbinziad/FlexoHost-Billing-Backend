@@ -250,6 +250,8 @@ export class DynadotRegistrarProvider implements IRegistrarProvider {
             const serverName = entry.ServerName;
             return typeof serverName === 'string' && nameservers.some((hostname) => hostname.toLowerCase() === serverName.toLowerCase());
         });
+        void missing;
+        void matchedEntries;
     }
 
     private async listAccountNameserverEntries(): Promise<Array<Record<string, unknown>>> {
