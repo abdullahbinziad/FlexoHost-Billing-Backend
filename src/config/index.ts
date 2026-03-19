@@ -101,6 +101,14 @@ interface Config {
         includeEmpty: boolean;
     };
     frontendUrl: string;
+    /** Backend API base URL (origin) for links e.g. attachment URLs. From API_URL. */
+    api: { baseUrl: string; /** Full base for API routes e.g. http://localhost:5001/api/v1 */ fullBaseUrl: string };
+    /** Public website URL for support/kb links. From WEBSITE_URL or frontendUrl. */
+    websiteUrl: string;
+    /** Control panel URL pattern (e.g. cPanel). Used to build https://hostname:2083. */
+    controlPanel: { protocol: string; port: number };
+    /** App/brand for emails and UI. */
+    app: { companyName: string; supportEmail: string };
 }
 
 const config: Config = {
@@ -209,6 +217,19 @@ const config: Config = {
         includeEmpty: (process.env.AUTOMATION_DIGEST_INCLUDE_EMPTY || 'false').toLowerCase() === 'true',
     },
     frontendUrl: process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:3000',
+    api: {
+        baseUrl: process.env.API_URL ? new URL(process.env.API_URL).origin : `http://localhost:${parseInt(process.env.PORT || '5000', 10)}`,
+        fullBaseUrl: process.env.API_URL || `http://localhost:${parseInt(process.env.PORT || '5000', 10)}/api/${process.env.API_VERSION || 'v1'}`,
+    },
+    websiteUrl: process.env.WEBSITE_URL || process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:3000',
+    controlPanel: {
+        protocol: process.env.CONTROL_PANEL_PROTOCOL || 'https',
+        port: parseInt(process.env.CONTROL_PANEL_PORT || '2083', 10),
+    },
+    app: {
+        companyName: process.env.COMPANY_NAME || process.env.APP_NAME || 'FlexoHost',
+        supportEmail: process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || 'support@example.com',
+    },
 };
 
 // Validate required environment variables in production

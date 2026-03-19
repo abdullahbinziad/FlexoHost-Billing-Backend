@@ -40,7 +40,7 @@ export class DomainExpiryReminderScheduler {
 
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const origin = config.cors?.origin || 'http://localhost:3000';
+        const origin = config.frontendUrl;
 
         let remindersSent = 0;
 

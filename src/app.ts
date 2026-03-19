@@ -1,7 +1,7 @@
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import compression from 'compression';
+
 import cookieParser from 'cookie-parser';
 import mongoSanitize from 'express-mongo-sanitize';
 import rateLimit from 'express-rate-limit';
@@ -44,6 +44,9 @@ import csrfRoutes from './modules/csrf/csrf.routes';
 
 const app: Application = express();
 
+// Trust first proxy (Next.js or reverse proxy) so X-Forwarded-For is used by rate-limit
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 
@@ -56,6 +59,28 @@ app.use(
     })
 );
 
+function isLoopbackAddress(addr: string | undefined): boolean {
+    if (!addr) return false;
+    return (
+        addr === '127.0.0.1' ||
+        addr === '::1' ||
+        addr === '::ffff:127.0.0.1' ||
+        addr.endsWith('127.0.0.1')
+    );
+}
+
+/** Bootstrap reads that run on every page load via Next proxy (same source IP for all users). */
+function skipGlobalLimiterBootstrapReads(req: Request): boolean {
+    if (req.method !== 'GET') return false;
+    const p = req.path || req.url || '';
+    return p.endsWith('/csrf-token') || p.includes('/auth/me');
+}
+
+function skipGlobalLimiterDevLoopback(req: Request): boolean {
+    if (config.env !== 'development') return false;
+    return isLoopbackAddress(req.ip) || isLoopbackAddress(req.socket?.remoteAddress);
+}
+
 // Rate limiting
 const limiter = rateLimit({
     windowMs: config.rateLimit.windowMs,
@@ -63,15 +88,27 @@ const limiter = rateLimit({
     message: 'Too many requests from this IP, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => skipGlobalLimiterBootstrapReads(req) || skipGlobalLimiterDevLoopback(req),
 });
 
-// Stricter rate limit for auth endpoints (brute-force protection)
+// Stricter rate limit for auth endpoints (brute-force protection).
+// Skip counting GET /me (session check on every load) and read-only auth routes so they don't burn the limit.
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 20, // 20 attempts per 15 min for login/register/forgot-password
     message: 'Too many authentication attempts. Please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => {
+        const p = req.path || req.url || '';
+        if (req.method === 'GET') {
+            if (p.endsWith('/me') || p === '' || p === '/') return true;
+            if (p.includes('verify-email')) return true;
+            if (p.includes('/google')) return true;
+        }
+        if (req.method === 'POST' && p.endsWith('/refresh-token')) return true;
+        return false;
+    },
 });
 
 app.use('/api', limiter);
@@ -87,8 +124,7 @@ app.use(cookieParser());
 // Data sanitization against NoSQL query injection
 app.use(mongoSanitize());
 
-// Compression
-app.use(compression());
+
 
 // Logging
 if (config.env === 'development') {

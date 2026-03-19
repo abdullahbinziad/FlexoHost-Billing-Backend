@@ -31,7 +31,7 @@ export class ServiceTerminationScheduler {
         if (daysToCheck.length === 0) return { warningsSent: 0 };
 
         const now = new Date();
-        const baseUrl = (config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000').replace(/\/$/, '');
+        const baseUrl = config.frontendUrl.replace(/\/$/, '');
 
         const suspendedServices = await Service.find({
             status: ServiceStatus.SUSPENDED,
@@ -215,7 +215,7 @@ export class ServiceTerminationScheduler {
         const serviceIdentifier = svc.serviceNumber || svc._id?.toString() || 'N/A';
         const terminationReason = (svc.meta as any)?.suspendReason || 'Prolonged non-payment';
 
-        const baseUrl = (config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000').replace(/\/$/, '');
+        const baseUrl = config.frontendUrl.replace(/\/$/, '');
         const restoreInfoUrl = `${baseUrl}/client`;
         const supportUrl = `${baseUrl}/support`;
 

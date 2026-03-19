@@ -30,7 +30,7 @@ const startServer = async () => {
 ║   🚀 Server is running on port ${config.port}                    ║
 ║   📝 Environment: ${config.env}                        ║
 ║   🌐 API Version: ${config.apiVersion}                              ║
-║   📡 Health check: http://localhost:${config.port}/health        ║
+║   📡 Health check: ${config.api.baseUrl}/health                 ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
       `);

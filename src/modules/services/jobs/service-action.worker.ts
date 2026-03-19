@@ -201,7 +201,7 @@ export class ServiceActionWorker {
         const serviceIdentifier = service.serviceNumber || service._id?.toString() || 'N/A';
         const suspensionReason = (service.meta as any)?.suspendReason || 'Unpaid invoice';
 
-        const baseUrl = (config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000').replace(/\/$/, '');
+        const baseUrl = config.frontendUrl.replace(/\/$/, '');
         const restoreActionUrl = job.invoiceId
             ? `${baseUrl}/invoices/${job.invoiceId}/pay`
             : `${baseUrl}/client`;

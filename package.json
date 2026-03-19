@@ -15,10 +15,7 @@
         "seed:users": "ts-node src/seeders/user.seeder.ts",
         "seed:users:force": "ts-node src/seeders/user.seeder.ts --force",
         "seed:roles": "ts-node src/seeders/role.seeder.ts",
-        "test:email": "ts-node src/scripts/test_email.ts",
-        "test:emails": "ts-node src/scripts/test-all-emails.ts",
         "backfill:fx": "ts-node src/scripts/backfill-fx.ts",
-        "script:record-domain": "ts-node src/scripts/record-domain-and-test-dynadot.ts",
         "migrate:whmcs": "ts-node src/scripts/whmcs-migration/run.ts",
         "migrate:whmcs:import": "ts-node src/scripts/whmcs-migration/import-sql.ts"
     },

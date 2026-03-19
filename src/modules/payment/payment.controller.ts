@@ -5,12 +5,13 @@ import paymentService from './payment.service';
 import { IPaymentInitData } from './payment.interface';
 import { getEffectiveClientId } from '../client-access-grant/effective-client';
 import { AuthRequest } from '../../middlewares/auth';
+import config from '../../config';
 
 class PaymentController {
     initPayment = catchAsync(async (req: Request, res: Response) => {
         const paymentData: IPaymentInitData = req.body;
 
-        const baseUrl = process.env.API_URL || 'http://localhost:3001/api/v1';
+        const baseUrl = config.api.fullBaseUrl;
 
         if (!paymentData.success_url) paymentData.success_url = `${baseUrl}/payment/success`;
         if (!paymentData.fail_url) paymentData.fail_url = `${baseUrl}/payment/fail`;
@@ -47,7 +48,7 @@ class PaymentController {
 
     handleSuccess = catchAsync(async (req: Request, res: Response) => {
         const validationData = req.body || {};
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const frontendUrl = config.frontendUrl;
 
         try {
             const result = await paymentService.handlePaymentSuccess(validationData);
@@ -76,7 +77,7 @@ class PaymentController {
     handleFail = catchAsync(async (req: Request, res: Response) => {
         const validationData = req.body || req.query || {};
         const invoiceId = validationData.value_a || req.query.value_a;
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const frontendUrl = config.frontendUrl;
 
         const { auditLogSafe } = await import('../activity-log/activity-log.service');
         const Invoice = (await import('../invoice/invoice.model')).default;
@@ -138,7 +139,7 @@ class PaymentController {
     handleCancel = catchAsync(async (req: Request, res: Response) => {
         const validationData = req.body || req.query || {};
         const invoiceId = validationData.value_a || req.query.value_a;
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const frontendUrl = config.frontendUrl;
 
         const { auditLogSafe } = await import('../activity-log/activity-log.service');
         const Invoice = (await import('../invoice/invoice.model')).default;

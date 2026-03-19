@@ -96,7 +96,7 @@ class InvoiceService {
             const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
             const clientEmail = clientDoc?.contactEmail || '';
             const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
-            const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+            const baseUrl = config.frontendUrl;
             if (clientEmail) {
                 try {
                     const lineItems = (invoice.items || []).map((i: any) => ({ label: i.description || 'Item', amount: String(i.amount ?? 0) }));
@@ -210,7 +210,7 @@ class InvoiceService {
             const clientEmail = clientDoc?.contactEmail || '';
             if (clientEmail) {
                 const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
-                const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+                const baseUrl = config.frontendUrl;
                 let attachments: { filename: string; content: Buffer }[] | undefined;
                 try {
                     const pdfBuffer = await getInvoicePdfBuffer(invoice);
@@ -409,7 +409,7 @@ class InvoiceService {
             const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
             const clientEmail = clientDoc?.contactEmail || '';
             const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
-            const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+            const baseUrl = config.frontendUrl;
             if (clientEmail) {
                 let attachments: { filename: string; content: Buffer }[] | undefined;
                 try {

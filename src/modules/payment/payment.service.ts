@@ -74,7 +74,7 @@ class PaymentService {
 
         const user = await User.findById(client.user);
 
-        const baseUrl = process.env.API_URL || 'http://localhost:3000/api/v1';
+        const baseUrl = config.api.fullBaseUrl;
 
         // `tran_id` is required by SSL. We will use it to link back to the invoice.
         // Format: INV-{invoiceId}-{timestamp}
@@ -236,7 +236,7 @@ class PaymentService {
                 });
                 const clientEmail = clientDoc?.contactEmail || '';
                 const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
-                const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+                const baseUrl = config.frontendUrl;
                 if (clientEmail) {
                     let attachments: { filename: string; content: Buffer }[] | undefined;
                     try {

@@ -1,37 +1,46 @@
 /**
- * Mock preview data for testing and admin preview page
+ * Mock preview data for testing and admin preview page.
+ * All URLs loaded from config (no hardcoded hosts).
  */
 
+import config from '../../../../config';
 import type { TemplateKey } from '../../templates/types';
 import type { TemplatePropsMap } from '../../templates/props-map';
+
+const base = config.frontendUrl.replace(/\/$/, '');
+const website = config.websiteUrl.replace(/\/$/, '');
+const { companyName, supportEmail } = config.app;
+const { protocol, port } = config.controlPanel;
+const cpanelExample = `${protocol}://cpanel.example.com:${port}`;
+const serverExample = `${protocol}://server123.example.com:${port}`;
 
 export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { companyName?: string; supportEmail?: string; websiteUrl?: string } } = {
     'account.welcome': {
         customerName: 'John Doe',
-        clientAreaUrl: 'https://app.flexohost.com/login',
-        supportUrl: 'https://flexohost.com/support',
-        knowledgebaseUrl: 'https://flexohost.com/kb',
-        companyName: 'FlexoHost',
-        supportEmail: 'support@flexohost.com',
-        websiteUrl: 'https://flexohost.com',
+        clientAreaUrl: `${base}/login`,
+        supportUrl: `${website}/support`,
+        knowledgebaseUrl: `${website}/kb`,
+        companyName,
+        supportEmail,
+        websiteUrl: website,
     },
     'account.verify_email': {
         customerName: 'Jane Smith',
-        verificationUrl: 'https://app.flexohost.com/verify-email?token=abc123',
+        verificationUrl: `${base}/verify-email?token=abc123`,
         expiresIn: '24 hours',
-        companyName: 'FlexoHost',
-        supportEmail: 'support@flexohost.com',
-        websiteUrl: 'https://flexohost.com',
+        companyName,
+        supportEmail,
+        websiteUrl: website,
     },
     'account.password_reset': {
         customerName: 'Alex Johnson',
-        resetUrl: 'https://app.flexohost.com/reset-password?token=xyz789',
+        resetUrl: `${base}/reset-password?token=xyz789`,
         expiresIn: '1 hour',
         requestIp: '192.168.1.1',
         requestTime: '2024-01-15 14:32 UTC',
-        companyName: 'FlexoHost',
-        supportEmail: 'support@flexohost.com',
-        websiteUrl: 'https://flexohost.com',
+        companyName,
+        supportEmail,
+        websiteUrl: website,
     },
     'billing.invoice_created': {
         customerName: 'Acme Corp',
@@ -39,8 +48,8 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         dueDate: '2024-12-31',
         amountDue: '1,200.00',
         currency: 'USD',
-        invoiceUrl: 'https://app.flexohost.com/invoices/123/pay',
-        billingUrl: 'https://app.flexohost.com/billing',
+        invoiceUrl: `${base}/invoices/123/pay`,
+        billingUrl: `${base}/billing`,
         lineItems: [
             { label: 'Shared Hosting - Starter (Annual)', amount: '99.00' },
             { label: 'Domain example.com (1 Year)', amount: '12.99' },
@@ -54,7 +63,7 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         currency: 'USD',
         paymentDate: '2024-01-15',
         paymentMethodLabel: 'Credit Card (•••• 4242)',
-        billingUrl: 'https://app.flexohost.com/billing',
+        billingUrl: `${base}/billing`,
     },
     'billing.payment_failed': {
         customerName: 'Acme Corp',
@@ -62,8 +71,8 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         amountDue: '1,200.00',
         currency: 'USD',
         dueDate: '2024-12-31',
-        retryPaymentUrl: 'https://app.flexohost.com/invoices/123/pay',
-        billingUrl: 'https://app.flexohost.com/billing',
+        retryPaymentUrl: `${base}/invoices/123/pay`,
+        billingUrl: `${base}/billing`,
         serviceName: 'Shared Hosting - example.com',
     },
     'billing.overdue_reminder': {
@@ -73,7 +82,7 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         overdueDays: 7,
         amountDue: '1,200.00',
         currency: 'USD',
-        paymentUrl: 'https://app.flexohost.com/invoices/123/pay',
+        paymentUrl: `${base}/invoices/123/pay`,
     },
     'order.confirmation': {
         customerName: 'Acme Corp',
@@ -88,31 +97,31 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         total: '111.99',
         currency: 'USD',
         paymentStatus: 'Paid',
-        clientAreaUrl: 'https://app.flexohost.com/dashboard',
-        supportUrl: 'https://flexohost.com/support',
+        clientAreaUrl: `${base}/dashboard`,
+        supportUrl: `${website}/support`,
     },
     'service.hosting_ready': {
         customerName: 'Acme Corp',
         domain: 'example.com',
-        serverHostname: 'server123.flexohost.com',
-        nameservers: ['ns1.flexohost.com', 'ns2.flexohost.com'],
-        controlPanelUrl: 'https://cpanel.example.com',
+        serverHostname: 'server123.example.com',
+        nameservers: ['ns1.example.com', 'ns2.example.com'],
+        controlPanelUrl: cpanelExample,
         username: 'acmecom',
-        setupPasswordUrl: 'https://app.flexohost.com/hosting/setup-password?token=abc123',
-        gettingStartedUrl: 'https://flexohost.com/kb/getting-started',
-        supportUrl: 'https://flexohost.com/support',
+        setupPasswordUrl: `${base}/hosting/setup-password?token=abc123`,
+        gettingStartedUrl: `${website}/kb/getting-started`,
+        supportUrl: `${website}/support`,
     },
     'service.hosting_account_created': {
         clientName: 'Acme Corp',
         domain: 'example.com',
-        cpanelUrl: 'https://server123.flexohost.com:2083',
+        cpanelUrl: serverExample,
         cpanelUsername: 'acmecom',
         cpanelPassword: '********',
-        serverHostname: 'server123.flexohost.com',
-        nameserver1: 'ns1.flexohost.com',
-        nameserver2: 'ns2.flexohost.com',
-        clientPortalUrl: 'https://app.flexohost.com',
-        supportEmail: 'support@flexohost.com',
+        serverHostname: 'server123.example.com',
+        nameserver1: 'ns1.example.com',
+        nameserver2: 'ns2.example.com',
+        clientPortalUrl: base,
+        supportEmail,
     },
     'service.suspension_warning': {
         customerName: 'Acme Corp',
@@ -120,16 +129,16 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         serviceIdentifier: 'SVC-12345',
         reason: 'Unpaid invoice INV-2024-001',
         suspensionDate: '2025-01-07',
-        paymentUrl: 'https://app.flexohost.com/invoices/123/pay',
-        billingUrl: 'https://app.flexohost.com/billing',
+        paymentUrl: `${base}/invoices/123/pay`,
+        billingUrl: `${base}/billing`,
     },
     'service.suspended': {
         customerName: 'Acme Corp',
         serviceName: 'Shared Hosting - example.com',
         serviceIdentifier: 'SVC-12345',
         suspensionReason: 'Unpaid invoice INV-2024-001',
-        restoreActionUrl: 'https://app.flexohost.com/invoices/123/pay',
-        supportUrl: 'https://flexohost.com/support',
+        restoreActionUrl: `${base}/invoices/123/pay`,
+        supportUrl: `${website}/support`,
     },
     'service.termination_warning': {
         customerName: 'Acme Corp',
@@ -138,16 +147,16 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         terminationReason: 'Unpaid invoice INV-2024-001',
         daysRemaining: 7,
         terminationDate: '2025-02-07',
-        restoreActionUrl: 'https://app.flexohost.com/invoices/123/pay',
-        supportUrl: 'https://flexohost.com/support',
+        restoreActionUrl: `${base}/invoices/123/pay`,
+        supportUrl: `${website}/support`,
     },
     'service.terminated': {
         customerName: 'Acme Corp',
         serviceName: 'Shared Hosting - example.com',
         serviceIdentifier: 'SVC-12345',
         terminationReason: 'Unpaid invoice INV-2024-001',
-        restoreInfoUrl: 'https://app.flexohost.com/billing',
-        supportUrl: 'https://flexohost.com/support',
+        restoreInfoUrl: `${base}/billing`,
+        supportUrl: `${website}/support`,
     },
     'domain.registration_confirmation': {
         customerName: 'Acme Corp',
@@ -155,7 +164,7 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         registrationPeriod: '1 Year',
         registrationDate: '2024-01-15',
         autoRenewEnabled: true,
-        manageDomainUrl: 'https://app.flexohost.com/domains/example.com',
+        manageDomainUrl: `${base}/domains/example.com`,
     },
     'domain.renewal_reminder': {
         customerName: 'Acme Corp',
@@ -165,14 +174,14 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         renewalPrice: '12.99',
         currency: 'USD',
         autoRenewEnabled: false,
-        renewUrl: 'https://app.flexohost.com/domains/example.com/renew',
+        renewUrl: `${base}/domains/example.com/renew`,
     },
     'domain.expired_notice': {
         customerName: 'Acme Corp',
         domain: 'example.com',
         expirationDate: '2025-01-15',
         statusLabel: 'Redemption Period',
-        restoreUrl: 'https://app.flexohost.com/domains/example.com/restore',
+        restoreUrl: `${base}/domains/example.com/restore`,
     },
     'support.ticket_opened': {
         customerName: 'Acme Corp',
@@ -182,7 +191,7 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         department: 'Technical Support',
         createdAt: '2024-01-15 14:32 UTC',
         summaryMessage: 'I am unable to log in to cPanel. Getting "Authentication failed" error.',
-        ticketUrl: 'https://app.flexohost.com/support/12345',
+        ticketUrl: `${base}/support/12345`,
     },
     'support.ticket_reply': {
         customerName: 'Acme Corp',
@@ -192,7 +201,7 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         department: 'Technical Support',
         createdAt: '2024-01-15 15:00 UTC',
         summaryMessage: 'Our team has reviewed your ticket. Please try resetting your cPanel password from the client area.',
-        ticketUrl: 'https://app.flexohost.com/tickets/12345',
+        ticketUrl: `${base}/tickets/12345`,
         replyType: 'staff_reply',
     },
     'incident.maintenance_notice': {
@@ -202,7 +211,7 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         maintenanceEnd: '2024-01-20 06:00 UTC',
         expectedDuration: '4 hours',
         impactSummary: 'Websites and cPanel may be briefly unavailable during the maintenance window.',
-        statusPageUrl: 'https://status.flexohost.com',
-        supportUrl: 'https://flexohost.com/support',
+        statusPageUrl: `${website}/status`,
+        supportUrl: `${website}/support`,
     },
 };

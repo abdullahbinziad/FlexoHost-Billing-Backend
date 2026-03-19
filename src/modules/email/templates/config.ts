@@ -1,14 +1,15 @@
 /**
- * Default brand config - override via props when sending
+ * Default brand config - override via props when sending.
+ * All values loaded from config (no hardcoded URLs or brand strings).
  */
 
 import config from '../../../config';
 import type { BrandProps } from './types';
 
 export const DEFAULT_BRAND: BrandProps = {
-    companyName: 'FlexoHost',
-    supportEmail: 'support@flexohost.com',
-    websiteUrl: 'https://flexohost.com',
+    companyName: config.app.companyName,
+    supportEmail: config.app.supportEmail,
+    websiteUrl: config.websiteUrl,
     logoUrl: config.email?.logoUrl,
 };
 

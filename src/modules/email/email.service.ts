@@ -88,16 +88,16 @@ export async function sendEmail(options: IEmailOptions): Promise<SendResult> {
 // --- Convenience methods (delegate to sendTemplatedEmail) ---
 
 export async function sendWelcomeEmail(to: string, name: string): Promise<SendResult> {
-    const origin = config.cors?.origin || 'http://localhost:3000';
-    const websiteUrl = config.cors?.origin?.replace(/\/$/, '') || 'https://flexohost.com';
+    const base = config.frontendUrl.replace(/\/$/, '');
+    const website = config.websiteUrl.replace(/\/$/, '');
     return sendTemplatedEmail({
         to,
         templateKey: 'account.welcome',
         props: {
             customerName: name,
-            clientAreaUrl: `${origin}/login`,
-            supportUrl: `${websiteUrl}/support`,
-            knowledgebaseUrl: `${websiteUrl}/kb`,
+            clientAreaUrl: `${base}/login`,
+            supportUrl: `${website}/support`,
+            knowledgebaseUrl: `${website}/kb`,
         },
     });
 }
@@ -107,13 +107,13 @@ export async function sendVerificationEmail(
     name: string,
     token: string
 ): Promise<SendResult> {
-    const origin = config.cors?.origin || 'http://localhost:3000';
+    const base = config.frontendUrl.replace(/\/$/, '');
     return sendTemplatedEmail({
         to,
         templateKey: 'account.verify_email',
         props: {
             customerName: name,
-            verificationUrl: `${origin}/verify-email?token=${token}`,
+            verificationUrl: `${base}/verify-email?token=${token}`,
             expiresIn: '24 hours',
         },
     });
@@ -134,9 +134,10 @@ export async function sendHostingAccountReadyEmail(
         nameservers?: string[];
     }
 ): Promise<SendResult> {
-    const origin = config.cors?.origin || 'http://localhost:3000';
-    const websiteUrl = (config.cors?.origin || '').replace(/\/$/, '') || 'https://flexohost.com';
-    const controlPanelUrl = `https://${options.serverHostname}:2083`;
+    const base = config.frontendUrl.replace(/\/$/, '');
+    const website = config.websiteUrl.replace(/\/$/, '');
+    const { protocol, port } = config.controlPanel;
+    const controlPanelUrl = `${protocol}://${options.serverHostname}:${port}`;
     return sendTemplatedEmail({
         to,
         templateKey: 'service.hosting_ready',
@@ -147,9 +148,9 @@ export async function sendHostingAccountReadyEmail(
             nameservers: options.nameservers || [],
             controlPanelUrl,
             username: options.username,
-            setupPasswordUrl: `${origin}/login`,
-            gettingStartedUrl: `${websiteUrl}/kb`,
-            supportUrl: `${websiteUrl}/support`,
+            setupPasswordUrl: `${base}/login`,
+            gettingStartedUrl: `${website}/kb`,
+            supportUrl: `${website}/support`,
         },
     });
 }
@@ -167,7 +168,7 @@ export async function sendDomainRegistrationEmail(
         autoRenewEnabled?: boolean;
     }
 ): Promise<SendResult> {
-    const origin = config.cors?.origin || 'http://localhost:3000';
+    const base = config.frontendUrl.replace(/\/$/, '');
     return sendTemplatedEmail({
         to,
         templateKey: 'domain.registration_confirmation',
@@ -177,7 +178,7 @@ export async function sendDomainRegistrationEmail(
             registrationPeriod: options.registrationPeriod,
             registrationDate: options.registrationDate,
             autoRenewEnabled: options.autoRenewEnabled ?? true,
-            manageDomainUrl: `${origin}/client`,
+            manageDomainUrl: `${base}/client`,
         },
     });
 }
@@ -188,13 +189,13 @@ export async function sendPasswordResetEmail(
     token: string,
     options?: { requestIp?: string; requestTime?: string }
 ): Promise<SendResult> {
-    const origin = config.cors?.origin || 'http://localhost:3000';
+    const base = config.frontendUrl.replace(/\/$/, '');
     return sendTemplatedEmail({
         to,
         templateKey: 'account.password_reset',
         props: {
             customerName: name,
-            resetUrl: `${origin}/reset-password?token=${token}`,
+            resetUrl: `${base}/reset-password?token=${token}`,
             expiresIn: '1 hour',
             requestIp: options?.requestIp,
             requestTime: options?.requestTime,
@@ -245,7 +246,7 @@ export async function sendEmailByTemplate(
     const total = invoice.total ?? 0;
     const balanceDue = invoice.balanceDue ?? total;
     const currency = invoice.currency || 'BDT';
-    const origin = config.cors?.origin || 'http://localhost:3000';
+    const base = config.frontendUrl.replace(/\/$/, '');
 
     let props: Record<string, unknown> = { customerName, invoiceNumber };
 
@@ -261,8 +262,8 @@ export async function sendEmailByTemplate(
             dueDate,
             amountDue: balanceDue.toLocaleString(),
             currency,
-            invoiceUrl: `${origin}/invoices/${invoice._id}/pay`,
-            billingUrl: `${origin}/billing`,
+            invoiceUrl: `${base}/invoices/${invoice._id}/pay`,
+            billingUrl: `${base}/billing`,
             lineItems: lineItems.length > 0 ? lineItems : [{ label: 'Total', amount: balanceDue.toLocaleString() }],
         };
     } else if (templateKey === 'billing.payment_success') {
@@ -275,7 +276,7 @@ export async function sendEmailByTemplate(
             currency,
             paymentDate: new Date().toLocaleDateString(),
             paymentMethodLabel: context.paymentMethod || 'Card',
-            billingUrl: `${origin}/billing`,
+            billingUrl: `${base}/billing`,
         };
     } else if (templateKey === 'billing.payment_failed') {
         props = {
@@ -284,8 +285,8 @@ export async function sendEmailByTemplate(
             amountDue: balanceDue.toLocaleString(),
             currency,
             dueDate,
-            retryPaymentUrl: `${origin}/invoices/${invoice._id}/pay`,
-            billingUrl: `${origin}/billing`,
+            retryPaymentUrl: `${base}/invoices/${invoice._id}/pay`,
+            billingUrl: `${base}/billing`,
             serviceName: context.serviceName,
         };
     } else if (templateKey === 'billing.overdue_reminder') {
@@ -305,7 +306,7 @@ export async function sendEmailByTemplate(
             overdueDays,
             amountDue: balanceDue.toLocaleString(),
             currency,
-            paymentUrl: `${origin}/invoices/${invoice._id}/pay`,
+            paymentUrl: `${base}/invoices/${invoice._id}/pay`,
         };
     } else if (templateKey === 'service.suspension_warning') {
         const suspensionDate = context.suspensionDate || dueDate;
@@ -315,8 +316,8 @@ export async function sendEmailByTemplate(
             serviceIdentifier: context.serviceIdentifier || invoiceNumber,
             reason: `Unpaid invoice ${invoiceNumber}`,
             suspensionDate,
-            paymentUrl: `${origin}/invoices/${invoice._id}/pay`,
-            billingUrl: `${origin}/billing`,
+            paymentUrl: `${base}/invoices/${invoice._id}/pay`,
+            billingUrl: `${base}/billing`,
         };
     } else if (templateKey === 'domain.renewal_reminder') {
         props = {
@@ -327,7 +328,7 @@ export async function sendEmailByTemplate(
             renewalPrice: String(context.renewalPrice ?? '0'),
             currency: context.currency || 'USD',
             autoRenewEnabled: context.autoRenewEnabled ?? false,
-            renewUrl: context.renewUrl || `${origin}/domains`,
+            renewUrl: context.renewUrl || `${base}/domains`,
         };
     } else if (templateKey === 'domain.expired_notice') {
         props = {
@@ -335,10 +336,10 @@ export async function sendEmailByTemplate(
             domain: context.domain || 'domain.com',
             expirationDate: context.expirationDate || 'N/A',
             statusLabel: context.statusLabel || 'Expired',
-            restoreUrl: context.restoreUrl || `${origin}/domains`,
+            restoreUrl: context.restoreUrl || `${base}/domains`,
         };
     } else if (templateKey === 'support.ticket_opened') {
-        const apiBase = process.env.API_URL ? new URL(process.env.API_URL).origin : 'http://localhost:5001';
+        const apiBase = config.api.baseUrl.replace(/\/$/, '');
         const rawAttachments = context.attachments || [];
         const attachments = rawAttachments.map((a: { url: string; filename: string; mimeType?: string }) => ({
             url: a.url.startsWith('http') ? a.url : `${apiBase}${a.url.startsWith('/') ? a.url : '/' + a.url}`,
@@ -353,7 +354,7 @@ export async function sendEmailByTemplate(
             department: context.department || 'Support',
             createdAt: context.createdAt || new Date().toISOString(),
             summaryMessage: context.summaryMessage,
-            ticketUrl: context.ticketUrl || `${origin}/tickets`,
+            ticketUrl: context.ticketUrl || `${base}/tickets`,
             attachments,
         };
     }

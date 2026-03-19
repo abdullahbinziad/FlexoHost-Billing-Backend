@@ -133,7 +133,7 @@ export class ServiceRenewalScheduler {
                     const customerName = clientDoc
                         ? `${(clientDoc as any).firstName || ''} ${(clientDoc as any).lastName || ''}`.trim() || 'Customer'
                         : 'Customer';
-                    const baseUrl = config.frontendUrl || (config as any).cors?.origin || 'http://localhost:3000';
+                    const baseUrl = config.frontendUrl;
                     const lineItems = invoiceItems.map((i: any) => ({ label: i.description || 'Item', amount: String(i.amount ?? 0) }));
                     let attachments: { filename: string; content: Buffer }[] | undefined;
                     try {

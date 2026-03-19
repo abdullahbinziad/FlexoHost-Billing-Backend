@@ -68,7 +68,7 @@ class AffiliateService {
     }
 
     private buildReferralLink(referralCode: string): string {
-        const baseUrl = config.frontendUrl || config.cors?.origin || 'http://localhost:3000';
+        const baseUrl = config.frontendUrl;
         return `${baseUrl}/checkout?ref=${encodeURIComponent(referralCode)}`;
     }
 

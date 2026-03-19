@@ -491,7 +491,7 @@ class OrderService {
             const customerName = clientForEmail
                 ? `${(clientForEmail as any).firstName || ''} ${(clientForEmail as any).lastName || ''}`.trim() || 'Customer'
                 : 'Customer';
-            const baseUrl = config.frontendUrl || config.cors?.origin || 'http://localhost:3000';
+            const baseUrl = config.frontendUrl;
 
             const shouldSendEmail = payload.sendEmail !== false && Boolean(clientEmail);
             if (!clientEmail) {

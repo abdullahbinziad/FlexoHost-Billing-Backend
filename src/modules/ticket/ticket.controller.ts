@@ -114,7 +114,7 @@ class TicketController {
 
         // Email acknowledgement (if configured)
         if (client.contactEmail) {
-            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+            const frontendUrl = config.frontendUrl;
             await notificationProvider.sendEmail(
                 client.contactEmail,
                 `Support Ticket #${ticketNumber} - ${subject}`,
@@ -314,7 +314,7 @@ class TicketController {
         // Notify client on staff reply
         if (authorType === 'staff') {
             const client = await Client.findById(ticket.clientId).populate('user', 'email').lean();
-            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+            const frontendUrl = config.frontendUrl;
 
             if (client) {
                 await notificationService.create({

@@ -80,9 +80,9 @@ export async function sendHostingAccountCreatedEmail(
                 nameserver1 = ns.ns1 || '';
                 nameserver2 = ns.ns2 || '';
             }
-            // Control panel URL built from Server collection hostname; 2083 = standard cPanel HTTPS port
             if (serverHostname) {
-                cpanelUrl = `https://${serverHostname}:2083`;
+                const { protocol, port } = config.controlPanel;
+                cpanelUrl = `${protocol}://${serverHostname}:${port}`;
             }
         }
     }
@@ -93,9 +93,10 @@ export async function sendHostingAccountCreatedEmail(
 
     const domain = details.primaryDomain || '';
     if (!cpanelUrl) {
-        cpanelUrl = domain ? `https://${domain}/cpanel` : '';
+        const { protocol } = config.controlPanel;
+        cpanelUrl = domain ? `${protocol}://${domain}/cpanel` : '';
     }
-    const clientPortalUrl = (config.cors?.origin || 'http://localhost:3000').replace(/\/$/, '');
+    const clientPortalUrl = config.frontendUrl.replace(/\/$/, '');
     const supportEmail = DEFAULT_BRAND.supportEmail;
     const clientName = [((client as any).firstName || '').trim(), ((client as any).lastName || '').trim()]
         .filter(Boolean)
