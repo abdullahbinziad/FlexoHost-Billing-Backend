@@ -4,7 +4,7 @@ export const defaultRoles = [
     {
         name: 'Super Admin',
         slug: 'super_admin',
-        permissions: [] as string[],
+        permissions: [...ALL_PERMISSION_IDS],
         description: 'Full system access. Can create/delete superadmin users.',
         isSystem: true,
         hasFullAccess: true,

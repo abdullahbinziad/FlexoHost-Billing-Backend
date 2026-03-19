@@ -190,7 +190,7 @@ const productSchema = new Schema<IProductDocument, IProductModel>(
 productSchema.index({ type: 1, group: 1 });
 productSchema.index({ name: 'text', description: 'text' });
 productSchema.index({ isHidden: 1, type: 1 });
-productSchema.index({ pid: 1 }, { unique: true });
+// pid: unique index is created by schema option "unique: true" on pid field
 
 /**
  * Generate 6-digit PID before validation

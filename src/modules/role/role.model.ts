@@ -55,7 +55,7 @@ const roleSchema = new Schema<IRoleDocument>(
     }
 );
 
-roleSchema.index({ slug: 1 }, { unique: true });
+// slug: unique index is created by schema option "unique: true" on slug field
 roleSchema.index({ archived: 1 });
 roleSchema.index({ archived: 1, slug: 1 }, { unique: true, partialFilterExpression: { archived: false } });
 

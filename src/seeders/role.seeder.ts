@@ -5,6 +5,7 @@ import User from '../modules/user/user.model';
 import { defaultRoles } from './data/roles.seed';
 import logger from '../utils/logger';
 import { USER_ROLES } from '../modules/user/user.const';
+import { ALL_PERMISSION_IDS } from '../modules/role/permission.const';
 
 const connectDB = async (): Promise<void> => {
     try {
@@ -27,6 +28,12 @@ export const seedRoles = async (): Promise<void> => {
                 logger.info(`   ✅ Created role: ${r.name} (${r.slug})`);
             } else {
                 logger.info(`   ⏭️  Role already exists: ${r.name}`);
+                // Ensure super_admin always has all route permissions when seeding
+                if (r.slug === 'super_admin') {
+                    existing.permissions = [...ALL_PERMISSION_IDS];
+                    await existing.save();
+                    logger.info(`   ✅ Synced Super Admin role with all ${ALL_PERMISSION_IDS.length} permissions`);
+                }
             }
         }
 
