@@ -23,7 +23,9 @@ interface Config {
         origin: string;
     };
     cookieOnlyAuth?: boolean;
+    cookieDomain?: string;
     upload: {
+
         maxFileSize: number;
         uploadPath: string;
         enableClamavScan?: boolean;
@@ -133,6 +135,7 @@ const config: Config = {
         origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     },
     cookieOnlyAuth: (process.env.COOKIE_ONLY_AUTH || '').toLowerCase() === 'true',
+    cookieDomain: process.env.COOKIE_DOMAIN || undefined,
 
     upload: {
         maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880', 10), // 5MB default

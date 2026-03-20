@@ -44,8 +44,10 @@ import csrfRoutes from './modules/csrf/csrf.routes';
 
 const app: Application = express();
 
-// Trust first proxy (Next.js or reverse proxy) so X-Forwarded-For is used by rate-limit
-app.set('trust proxy', 1);
+// Trust proxies securely (e.g., Nginx running locally)
+// 'loopback' trusts 127.0.0.1, making it automatically parse X-Forwarded-For correctly
+// if you place Nginx in front of Node.js.
+app.set('trust proxy', 'loopback');
 
 // Security middleware
 app.use(helmet());
@@ -58,6 +60,8 @@ app.use(
         allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Acting-As', 'X-Requested-With'],
     })
 );
+
+import jwt from 'jsonwebtoken';
 
 function isLoopbackAddress(addr: string | undefined): boolean {
     if (!addr) return false;
@@ -76,9 +80,30 @@ function skipGlobalLimiterBootstrapReads(req: Request): boolean {
     return p.endsWith('/csrf-token') || p.includes('/auth/me');
 }
 
-function skipGlobalLimiterDevLoopback(req: Request): boolean {
-    if (config.env !== 'development') return false;
+/** Skip rate limits for loopback (127.0.0.1) so your Next.js SSR server doesn't ban itself! */
+function skipGlobalLimiterLoopback(req: Request): boolean {
     return isLoopbackAddress(req.ip) || isLoopbackAddress(req.socket?.remoteAddress);
+}
+
+/** 
+ * Automatically bypass the rate limit completely for Administrators and Staff 
+ * so heavy dashboard usage never triggers a block!
+ */
+function skipGlobalLimiterAdmins(req: Request): boolean {
+    const token = req.headers.authorization?.split(' ')[1] || req.cookies?.jwt;
+    if (token) {
+        try {
+            // Verify token signature securely to prevent spoofed admin bypasses
+            const decoded = jwt.verify(token, config.jwt.secret) as { role?: string };
+            if (decoded && ['admin', 'superadmin', 'staff'].includes(decoded.role || '')) {
+                return true; // Completely immune to rate limits
+            }
+        } catch {
+            // Invalid token, fall through to block them
+            return false;
+        }
+    }
+    return false;
 }
 
 // Rate limiting
@@ -88,7 +113,7 @@ const limiter = rateLimit({
     message: 'Too many requests from this IP, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => skipGlobalLimiterBootstrapReads(req) || skipGlobalLimiterDevLoopback(req),
+    skip: (req) => skipGlobalLimiterBootstrapReads(req) || skipGlobalLimiterLoopback(req) || skipGlobalLimiterAdmins(req),
 });
 
 // Stricter rate limit for auth endpoints (brute-force protection).

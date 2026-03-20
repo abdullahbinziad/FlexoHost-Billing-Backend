@@ -12,11 +12,15 @@ const apiBase = `/api/${config.apiVersion}`;
 const OAUTH_STATE_COOKIE = 'oauth_state';
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
 
-const baseCookieOptions = {
+const baseCookieOptions: any = {
     httpOnly: true,
     secure: config.env === 'production',
     sameSite: 'lax' as const,
 };
+
+if (config.cookieDomain) {
+    baseCookieOptions.domain = config.cookieDomain;
+}
 
 class AuthController {
     private setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
