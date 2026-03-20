@@ -2,21 +2,23 @@ services:
   mongo:
     image: mongo:7
     restart: unless-stopped
-    command:
-      [
-        "mongod",
-        "--replSet", "rs0",
-        "--bind_ip_all",
-        "--port", "27017",
-        "--keyFile", "/etc/mongo-keyfile/keyfile"
-      ]
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        mkdir -p /data/configdb/keyfile
+        if [ ! -f /data/configdb/keyfile/keyfile ]; then
+          openssl rand -base64 756 > /data/configdb/keyfile/keyfile
+        fi
+        chmod 400 /data/configdb/keyfile/keyfile
+        chown 999:999 /data/configdb/keyfile/keyfile
+        exec mongod --replSet rs0 --bind_ip_all --port 27017 --auth --keyFile /data/configdb/keyfile/keyfile
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: YOUR_STRONG_PASSWORD
+      MONGO_INITDB_ROOT_PASSWORD: ys3WNe1Pn2twkW0FgWzXsdYNM6HrRlZQZMOiLCsSAnQ9idO8xYMZlAsU2YqTRfqy
     volumes:
       - mongo_data:/data/db
       - mongo_config:/data/configdb
-      - ./mongo-keyfile:/etc/mongo-keyfile:ro
     ports:
       - "27017:27017"
 
