@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import ApiError from '../../../utils/apiError';
 import { decrypt, encrypt, isEncrypted } from '../../../utils/encryption';
 import RegistrarConfig from './registrar-config.model';
+import { normalizeRegistrarKey } from './registrar-registry';
 
 export type RegistrarConfigFieldType = 'text' | 'password' | 'checkbox' | 'textarea';
 
@@ -87,56 +88,123 @@ const REGISTRAR_DEFINITIONS: RegistrarDefinition[] = [
     },
     {
         key: 'namely',
-        name: 'Namely Partner',
+        name: 'Namely',
         logoText: 'namely',
-        description: 'Namely Partner registrar integration. Configuration can be saved now; live registrar actions are still coming soon.',
-        implemented: false,
+        description:
+            'Namely Partner API (.bd / .com.bd): availability check, registration, renewal, nameservers, DNS, TLD pricing. Auth: X-Partner-Api-Key from the Namely Partner Portal.',
+        implemented: true,
         fields: [
             {
                 key: 'apiKey',
-                label: 'API Key',
+                label: 'Partner API Key',
                 type: 'password',
                 sensitive: true,
-                helperText: 'Stored securely for future Namely provider support.',
-                placeholder: 'Enter Namely API key',
+                helperText: 'Header X-Partner-Api-Key — create under Partner Portal → Settings → API & Integrations.',
+                placeholder: 'Paste Namely Partner API key',
+            },
+            {
+                key: 'apiSecret',
+                label: 'API Secret (optional)',
+                type: 'password',
+                sensitive: true,
+                helperText: 'Reserved for future signing or webhooks; not required for standard Partner API calls.',
+                placeholder: 'Optional secret',
             },
             {
                 key: 'baseUrl',
-                label: 'Base URL',
+                label: 'API base URL',
                 type: 'text',
-                helperText: 'Namely API base URL.',
-                placeholder: 'https://api.namely.com.bd/v1/partner-api',
+                helperText:
+                    'Host only (https://api.namely.com.bd) or full prefix ending with /v1/partner-api. Paths such as /domains/check are appended automatically.',
+                placeholder: 'https://api.namely.com.bd',
+            },
+            {
+                key: 'timeoutMs',
+                label: 'Timeout (ms)',
+                type: 'text',
+                helperText: 'HTTP timeout for Namely API requests.',
+                placeholder: '30000',
+            },
+            {
+                key: 'defaultPurpose',
+                label: 'Default registration purpose',
+                type: 'text',
+                helperText: 'Namely register API field `purpose` when the order does not send one (e.g. Business/E-commerce).',
+                placeholder: 'Business/E-commerce',
+            },
+            {
+                key: 'defaultCustomerId',
+                label: 'Default customer ID',
+                type: 'text',
+                helperText: 'Namely `customer_id` when the request has no customerId (numeric string).',
+                placeholder: '1',
+            },
+            {
+                key: 'defaultRegistrantName',
+                label: 'Default registrant — full name',
+                type: 'text',
+                helperText: 'Used when Namely register payload has no namelyRegistrant block.',
+                placeholder: 'Registrant Name',
+            },
+            {
+                key: 'defaultRegistrantEmail',
+                label: 'Default registrant — email',
+                type: 'text',
+                helperText: 'Used when namelyRegistrant is omitted.',
+                placeholder: 'email@example.com',
+            },
+            {
+                key: 'defaultRegistrantPhone',
+                label: 'Default registrant — phone',
+                type: 'text',
+                helperText: 'E.164 style recommended (e.g. +8801712345678).',
+                placeholder: '+8801712345678',
+            },
+            {
+                key: 'defaultRegistrantAddress',
+                label: 'Default registrant — address',
+                type: 'textarea',
+                helperText: 'Street address for Namely registrant object.',
+                placeholder: '123 Road, Dhaka',
+            },
+            {
+                key: 'defaultRegistrantNid',
+                label: 'Default registrant — NID',
+                type: 'text',
+                helperText: 'National ID or document id if required by registry.',
+                placeholder: '',
+            },
+            {
+                key: 'defaultRegistrantCity',
+                label: 'Default registrant — city',
+                type: 'text',
+                placeholder: 'Dhaka',
+            },
+            {
+                key: 'defaultRegistrantCountry',
+                label: 'Default registrant — country',
+                type: 'text',
+                helperText: 'ISO 3166-1 alpha-2 (e.g. BD).',
+                placeholder: 'BD',
             },
             {
                 key: 'documentListUrl',
-                label: 'Document List URL',
+                label: 'Document list URL',
                 type: 'text',
-                helperText: 'Shown to staff when this registrar requires documents during manual processing.',
+                helperText: 'Optional link for staff when manual documents are required.',
                 placeholder: 'https://example.com/required-documents',
             },
             {
                 key: 'testMode',
-                label: 'Test Mode',
+                label: 'Test mode',
                 type: 'checkbox',
-                helperText: 'Keep disabled for live registrar traffic.',
+                helperText: 'Reserved for future sandbox routing; keep off for production.',
             },
         ],
     },
 ];
 
-const REGISTRAR_ALIASES: Record<string, string> = {
-    dynadot: 'dynadot',
-    namely: 'namely',
-    connectreseller: 'connectreseller',
-};
 
-function normalizeRegistrarKey(value?: string | null): string {
-    const normalized = (value || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[\s_-]+/g, '');
-    return REGISTRAR_ALIASES[normalized] ?? normalized;
-}
 
 const DEFINITIONS_BY_KEY = new Map(
     REGISTRAR_DEFINITIONS.map((definition) => [definition.key, definition] as const)
@@ -167,7 +235,18 @@ function getDefaultSettings(registrarKey: string): Record<string, unknown> {
     if (normalizedKey === 'namely') {
         return {
             apiKey: '',
-            baseUrl: 'https://api.namely.com.bd/v1/partner-api',
+            apiSecret: '',
+            baseUrl: 'https://api.namely.com.bd',
+            timeoutMs: '30000',
+            defaultPurpose: 'Business/E-commerce',
+            defaultCustomerId: '1',
+            defaultRegistrantName: '',
+            defaultRegistrantEmail: '',
+            defaultRegistrantPhone: '',
+            defaultRegistrantAddress: '',
+            defaultRegistrantNid: '',
+            defaultRegistrantCity: 'Dhaka',
+            defaultRegistrantCountry: 'BD',
             documentListUrl: '',
             testMode: false,
         };
@@ -229,6 +308,9 @@ function buildAdminField(
 function getDefaultActiveState(registrarKey: string, mergedSettings: Record<string, unknown>): boolean {
     const normalizedKey = normalizeRegistrarKey(registrarKey);
     if (normalizedKey === 'dynadot') {
+        return typeof mergedSettings.apiKey === 'string' && mergedSettings.apiKey.length > 0;
+    }
+    if (normalizedKey === 'namely') {
         return typeof mergedSettings.apiKey === 'string' && mergedSettings.apiKey.length > 0;
     }
     return false;

@@ -44,6 +44,17 @@ export interface DomainAvailabilityResult {
 }
 
 // ---------- Register ----------
+/** Namely Partner API `registrant` object (see Postman: Register Domain). */
+export interface NamelyRegistrantPayload {
+    name: string;
+    email: string;
+    phone: string;
+    address: string;
+    nid?: string;
+    city: string;
+    country: string;
+}
+
 export interface RegisterDomainParams {
     domain: string;
     years: number;
@@ -54,6 +65,14 @@ export interface RegisterDomainParams {
     currency?: string;
     coupon?: string;
     language?: string;
+    /** Namely: registration purpose label (e.g. Business/E-commerce). */
+    purpose?: string;
+    /** Namely: partner customer id in Namely portal. */
+    customerId?: number;
+    /** Namely: full registrant contact (preferred over registrar defaults). */
+    namelyRegistrant?: NamelyRegistrantPayload;
+    /** Passed through to Namely `nameservers` when at least two hosts are set. */
+    nameservers?: string[];
 }
 
 export interface RegisterDomainResult {
@@ -61,6 +80,16 @@ export interface RegisterDomainResult {
     domain: string;
     expirationDate?: Date;
     orderId?: string;
+    raw?: Record<string, unknown>;
+}
+
+/** One row from a registrar bulk-register API (e.g. Dynadot `bulk_register`). */
+export interface BulkRegisterItemResult {
+    domain: string;
+    success: boolean;
+    expirationDate?: Date;
+    orderId?: string;
+    message?: string;
     raw?: Record<string, unknown>;
 }
 
@@ -158,7 +187,7 @@ export interface DomainContactDetails {
 }
 
 // ---------- DNS ----------
-export type DnsRecordType = 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT' | 'SRV' | 'forward' | 'stealth' | 'email';
+export type DnsRecordType = 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT' | 'SRV' | 'NS' | 'forward' | 'stealth' | 'email';
 
 export interface DnsRecord {
     type: DnsRecordType;

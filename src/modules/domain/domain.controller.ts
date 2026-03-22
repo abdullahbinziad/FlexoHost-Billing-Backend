@@ -80,6 +80,13 @@ class DomainController {
         return ApiResponse.ok(res, 'Domain search result', result);
     });
 
+    /** POST body: `{ domains: string[] }` — multi-registrar bulk availability. */
+    searchDomainsBulk = catchAsync(async (req: Request, res: Response) => {
+        const domains = Array.isArray(req.body?.domains) ? req.body.domains : [];
+        const result = await domainService.searchDomains(domains);
+        return ApiResponse.ok(res, 'Bulk domain search results', result);
+    });
+
     registerDomain = catchAsync(async (req: Request, res: Response) => {
         const authReq = req as AuthRequest;
         const result = await domainService.registerDomain(req.body);
@@ -97,6 +104,28 @@ class DomainController {
             },
         });
         return ApiResponse.created(res, 'Domain registration initiated', result);
+    });
+
+    registerDomainsBulk = catchAsync(async (req: Request, res: Response) => {
+        const authReq = req as AuthRequest;
+        const result = await domainService.registerDomainsBulk({
+            domains: Array.isArray(req.body?.domains) ? req.body.domains : [],
+        });
+        auditLogSafe({
+            message: `Direct bulk domain registration: ${result.results.length} domain(s)`,
+            type: 'domain_registered',
+            category: 'domain',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            status: 'pending',
+            meta: {
+                manualOverride: true,
+                count: result.results.length,
+                reason: req.body?.reason,
+            },
+        });
+        return ApiResponse.created(res, result.message, result);
     });
 
     renewDomain = catchAsync(async (req: Request, res: Response) => {

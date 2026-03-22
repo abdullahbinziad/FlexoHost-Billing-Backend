@@ -2,7 +2,12 @@ import { Router } from 'express';
 import domainController from './domain.controller';
 import { protect, restrictTo } from '../../middlewares/auth';
 import { validate } from '../../middlewares/validate';
-import { registerDomainValidation, transferDomainValidation } from './domain.validation';
+import {
+    registerDomainValidation,
+    registerDomainsBulkValidation,
+    searchDomainsBulkValidation,
+    transferDomainValidation,
+} from './domain.validation';
 import tldRoutes from './tld/tld.routes';
 
 
@@ -13,6 +18,7 @@ router.use('/tld', tldRoutes);
 
 // Public routes (or maybe authenticated but for any user)
 router.get('/search', domainController.searchDomain);
+router.post('/search-bulk', validate(searchDomainsBulkValidation), domainController.searchDomainsBulk);
 
 // Protected routes
 router.use(protect);
@@ -27,6 +33,12 @@ router.post('/admin/reconcile/:registrarKey', restrictTo('admin', 'staff', 'supe
 router.post('/admin/reconcile/:registrarKey/import', restrictTo('admin', 'staff', 'superadmin'), domainController.importRegistrarDomainsAdmin);
 router.post('/admin/:serviceId/sync', restrictTo('admin', 'staff', 'superadmin'), domainController.syncDomainByServiceIdAdmin);
 router.post('/register', restrictTo('admin', 'staff', 'superadmin'), validate(registerDomainValidation), domainController.registerDomain);
+router.post(
+    '/register-bulk',
+    restrictTo('admin', 'staff', 'superadmin'),
+    validate(registerDomainsBulkValidation),
+    domainController.registerDomainsBulk
+);
 router.post('/transfer', restrictTo('admin', 'staff', 'superadmin'), validate(transferDomainValidation), domainController.transferDomain);
 
 // Specific domain (ownership checked in controller for non-admin)

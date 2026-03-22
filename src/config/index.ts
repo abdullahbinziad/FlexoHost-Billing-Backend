@@ -58,15 +58,6 @@ interface Config {
         /** When true (default), verify SSL certificates. Set WHM_REJECT_UNAUTHORIZED=false only for self-signed WHM. */
         rejectUnauthorized: boolean;
     };
-    dynadot: {
-        apiKey: string;
-        apiSecret: string;
-        baseUrl: string;
-        useSandbox: boolean;
-        timeoutMs: number;
-        /** https://api.dynadot.com/api3.json (production) */
-        api3Url: string;
-    };
     namely: {
         apiKey: string;
         baseUrl: string;
@@ -169,14 +160,6 @@ const config: Config = {
         username: process.env.WHM_USERNAME || '',
         apiToken: process.env.WHM_API_TOKEN || '',
         rejectUnauthorized: process.env.WHM_REJECT_UNAUTHORIZED !== 'false',
-    },
-    dynadot: {
-        apiKey: process.env.DYNADOT_API_KEY || '',
-        apiSecret: process.env.DYNADOT_API_SECRET || '',
-        baseUrl: process.env.DYNADOT_BASE_URL || 'https://api.dynadot.com/restful/v2',
-        useSandbox: false,
-        timeoutMs: parseInt(process.env.DYNADOT_TIMEOUT_MS || '30000', 10),
-        api3Url: process.env.DYNADOT_API3_URL || 'https://api.dynadot.com/api3.json',
     },
     namely: {
         apiKey: process.env.NAMELY_API_KEY || '',

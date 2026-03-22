@@ -104,7 +104,7 @@ export async function callDynadot(
         throw new RegistrarError({
             registrar: REGISTRAR_NAME,
             command,
-            message: errorMessage || 'Dynadot API error',
+            message: errorMessage || `Dynadot API error: ${JSON.stringify(data).slice(0, 100)}`,
             registrarCode: responseCode,
             rawSafeSummary: status ? String(status).slice(0, 100) : undefined,
             statusCode: normalizedStatusCode,
@@ -115,6 +115,8 @@ export async function callDynadot(
 }
 
 function getResponseCode(data: Record<string, unknown>, _command: string): number | string | undefined {
+    if ('ResponseCode' in data) return data.ResponseCode as number | string;
+    if ('SuccessCode' in data) return data.SuccessCode as number | string;
     const wrapper = findFirstKey(data, (v) => !!(v && typeof v === 'object' && ('ResponseCode' in (v as object) || 'SuccessCode' in (v as object))));
     if (!wrapper || typeof wrapper !== 'object') return undefined;
     const w = wrapper as Record<string, unknown>;
@@ -123,12 +125,17 @@ function getResponseCode(data: Record<string, unknown>, _command: string): numbe
 }
 
 function getStatus(data: Record<string, unknown>, _command: string): string | undefined {
+    if ('Status' in data) return data.Status as string;
     const wrapper = findFirstKey(data, (v) => !!(v && typeof v === 'object' && 'Status' in (v as object)));
     if (!wrapper || typeof wrapper !== 'object') return undefined;
     return (wrapper as Record<string, unknown>).Status as string;
 }
 
 function getErrorMessage(data: Record<string, unknown>, _command: string): string | undefined {
+    if ('Error' in data) return data.Error as string;
+    if ('ErrorMessage' in data) return data.ErrorMessage as string;
+    if ('error' in data) return data.error as string;
+
     const wrapper = findFirstKey(data, (v) => !!(v && typeof v === 'object' && ('Error' in (v as object) || 'ErrorMessage' in (v as object))));
     if (!wrapper || typeof wrapper !== 'object') return undefined;
     const w = wrapper as Record<string, unknown>;

@@ -26,6 +26,43 @@ export const registerDomainValidation = [
         .withMessage('Reason cannot exceed 500 characters'),
 ];
 
+export const searchDomainsBulkValidation = [
+    body('domains')
+        .isArray({ min: 1, max: 100 })
+        .withMessage('domains must be a non-empty array (max 100)'),
+    body('domains.*')
+        .isString()
+        .withMessage('Each domain must be a string')
+        .trim()
+        .notEmpty()
+        .matches(DOMAIN_REGEX)
+        .withMessage('Each domain must be a valid FQDN'),
+];
+
+export const registerDomainsBulkValidation = [
+    body('domains')
+        .isArray({ min: 1, max: 100 })
+        .withMessage('domains must be a non-empty array (max 100)'),
+    body('domains.*.domain')
+        .trim()
+        .notEmpty()
+        .matches(DOMAIN_REGEX)
+        .withMessage('Each domain must be a valid FQDN'),
+    body('domains.*.duration')
+        .optional()
+        .isInt({ min: 1, max: 10 })
+        .withMessage('Duration must be 1–10 years'),
+    body('allowDirectProvisioning')
+        .custom((v) => v === true)
+        .withMessage('Direct provisioning requires explicit override'),
+    body('reason')
+        .trim()
+        .notEmpty()
+        .withMessage('A reason is required for direct registrar actions')
+        .isLength({ max: 500 })
+        .withMessage('Reason cannot exceed 500 characters'),
+];
+
 export const transferDomainValidation = [
     body('domain')
         .trim()

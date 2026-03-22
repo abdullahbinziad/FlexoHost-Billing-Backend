@@ -1,6 +1,6 @@
 import { escapeRegex } from '../../utils/string.util';
-import { IDomainRegistrationPayload, IDomainTransferPayload } from './domain.interface';
-import tldService from './tld/tld.service';
+import { IDomainBulkRegistrationPayload, IDomainRegistrationPayload, IDomainTransferPayload } from './domain.interface';
+import registrarRoutingService from './registrar/registrar-routing.service';
 import ApiError from '../../utils/apiError';
 import { serviceRepository } from '../services/repositories';
 import DomainServiceDetails from '../services/models/domain-details.model';
@@ -8,7 +8,8 @@ import Service from '../services/service.model';
 import { ServiceType } from '../services/types/enums';
 import { registrarAudit } from './registrar/registrar-audit';
 import { domainRegistrarService } from './registrar/domain-registrar.service';
-import type { DomainContactDetails, DnsRecord, RegistrarContact } from './registrar/registrar.types';
+import type { DomainAvailabilityResult, DomainContactDetails, DnsRecord, RegistrarContact } from './registrar/registrar.types';
+import type { RegistrarRoutingSource } from './registrar/registrar-routing.service';
 import { DomainTransferStatus, type IDomainContact } from '../services/models/domain-details.model';
 import RegistrarDiscoveredDomain from './registrar/registrar-discovered-domain.model';
 import { auditLogSafe } from '../activity-log/activity-log.service';
@@ -27,17 +28,9 @@ class DomainService {
 
     async searchDomain(domain: string): Promise<any> {
         try {
-            const parts = domain.split('.');
-            if (parts.length < 2) {
-                throw new ApiError(400, 'Invalid domain format');
-            }
-            const extension = `.${parts.slice(1).join('.')}`;
-            const tldData = await tldService.getTLDByExtension(extension);
-            if (!tldData) {
-                throw new ApiError(404, 'TLD not supported');
-            }
-            const [searchResult] = await domainRegistrarService.checkAvailability([domain]);
-            const registrar = domainRegistrarService.resolveRegistrarName(domain);
+            const { registrarKey, extension, tld: tldData } = await registrarRoutingService.resolveRegistrarKeyForDomainName(domain);
+            const [searchResult] = await domainRegistrarService.checkAvailability([domain], [registrarKey]);
+            const registrar = domainRegistrarService.resolveRegistrarName(domain, registrarKey);
             registrarAudit({ event: 'domain.search.performed', domain, status: 'success' });
             const tldObj = tldData.toObject ? tldData.toObject() : { ...tldData };
             const { features, autoRegistration, ...cleanTldData } = tldObj;
@@ -50,7 +43,6 @@ class DomainService {
                 currency: searchResult?.currency,
                 premium: searchResult?.premium ?? false,
                 registrarResult: searchResult ?? { domain, available: false },
-                dynadotResult: searchResult ?? { domain, available: false },
                 tldData: cleanTldData,
             };
         } catch (error) {
@@ -58,20 +50,134 @@ class DomainService {
         }
     }
 
+    /** Multi-domain availability; one registrar per domain from TLD routing (up to 100 domains). */
+    async searchDomains(domains: string[]): Promise<{
+        results: Array<{
+            domain: string;
+            extension: string;
+            registrar: string;
+            available: boolean;
+            price?: number;
+            currency?: string;
+            premium: boolean;
+            registrarResult: DomainAvailabilityResult;
+            routingSource: RegistrarRoutingSource;
+            tldData: Record<string, unknown>;
+        }>;
+    }> {
+        const raw = (domains || []).map((d) => d.trim().toLowerCase()).filter(Boolean);
+        const unique = [...new Set(raw)];
+        if (unique.length === 0) {
+            throw ApiError.badRequest('At least one domain is required');
+        }
+        if (unique.length > 100) {
+            throw ApiError.badRequest('Maximum 100 domains per bulk search');
+        }
+
+        const resolved = await registrarRoutingService.resolveRegistrarKeysForDomainNames(unique);
+        const preferredRegistrars = resolved.map((r) => r.registrarKey);
+        const availability = await domainRegistrarService.checkAvailability(unique, preferredRegistrars);
+
+        const results = unique.map((domain, i) => {
+            const r = resolved[i];
+            const ar = availability[i];
+            const tldObj = r.tld.toObject ? r.tld.toObject() : { ...r.tld };
+            const { features: _feat, autoRegistration: _ar, ...cleanTldData } = tldObj as Record<string, unknown>;
+            return {
+                domain,
+                extension: r.extension,
+                registrar: domainRegistrarService.resolveRegistrarName(domain, r.registrarKey),
+                available: ar?.available ?? false,
+                price: ar?.price,
+                currency: ar?.currency,
+                premium: ar?.premium ?? false,
+                registrarResult: ar ?? { domain, available: false },
+                routingSource: r.source,
+                tldData: cleanTldData as Record<string, unknown>,
+            };
+        });
+
+        for (const d of unique) {
+            registrarAudit({ event: 'domain.search.performed', domain: d, status: 'success' });
+        }
+
+        return { results };
+    }
+
     async registerDomain(payload: IDomainRegistrationPayload): Promise<any> {
         registrarAudit({ event: 'domain.register.requested', domain: payload.domain });
         try {
-            const result = await domainRegistrarService.registerDomain({
-                domain: payload.domain,
-                years: payload.duration ?? 1,
-                currency: 'USD',
-            });
+            const { registrarKey } = await registrarRoutingService.resolveRegistrarKeyForDomainName(payload.domain);
+            const result = await domainRegistrarService.registerDomain(
+                {
+                    domain: payload.domain,
+                    years: payload.duration ?? 1,
+                    currency: 'USD',
+                    purpose: payload.purpose,
+                    customerId: payload.customerId,
+                    nameservers: payload.nameservers,
+                    namelyRegistrant: payload.namelyRegistrant,
+                },
+                registrarKey
+            );
             registrarAudit({ event: 'domain.register.completed', domain: payload.domain, status: 'success' });
             return { ...result, message: 'Domain registration initiated' };
         } catch (e) {
             registrarAudit({ event: 'domain.register.failed', domain: payload.domain, status: 'failure' });
             throw e;
         }
+    }
+
+    /** Staff direct bulk register: routes each domain via TLD; uses Dynadot `bulk_register` when applicable. */
+    async registerDomainsBulk(payload: IDomainBulkRegistrationPayload): Promise<{
+        results: Array<{
+            domain: string;
+            success: boolean;
+            registrar: string;
+            remoteId: string;
+            orderId?: string;
+            expirationDate?: Date;
+            message?: string;
+        }>;
+        message: string;
+    }> {
+        const items = (payload.domains || []).slice(0, 100);
+        if (items.length === 0) {
+            throw ApiError.badRequest('At least one domain is required');
+        }
+
+        const preferredRegistrars: string[] = [];
+        for (const item of items) {
+            const { registrarKey } = await registrarRoutingService.resolveRegistrarKeyForDomainName(item.domain);
+            preferredRegistrars.push(registrarKey);
+        }
+
+        const rows = await domainRegistrarService.registerDomainsBulk(
+            items.map((d) => ({
+                domain: d.domain,
+                years: d.duration ?? 1,
+                currency: 'USD',
+            })),
+            preferredRegistrars
+        );
+
+        for (const row of rows) {
+            if (row.success) {
+                registrarAudit({ event: 'domain.register.completed', domain: row.domain, status: 'success' });
+            } else {
+                registrarAudit({
+                    event: 'domain.register.failed',
+                    domain: row.domain,
+                    status: 'failure',
+                    meta: row.message ? { message: row.message } : undefined,
+                });
+            }
+        }
+
+        return {
+            results: rows,
+            message: 'Bulk domain registration processed',
+        };
     }
 
     async renewDomain(domain: string, duration: number): Promise<any> {
@@ -86,11 +192,15 @@ class DomainService {
     }
 
     async transferDomain(payload: IDomainTransferPayload): Promise<any> {
-        const result = await domainRegistrarService.transferDomain({
-            domain: payload.domain,
-            authCode: payload.authCode,
-            currency: 'USD',
-        });
+        const { registrarKey } = await registrarRoutingService.resolveRegistrarKeyForDomainName(payload.domain);
+        const result = await domainRegistrarService.transferDomain(
+            {
+                domain: payload.domain,
+                authCode: payload.authCode,
+                currency: 'USD',
+            },
+            registrarKey
+        );
         registrarAudit({ event: 'domain.transfer.requested', domain: payload.domain, status: 'pending' });
         return { ...result, message: 'Domain transfer initiated' };
     }

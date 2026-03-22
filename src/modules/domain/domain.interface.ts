@@ -5,11 +5,19 @@ export interface IDomainAvailability {
 }
 
 export interface IDomainSearchResult extends IDomainAvailability {
-    data: IDomainSearchResult;
     pricing?: {
         USD: number;
         BDT: number;
     };
+}
+
+export interface IDomainBulkRegistrationItem {
+    domain: string;
+    duration?: number;
+}
+
+export interface IDomainBulkRegistrationPayload {
+    domains: IDomainBulkRegistrationItem[];
 }
 
 export interface IDomainRegistrationPayload {
@@ -22,9 +30,19 @@ export interface IDomainRegistrationPayload {
         tech?: number | any;
         billing?: number | any;
     };
-    // Additional fields for other registrars (e.g. Namely)
+    // Additional fields for other registrars (e.g. Namely Partner API)
     purpose?: string;
     customerId?: number;
+    /** Required for Namely unless defaults are set on the registrar config. */
+    namelyRegistrant?: {
+        name: string;
+        email: string;
+        phone: string;
+        address: string;
+        nid?: string;
+        city: string;
+        country: string;
+    };
 }
 
 export interface IDomainTransferPayload {
@@ -45,14 +63,4 @@ export interface IDomainDetails {
         tech?: any;
         billing?: any;
     };
-}
-
-export interface IDomainRegistrar {
-    name: string;
-    searchDomain(domain: string): Promise<IDomainAvailability>;
-    registerDomain(payload: IDomainRegistrationPayload): Promise<any>;
-    renewDomain(domain: string, duration: number): Promise<any>;
-    transferDomain(payload: IDomainTransferPayload): Promise<any>;
-    getDomainDetails(domain: string): Promise<IDomainDetails>;
-    updateNameservers(domain: string, nameservers: string[]): Promise<void>;
 }

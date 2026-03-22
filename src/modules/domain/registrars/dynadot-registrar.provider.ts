@@ -9,6 +9,7 @@ import type {
     DomainAvailabilityResult,
     RegisterDomainParams,
     RegisterDomainResult,
+    BulkRegisterItemResult,
     TransferDomainParams,
     TransferDomainResult,
     TransferStatusResult,
@@ -90,6 +91,64 @@ export class DynadotRegistrarProvider implements IRegistrarProvider {
             orderId: orderId != null ? String(orderId) : undefined,
             raw: data,
         };
+    }
+
+    /**
+     * Dynadot `bulk_register` — up to 100 domains per request, same duration/currency for all.
+     * @see https://www.dynadot.com/domain/api-commands (bulk register)
+     */
+    async bulkRegisterDomains(domains: string[], years: number, currency = 'USD'): Promise<BulkRegisterItemResult[]> {
+        const list = domains.slice(0, 100).map((d) => d.trim().toLowerCase()).filter(Boolean);
+        if (list.length === 0) return [];
+        if (list.length === 1) {
+            const one = await this.registerDomain({ domain: list[0], years, currency });
+            return [
+                {
+                    domain: list[0],
+                    success: one.success,
+                    expirationDate: one.expirationDate,
+                    orderId: one.orderId,
+                    raw: one.raw,
+                },
+            ];
+        }
+        const body: Record<string, string | number> = {
+            currency,
+            duration: years,
+        };
+        list.forEach((d, i) => {
+            body[`domain${i}`] = d;
+        });
+        const data = await callDynadot('bulk_register', body);
+        const resp = data.BulkRegisterResponse as Record<string, unknown> | undefined;
+        const rawList = (resp?.BulkRegister ?? (Array.isArray(resp) ? resp : null)) as
+            | Array<Record<string, unknown>>
+            | undefined;
+        const rows = Array.isArray(rawList) ? rawList : [];
+        const byDomain = new Map<string, BulkRegisterItemResult>();
+        for (const row of rows) {
+            const name = String(row.DomainName ?? row.domain ?? '').toLowerCase().trim();
+            if (!name) continue;
+            const ok = String(row.Result ?? row.result ?? '').toLowerCase() === 'success';
+            const exp = row.Expiration ?? row.expiration;
+            const msg = row.Message != null ? String(row.Message) : undefined;
+            byDomain.set(name, {
+                domain: name,
+                success: ok,
+                expirationDate: exp && exp !== '-' ? parseMsDate(exp as string | number) : undefined,
+                orderId: row.OrderId != null ? String(row.OrderId) : undefined,
+                message: msg,
+                raw: row as Record<string, unknown>,
+            });
+        }
+        return list.map((d) =>
+            byDomain.get(d) ?? {
+                domain: d,
+                success: false,
+                message: 'No result row in bulk_register response',
+                raw: data,
+            }
+        );
     }
 
     // ---------- C) TransferDomain -> transfer ----------
@@ -506,7 +565,7 @@ export class DynadotRegistrarProvider implements IRegistrarProvider {
         return { orderId, status, raw: data };
     }
 
-    async listDomains(): Promise<{ domain: string; [k: string]: unknown }[]> {
+    async listDomains(): Promise<{ domain: string;[k: string]: unknown }[]> {
         const data = await callDynadot('list_domain', {});
         const list = (data.ListDomainResponse as Record<string, unknown>)?.DomainList as any[] | undefined
             ?? (data.ListDomainInfoResponse as Record<string, unknown>)?.DomainList as any[] | undefined;

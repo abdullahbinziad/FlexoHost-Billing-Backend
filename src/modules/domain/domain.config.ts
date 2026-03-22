@@ -9,16 +9,12 @@ export const DOMAIN_CONFIG = {
 
     // Map specific TLDs to Registrars
     // Format: 'tld': 'RegistrarName'
+    /** Fallback when Mongo TLD exists but `autoRegistration.provider` is empty. Do not list ccTLDs here — set provider on the TLD document instead. */
     tldRegistrarMap: {
-        'com': 'Dynadot',
-        'net': 'Dynadot',
-        'org': 'Dynadot',
-        'io': 'Dynadot',
-        'bd': 'Dynadot',
-        'xyz': 'Dynadot',
-        // Future providers can be mapped here once their IRegistrarProvider implementation is complete.
-        // Example:
-        // 'io': 'Namely',
-        // 'xyz': 'ConnectReseller',
+        com: 'Dynadot',
+        net: 'Dynadot',
+        org: 'Dynadot',
+        io: 'Dynadot',
+        xyz: 'Dynadot',
     } as Record<string, string>,
 };
