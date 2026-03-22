@@ -8,7 +8,7 @@ import Client from '../client/client.model';
 import emailService from './email.service';
 import { buildCustomEmailHtml } from './build-custom-email';
 import { isTransportConfigured, verifySmtpConnection } from './transport/nodemailer.transport';
-import { resolveEmailSmtpConfig } from './smtp-resolve';
+import { resolveEmailSmtpConfig } from '../smtp';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 
 const MAX_RECIPIENTS = 100;

@@ -1,4 +1,5 @@
 import BillingSettings, { DEFAULT_BILLING_SETTINGS } from './billing-settings.model';
+import { encryptSmtpPasswordForStorage } from '../smtp';
 
 export interface BillingSettingsDto {
     defaultStaffRoleId?: string | null;
@@ -114,12 +115,14 @@ export async function updateBillingSettings(
         if (smtpPassword === null || smtpPassword === '') {
             $unset.smtpPassword = 1;
         } else {
-            $set.smtpPassword = smtpPassword;
+            $set.smtpPassword = encryptSmtpPasswordForStorage(smtpPassword);
         }
     }
 
+    // Only set `key` on insert. Do not spread DEFAULT_BILLING_SETTINGS here: those paths overlap
+    // fields in `$set` (e.g. smtpUseCustom) and MongoDB rejects one path in both $set and $setOnInsert.
     const updatePayload: Record<string, unknown> = {
-        $setOnInsert: { key: SETTINGS_KEY, ...DEFAULT_BILLING_SETTINGS },
+        $setOnInsert: { key: SETTINGS_KEY },
     };
     if (Object.keys($set).length > 0) {
         updatePayload.$set = $set;

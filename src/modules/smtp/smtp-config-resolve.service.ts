@@ -4,6 +4,7 @@
 
 import config from '../../config';
 import BillingSettings from '../settings/billing-settings.model';
+import { decryptSmtpPasswordForUse } from './smtp-password-crypto';
 
 const SETTINGS_KEY = 'global';
 
@@ -49,7 +50,8 @@ async function loadResolved(): Promise<ResolvedEmailTransportConfig> {
 
     if (useCustom && d?.smtpHost?.trim() && d?.smtpUser?.trim()) {
         const port = typeof d.smtpPort === 'number' && d.smtpPort > 0 ? d.smtpPort : 587;
-        const dbPass = (d.smtpPassword && String(d.smtpPassword).trim()) || '';
+        const dbPass = decryptSmtpPasswordForUse(d.smtpPassword).trim();
+        /** Empty DB password falls back to SMTP_PASSWORD in .env (documented in admin UI). */
         const password = dbPass || env.smtp.password;
         const secure = d.smtpSecure ?? port === 465;
         const requireTls = d.smtpRequireTls ?? port === 587;

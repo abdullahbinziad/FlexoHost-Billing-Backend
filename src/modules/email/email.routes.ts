@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { protect, restrictTo } from '../../middlewares/auth';
 import { requirePermission } from '../../middlewares/requirePermission';
+import { smtpTestRateLimit } from '../../middlewares/smtpTestRateLimit';
 import { validate } from '../../middlewares/validate';
 import { previewTemplate } from './preview';
 import { validateProps } from './templates/schemas';
@@ -32,6 +33,7 @@ router.post(
     protect,
     restrictTo('superadmin', 'admin', 'staff'),
     requirePermission('settings:smtp'),
+    smtpTestRateLimit,
     validate(testSmtpValidation),
     emailController.testSmtp
 );

@@ -5,7 +5,11 @@
 import nodemailer from 'nodemailer';
 import logger from '../../../utils/logger';
 import type { SendResult } from '../templates/types';
-import { resolveEmailSmtpConfig, invalidateEmailSmtpConfigCache, type ResolvedEmailTransportConfig } from '../smtp-resolve';
+import {
+    resolveEmailSmtpConfig,
+    invalidateEmailSmtpConfigCache,
+    type ResolvedEmailTransportConfig,
+} from '../../smtp';
 
 let transporter: nodemailer.Transporter | null = null;
 let transporterCacheKey: string | null = null;
