@@ -27,3 +27,8 @@ export const sendBulkEmailValidation = [
         .isLength({ max: 50000 })
         .withMessage('HTML body cannot exceed 50000 characters'),
 ];
+
+/** POST /email/test — send a single test message to verify SMTP in production */
+export const testSmtpValidation = [
+    body('to').trim().isEmail().withMessage('Valid recipient email (to) is required'),
+];

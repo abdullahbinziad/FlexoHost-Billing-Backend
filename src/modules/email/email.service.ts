@@ -44,9 +44,14 @@ export async function sendTemplatedEmail<T>(
     const html = template.renderHtml(fullProps);
     const text = template.renderText(fullProps);
 
-    if (!isTransportConfigured()) {
-        logger.warn(`[Email] SMTP not configured – no email sent. Would send ${templateKey} to ${to} | Subject: ${subject}. Set SMTP_USER and SMTP_PASSWORD in .env.`);
-        return { success: false, error: 'SMTP not configured. Set SMTP_USER and SMTP_PASSWORD in .env.' };
+    if (!(await isTransportConfigured())) {
+        logger.warn(
+            `[Email] SMTP not configured – no email sent. Would send ${templateKey} to ${to} | Subject: ${subject}. Configure SMTP in Admin → Settings or set SMTP_* in .env.`
+        );
+        return {
+            success: false,
+            error: 'SMTP not configured. Set credentials under Admin → Settings (SMTP) or SMTP_USER and SMTP_PASSWORD in .env.',
+        };
     }
 
     return sendViaTransport({
@@ -72,9 +77,12 @@ export interface IEmailOptions {
 }
 
 export async function sendEmail(options: IEmailOptions): Promise<SendResult> {
-    if (!isTransportConfigured()) {
+    if (!(await isTransportConfigured())) {
         logger.warn(`[Email-Stub] to ${options.to} | Subject: ${options.subject}`);
-        return { success: false, error: 'SMTP not configured. Set SMTP_USER and SMTP_PASSWORD in .env.' };
+        return {
+            success: false,
+            error: 'SMTP not configured. Set credentials under Admin → Settings (SMTP) or SMTP_USER and SMTP_PASSWORD in .env.',
+        };
     }
 
     return sendViaTransport({

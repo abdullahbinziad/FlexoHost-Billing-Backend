@@ -173,6 +173,12 @@ export const PERMISSION_META: Record<string, PermissionMeta[]> = {
     settings: [
         { id: 'settings:read', label: 'View settings', category: 'settings' },
         { id: 'settings:update_billing', label: 'Update billing/reminder settings', category: 'settings' },
+        {
+            id: 'settings:smtp',
+            label: 'Manage SMTP configuration and test email',
+            category: 'settings',
+            riskLevel: 'high',
+        },
     ],
     migration: [
         { id: 'migration:run', label: 'Run WHMCS migration', category: 'settings', riskLevel: 'high' },

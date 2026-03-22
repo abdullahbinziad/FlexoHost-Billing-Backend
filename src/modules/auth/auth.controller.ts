@@ -8,7 +8,24 @@ import config from '../../config';
 import authService from './auth.service';
 import type { GoogleProfile } from './auth.service';
 
-const apiBase = `/api/${config.apiVersion}`;
+/**
+ * Google OAuth redirect_uri — must match Google Cloud "Authorized redirect URIs" exactly (scheme, host, path).
+ * Do not use req.protocol/req.get('host') alone: behind nginx/TLS or Docker, req.protocol is often `http`
+ * while the public URL is `https`, causing redirect_uri_mismatch (400).
+ * Order: GOOGLE_REDIRECT_URI → canonical URL from API_URL (see config.api.fullBaseUrl).
+ */
+function getGoogleOAuthCallbackUrl(): string {
+    const explicit = process.env.GOOGLE_REDIRECT_URI?.trim();
+    if (explicit) {
+        return explicit.replace(/\/$/, '');
+    }
+    let base = config.api.fullBaseUrl.replace(/\/$/, '');
+    if (!base.includes('/api/')) {
+        base = `${base}/api/${config.apiVersion}`;
+    }
+    return `${base}/auth/google/callback`;
+}
+
 const OAUTH_STATE_COOKIE = 'oauth_state';
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -180,7 +197,7 @@ class AuthController {
             maxAge: OAUTH_STATE_MAX_AGE_MS,
         });
 
-        const callbackUrl = `${req.protocol}://${req.get('host')}${apiBase}/auth/google/callback`;
+        const callbackUrl = getGoogleOAuthCallbackUrl();
         const scope = 'openid email profile';
         const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
         url.searchParams.set('client_id', config.google.clientId);
@@ -217,7 +234,7 @@ class AuthController {
             return res.redirect(`${config.frontendUrl}/login?error=invalid_state`);
         }
 
-        const callbackUrl = `${req.protocol}://${req.get('host')}${apiBase}/auth/google/callback`;
+        const callbackUrl = getGoogleOAuthCallbackUrl();
 
         const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
             method: 'POST',

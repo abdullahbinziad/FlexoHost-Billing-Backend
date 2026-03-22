@@ -19,18 +19,32 @@ export interface BillingSettingsDto {
     terminationWarningDays: number[];
     domainExpiryReminderDays: number[];
     reminderDueTodayEnabled: boolean;
+    smtpUseCustom: boolean;
+    smtpHost: string;
+    smtpPort: number;
+    smtpUser: string;
+    /** True if a password is stored in the database (value is never returned). */
+    smtpPasswordIsSet: boolean;
+    smtpSecure: boolean;
+    smtpRequireTls: boolean;
+    smtpTlsRejectUnauthorized: boolean;
+    emailFrom: string;
 }
 
 const SETTINGS_KEY = 'global';
 
 async function getOrCreate(): Promise<Record<string, unknown>> {
-    let doc = await BillingSettings.findOne({ key: SETTINGS_KEY }).lean().exec() as Record<string, unknown> | null;
+    let doc = (await BillingSettings.findOne({ key: SETTINGS_KEY })
+        .select('+smtpPassword')
+        .lean()
+        .exec()) as Record<string, unknown> | null;
     if (!doc) {
         const created = await BillingSettings.create({
             key: SETTINGS_KEY,
             ...DEFAULT_BILLING_SETTINGS,
         });
         doc = created.toObject() as unknown as Record<string, unknown>;
+        (doc as { smtpPassword?: string }).smtpPassword = '';
     }
     return doc;
 }
@@ -63,24 +77,62 @@ export async function getBillingSettings(): Promise<BillingSettingsDto> {
         terminationWarningDays: Array.isArray(termWarn) ? termWarn.filter((d: number) => d > 0) : [],
         domainExpiryReminderDays: Array.isArray(domainExpiry) ? domainExpiry.filter((d: number) => d > 0) : [],
         reminderDueTodayEnabled: (doc.reminderDueTodayEnabled as boolean | undefined) ?? DEFAULT_BILLING_SETTINGS.reminderDueTodayEnabled,
+        smtpUseCustom: (doc.smtpUseCustom as boolean | undefined) ?? DEFAULT_BILLING_SETTINGS.smtpUseCustom,
+        smtpHost: (doc.smtpHost as string | undefined) ?? DEFAULT_BILLING_SETTINGS.smtpHost,
+        smtpPort: (doc.smtpPort as number | undefined) ?? DEFAULT_BILLING_SETTINGS.smtpPort,
+        smtpUser: (doc.smtpUser as string | undefined) ?? DEFAULT_BILLING_SETTINGS.smtpUser,
+        smtpPasswordIsSet: !!(doc.smtpPassword && String(doc.smtpPassword).trim()),
+        smtpSecure: (doc.smtpSecure as boolean | undefined) ?? DEFAULT_BILLING_SETTINGS.smtpSecure,
+        smtpRequireTls: (doc.smtpRequireTls as boolean | undefined) ?? DEFAULT_BILLING_SETTINGS.smtpRequireTls,
+        smtpTlsRejectUnauthorized:
+            (doc.smtpTlsRejectUnauthorized as boolean | undefined) ?? DEFAULT_BILLING_SETTINGS.smtpTlsRejectUnauthorized,
+        emailFrom: (doc.emailFrom as string | undefined) ?? DEFAULT_BILLING_SETTINGS.emailFrom,
     };
 }
 
 export async function updateBillingSettings(
-    updates: Partial<BillingSettingsDto & { defaultStaffRoleId?: string | null }>,
+    updates: Partial<BillingSettingsDto & { defaultStaffRoleId?: string | null; smtpPassword?: string | null }>,
     updatedBy?: string
 ): Promise<BillingSettingsDto> {
-    const doc = await BillingSettings.findOneAndUpdate(
-        { key: SETTINGS_KEY },
-        {
-            $set: {
-                ...updates,
-                ...(updatedBy && { updatedBy }),
-            },
-            $setOnInsert: { key: SETTINGS_KEY, ...DEFAULT_BILLING_SETTINGS },
-        },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
-    ).exec();
+    const { smtpPassword, smtpPasswordIsSet: _ignoredComputed, ...rest } = updates as Partial<
+        BillingSettingsDto & { defaultStaffRoleId?: string | null }
+    > & { smtpPassword?: string | null };
+    void _ignoredComputed;
+
+    const $set: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rest)) {
+        if (v !== undefined) {
+            $set[k] = v;
+        }
+    }
+    if (updatedBy) {
+        $set.updatedBy = updatedBy;
+    }
+
+    const $unset: Record<string, 1> = {};
+    if (smtpPassword !== undefined) {
+        if (smtpPassword === null || smtpPassword === '') {
+            $unset.smtpPassword = 1;
+        } else {
+            $set.smtpPassword = smtpPassword;
+        }
+    }
+
+    const updatePayload: Record<string, unknown> = {
+        $setOnInsert: { key: SETTINGS_KEY, ...DEFAULT_BILLING_SETTINGS },
+    };
+    if (Object.keys($set).length > 0) {
+        updatePayload.$set = $set;
+    }
+    if (Object.keys($unset).length > 0) {
+        updatePayload.$unset = $unset;
+    }
+
+    const doc = await BillingSettings.findOneAndUpdate({ key: SETTINGS_KEY }, updatePayload, {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+    }).exec();
 
     if (!doc) {
         void getOrCreate();

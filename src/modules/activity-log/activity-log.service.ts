@@ -98,8 +98,16 @@ export async function getActivityLogs(
     if (filters.ticketId) query.ticketId = filters.ticketId;
     if (filters.dateFrom || filters.dateTo) {
         query.createdAt = {};
-        if (filters.dateFrom) (query.createdAt as Record<string, Date>).$gte = new Date(filters.dateFrom);
-        if (filters.dateTo) (query.createdAt as Record<string, Date>).$lte = new Date(filters.dateTo);
+        if (filters.dateFrom) {
+            const start = new Date(filters.dateFrom);
+            start.setHours(0, 0, 0, 0);
+            (query.createdAt as Record<string, Date>).$gte = start;
+        }
+        if (filters.dateTo) {
+            const end = new Date(filters.dateTo);
+            end.setHours(23, 59, 59, 999);
+            (query.createdAt as Record<string, Date>).$lte = end;
+        }
     }
     if (filters.search && filters.search.trim()) {
         query.message = { $regex: escapeRegex(filters.search.trim()), $options: 'i' };

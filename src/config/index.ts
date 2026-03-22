@@ -40,6 +40,12 @@ interface Config {
             port: number;
             user: string;
             password: string;
+            /** Use TLS on connect (typical for port 465). Also set when SMTP_SECURE=true. */
+            secure: boolean;
+            /** Require STARTTLS (typical for port 587). Set SMTP_REQUIRE_TLS=false to disable. */
+            requireTls: boolean;
+            /** Set SMTP_TLS_REJECT_UNAUTHORIZED=false only for broken/self-signed SMTP certs (not recommended). */
+            tlsRejectUnauthorized: boolean;
         };
         from: string;
         logoUrl: string;
@@ -145,6 +151,15 @@ const config: Config = {
             port: parseInt(process.env.SMTP_PORT || '587', 10),
             user: process.env.SMTP_USER || '',
             password: process.env.SMTP_PASSWORD || '',
+            secure:
+                process.env.SMTP_SECURE !== undefined
+                    ? process.env.SMTP_SECURE.toLowerCase() === 'true'
+                    : parseInt(process.env.SMTP_PORT || '587', 10) === 465,
+            requireTls:
+                process.env.SMTP_REQUIRE_TLS !== undefined
+                    ? process.env.SMTP_REQUIRE_TLS.toLowerCase() === 'true'
+                    : parseInt(process.env.SMTP_PORT || '587', 10) === 587,
+            tlsRejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
         },
         from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
         logoUrl: process.env.EMAIL_LOGO_URL || 'https://flexohost.com/logo.png',

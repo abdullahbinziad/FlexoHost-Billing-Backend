@@ -3,9 +3,12 @@ import mongoose from 'mongoose';
 import { AuthRequest } from '../../middlewares/auth';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
+import config from '../../config';
 import Client from '../client/client.model';
 import emailService from './email.service';
 import { buildCustomEmailHtml } from './build-custom-email';
+import { isTransportConfigured, verifySmtpConnection } from './transport/nodemailer.transport';
+import { resolveEmailSmtpConfig } from './smtp-resolve';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 
 const MAX_RECIPIENTS = 100;
@@ -144,6 +147,65 @@ class EmailController {
             failed,
             total: clientIds.length,
             results,
+        });
+    });
+
+    /**
+     * POST /email/test
+     * Verifies SMTP (TCP + auth) and sends one test message. Admin/staff only.
+     */
+    testSmtp = catchAsync(async (req: AuthRequest, res: Response) => {
+        const { to } = req.body as { to: string };
+
+        if (!(await isTransportConfigured())) {
+            return ApiResponse.badRequest(
+                res,
+                'SMTP is not configured. Use Admin → Settings (SMTP) or set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and EMAIL_FROM on the API server.'
+            );
+        }
+
+        const verify = await verifySmtpConnection();
+        if (!verify.ok) {
+            return ApiResponse.error(
+                res,
+                503,
+                verify.error || 'SMTP connection or authentication failed',
+                { code: verify.code, hint: 'Check firewall outbound 587/465, credentials, and SMTP_TLS_* / SMTP_REQUIRE_TLS if your provider needs special TLS settings.' }
+            );
+        }
+
+        const resolved = await resolveEmailSmtpConfig();
+        const company = config.app.companyName;
+        const result = await emailService.sendEmail({
+            to,
+            subject: `SMTP test — ${company}`,
+            text: `If you received this, outbound SMTP is working.\nHost: ${resolved.smtp.host}:${resolved.smtp.port} (${resolved.source})`,
+            html: `<p>If you received this, outbound SMTP is working.</p><p><strong>${company}</strong></p><p style="color:#666;font-size:12px;">Host: ${resolved.smtp.host}:${resolved.smtp.port} · ${resolved.source}</p>`,
+        });
+
+        if (!result.success) {
+            return ApiResponse.error(res, 500, result.error || 'Test send failed after verify succeeded', {
+                verify: { ok: true },
+            });
+        }
+
+        auditLogSafe({
+            message: 'SMTP test email sent',
+            type: 'email_sent',
+            category: 'email',
+            actorType: 'user',
+            actorId: req.user?._id?.toString?.(),
+            source: 'manual',
+            status: 'success',
+            meta: { emailType: 'smtp_test', to },
+        });
+
+        return ApiResponse.ok(res, 'Test email sent', {
+            to,
+            messageId: result.messageId,
+            smtpHost: resolved.smtp.host,
+            smtpPort: resolved.smtp.port,
+            smtpSource: resolved.source,
         });
     });
 }
