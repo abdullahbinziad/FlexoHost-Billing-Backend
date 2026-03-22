@@ -7,6 +7,7 @@ import ApiResponse from '../../utils/apiResponse';
 import config from '../../config';
 import authService from './auth.service';
 import type { GoogleProfile } from './auth.service';
+import { scheduleLoginAlertEmail } from './login-alert.helper';
 
 /**
  * Google OAuth redirect_uri — must match Google Cloud "Authorized redirect URIs" exactly (scheme, host, path).
@@ -91,6 +92,12 @@ class AuthController {
                 source: 'manual',
                 ipAddress: ip,
                 userAgent: (req.headers['user-agent'] as string) || '',
+            });
+            scheduleLoginAlertEmail({
+                user,
+                ipAddress: ip,
+                userAgent: (req.headers['user-agent'] as string) || '',
+                method: 'password',
             });
             this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
             const payload: Record<string, unknown> = { user };
@@ -268,9 +275,18 @@ class AuthController {
         }
         const profile = (await userInfoRes.json()) as GoogleProfile;
 
-        const { tokens } = await authService.loginWithGoogle(profile);
+        const { user: oauthUser, tokens } = await authService.loginWithGoogle(profile);
 
         this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
+
+        const googleIp =
+            (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || '';
+        scheduleLoginAlertEmail({
+            user: oauthUser,
+            ipAddress: googleIp,
+            userAgent: (req.headers['user-agent'] as string) || '',
+            method: 'google',
+        });
 
         const safeRedirect = (redirectPath || '/').replace(/^\/+/, '/') || '/';
         // Include refreshToken so frontend can store it (cookies set here are for backend domain only)

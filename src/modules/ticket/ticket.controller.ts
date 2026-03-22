@@ -201,7 +201,7 @@ class TicketController {
         }
 
         const messages = await TicketMessage.find({ ticketId: ticket._id })
-            .sort({ createdAt: 1 })
+            .sort({ createdAt: -1 })
             .lean();
 
         // For admin/staff: include client details (name, email, phone, address)

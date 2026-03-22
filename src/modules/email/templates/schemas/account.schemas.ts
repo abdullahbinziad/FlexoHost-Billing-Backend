@@ -27,3 +27,13 @@ export const passwordResetSchema = z.object({
     requestTime: z.string().optional(),
 });
 export type PasswordResetPropsSchema = z.infer<typeof passwordResetSchema>;
+
+export const loginAlertSchema = z.object({
+    customerName: z.string().min(1, 'customerName is required'),
+    loginTime: z.string().min(1, 'loginTime is required'),
+    ipAddress: z.string().min(1, 'ipAddress is required'),
+    userAgent: z.string().min(1, 'userAgent is required'),
+    signInMethod: z.string().min(1, 'signInMethod is required'),
+    accountSettingsUrl: z.string().url('accountSettingsUrl must be a valid URL'),
+});
+export type LoginAlertPropsSchema = z.infer<typeof loginAlertSchema>;

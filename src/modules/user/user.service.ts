@@ -49,9 +49,8 @@ class UserService {
                 address: userData.address,
             }], { session });
 
-            // Send emails (non-blocking)
+            // Verification email now; welcome is sent when the client completes /clients/me/complete-profile
             try {
-                await emailService.sendWelcomeEmail(user.email, userData.firstName + ' ' + userData.lastName);
                 if (rawVerificationToken) {
                     await emailService.sendVerificationEmail(user.email, userData.firstName + ' ' + userData.lastName, rawVerificationToken);
                 }

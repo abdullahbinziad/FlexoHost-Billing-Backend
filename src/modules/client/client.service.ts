@@ -80,7 +80,7 @@ class ClientService {
                 await user.save({ session });
             }
 
-            // Step 2: Create client profile (full registration = profile complete)
+            // Step 2: Create client profile (data from signup; profileCompletedAt set only via /me/complete-profile)
             const clientProfile = {
                 user: user._id,
                 firstName: clientData.firstName,
@@ -90,7 +90,6 @@ class ClientService {
                 phoneNumber: clientData.phoneNumber,
                 avatar: clientData.avatar,
                 address: clientData.address,
-                profileCompletedAt: new Date(),
             };
 
             const [client] = await Client.create([clientProfile], { session });
@@ -103,16 +102,15 @@ class ClientService {
                 .populate('user', 'email role verified active createdAt')
                 .lean();
 
-            // Send emails for new users
+            // New users: verification email now; welcome email after they complete /me/complete-profile
             if (isNewUser) {
                 try {
-                    await emailService.sendWelcomeEmail(user.email, user.name);
+                    const displayName = [clientData.firstName, clientData.lastName].filter(Boolean).join(' ').trim() || user.email;
                     if (rawVerificationToken) {
-                        await emailService.sendVerificationEmail(user.email, user.name, rawVerificationToken);
+                        await emailService.sendVerificationEmail(user.email, displayName, rawVerificationToken);
                     }
                 } catch (emailError) {
                     logger.error('Failed to send registration emails:', emailError);
-                    // We don't fail the registration if email fails, just log it
                 }
             }
 
@@ -125,12 +123,12 @@ class ClientService {
 
             return {
                 client: populatedClient,
-                user: { ...sanitizedUser, client: populatedClient, profileCompleted: true },
+                user: { ...sanitizedUser, client: populatedClient, profileCompleted: false },
                 accessToken: tokens.accessToken,
                 refreshToken: tokens.refreshToken,
                 isNewUser,
                 message: isNewUser
-                    ? 'Client registered successfully with new user account'
+                    ? 'Account created. Complete your profile to finish setup.'
                     : 'Client profile created for existing user',
             };
         } catch (error: any) {
@@ -338,19 +336,33 @@ class ClientService {
     }
 
     /**
-     * Complete profile for the current user's client (post–social signup).
-     * Updates allowed fields and sets profileCompletedAt.
+     * Complete profile for the current user's client (post–signup / OAuth).
+     * Updates allowed fields, sets profileCompletedAt, and sends welcome email once.
      */
     async completeProfile(userId: string, data: IClientUpdate): Promise<any> {
         const client = await Client.findOne({ user: userId });
         if (!client) {
             throw ApiError.notFound('Client profile not found for this user');
         }
+        const wasIncomplete = !client.profileCompletedAt;
         const updateData = { ...data, profileCompletedAt: new Date() };
         const updated = await Client.findByIdAndUpdate(client._id, updateData, {
             new: true,
             runValidators: true,
         }).populate('user', 'email role verified active createdAt').lean();
+        if (wasIncomplete && updated) {
+            try {
+                const u = await User.findById(userId).select('email').lean();
+                const email = u?.email;
+                const doc = updated as { firstName?: string; lastName?: string };
+                const displayName = [doc.firstName, doc.lastName].filter(Boolean).join(' ').trim() || email || 'Customer';
+                if (email) {
+                    await emailService.sendWelcomeEmail(email, displayName);
+                }
+            } catch (emailError) {
+                logger.error('Failed to send welcome email after profile completion:', emailError);
+            }
+        }
         return updated;
     }
 

@@ -111,22 +111,25 @@ export const updateClientValidation = [
         .withMessage('Avatar must be a string'),
 ];
 
-/** Post–social signup: complete profile (company, phone, address). */
+/** Required business/contact details before the account is considered complete (welcome email sent here). */
 export const completeProfileValidation = [
     body('companyName')
-        .optional()
         .trim()
+        .notEmpty()
+        .withMessage('Company name is required')
         .isLength({ max: 100 })
         .withMessage('Company name cannot exceed 100 characters'),
     body('phoneNumber')
-        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage('Phone number is required')
         .isMobilePhone('any')
         .withMessage('Please provide a valid phone number'),
-    body('address.street').optional().trim(),
-    body('address.city').optional().trim(),
+    body('address.street').trim().notEmpty().withMessage('Street address is required'),
+    body('address.city').trim().notEmpty().withMessage('City is required'),
     body('address.state').optional().trim(),
     body('address.postCode').optional().trim(),
-    body('address.country').optional().trim(),
+    body('address.country').trim().notEmpty().withMessage('Country is required'),
 ];
 
 export const getClientByIdValidation = [

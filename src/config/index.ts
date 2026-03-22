@@ -110,6 +110,12 @@ interface Config {
     controlPanel: { protocol: string; port: number };
     /** App/brand for emails and UI. */
     app: { companyName: string; supportEmail: string };
+    /** Successful login notification email (password + OAuth). */
+    loginAlert: {
+        successEnabled: boolean;
+        /** Min time between success alerts per user (ms). */
+        throttleMs: number;
+    };
 }
 
 const config: Config = {
@@ -233,6 +239,10 @@ const config: Config = {
     app: {
         companyName: process.env.COMPANY_NAME || process.env.APP_NAME || 'FlexoHost',
         supportEmail: process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || 'support@example.com',
+    },
+    loginAlert: {
+        successEnabled: (process.env.LOGIN_ALERT_SUCCESS_ENABLED || 'true').toLowerCase() !== 'false',
+        throttleMs: parseInt(process.env.LOGIN_ALERT_THROTTLE_MS || `${15 * 60 * 1000}`, 10),
     },
 };
 

@@ -9,6 +9,7 @@ export {
     sendEmail,
     sendWelcomeEmail,
     sendVerificationEmail,
+    sendLoginAlertEmail,
     sendPasswordResetEmail,
     sendEmailByTemplate,
 } from './email.service';

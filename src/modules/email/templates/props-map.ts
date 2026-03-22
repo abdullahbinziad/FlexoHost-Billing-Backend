@@ -8,6 +8,7 @@ import type { TemplateKey } from './types';
 import type { WelcomeProps } from './account/welcome';
 import type { VerifyEmailProps } from './account/verify-email';
 import type { PasswordResetProps } from './account/password-reset';
+import type { LoginAlertProps } from './account/login-alert';
 import type { OrderConfirmationProps } from './order/confirmation';
 import type { InvoiceCreatedProps } from './billing/invoice-created';
 import type { PaymentSuccessProps } from './billing/payment-success';
@@ -31,6 +32,7 @@ export interface TemplatePropsMap {
     'account.welcome': WelcomeProps;
     'account.verify_email': VerifyEmailProps;
     'account.password_reset': PasswordResetProps;
+    'account.login_alert': LoginAlertProps;
     'billing.invoice_created': InvoiceCreatedProps;
     'billing.payment_success': PaymentSuccessProps;
     'billing.payment_failed': PaymentFailedProps;

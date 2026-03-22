@@ -127,6 +127,28 @@ export async function sendVerificationEmail(
     });
 }
 
+/** Notify user of successful sign-in (password or OAuth). */
+export async function sendLoginAlertEmail(
+    to: string,
+    data: {
+        customerName: string;
+        loginTime: string;
+        ipAddress: string;
+        userAgent: string;
+        signInMethod: string;
+    }
+): Promise<SendResult> {
+    const base = config.frontendUrl.replace(/\/$/, '');
+    return sendTemplatedEmail({
+        to,
+        templateKey: 'account.login_alert',
+        props: {
+            ...data,
+            accountSettingsUrl: `${base}/settings`,
+        },
+    });
+}
+
 /**
  * Send hosting account ready (service.hosting_ready template, no password).
  * For automatic post-provisioning email with login details, use
@@ -381,6 +403,7 @@ export default {
     sendEmail,
     sendWelcomeEmail,
     sendVerificationEmail,
+    sendLoginAlertEmail,
     sendPasswordResetEmail,
     sendEmailByTemplate,
     sendTemplatedEmail,

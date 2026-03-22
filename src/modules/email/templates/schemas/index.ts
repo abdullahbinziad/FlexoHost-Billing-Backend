@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import type { TemplateKey } from '../types';
 import { brandSchema } from './brand.schema';
-import { welcomeSchema, verifyEmailSchema, passwordResetSchema } from './account.schemas';
+import { welcomeSchema, verifyEmailSchema, passwordResetSchema, loginAlertSchema } from './account.schemas';
 import {
     invoiceCreatedSchema,
     paymentSuccessSchema,
@@ -28,6 +28,7 @@ const SCHEMA_MAP: Record<TemplateKey, z.ZodTypeAny> = {
     'account.welcome': welcomeSchema,
     'account.verify_email': verifyEmailSchema,
     'account.password_reset': passwordResetSchema,
+    'account.login_alert': loginAlertSchema,
     'billing.invoice_created': invoiceCreatedSchema,
     'billing.payment_success': paymentSuccessSchema,
     'billing.payment_failed': paymentFailedSchema,
@@ -121,7 +122,7 @@ export function validatePropsOrThrow<K extends TemplateKey>(
     throw new Error(`Email template validation failed (${templateKey}): ${result.message}`);
 }
 
-export { brandSchema, welcomeSchema, verifyEmailSchema, passwordResetSchema };
+export { brandSchema, welcomeSchema, verifyEmailSchema, passwordResetSchema, loginAlertSchema };
 export { invoiceCreatedSchema, paymentSuccessSchema, paymentFailedSchema, overdueReminderSchema };
 export { orderConfirmationSchema };
 export { hostingReadySchema, hostingAccountCreatedSchema, suspensionWarningSchema, suspendedSchema, terminationWarningSchema, terminatedSchema };

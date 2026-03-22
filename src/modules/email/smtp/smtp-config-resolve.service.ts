@@ -3,8 +3,9 @@
  */
 
 import config from '../../../config';
+import logger from '../../../utils/logger';
 import BillingSettings from '../../billing-settings/billing-settings.model';
-import { decryptSmtpPasswordForUse } from './smtp-password-crypto';
+import { decryptSmtpPasswordForUse, isSmtpPasswordEncrypted } from './smtp-password-crypto';
 
 const SETTINGS_KEY = 'global';
 
@@ -51,6 +52,16 @@ async function loadResolved(): Promise<ResolvedEmailTransportConfig> {
     if (useCustom && d?.smtpHost?.trim() && d?.smtpUser?.trim()) {
         const port = typeof d.smtpPort === 'number' && d.smtpPort > 0 ? d.smtpPort : 587;
         const dbPass = decryptSmtpPasswordForUse(d.smtpPassword).trim();
+        if (
+            d.smtpPassword &&
+            isSmtpPasswordEncrypted(d.smtpPassword) &&
+            !dbPass &&
+            env.smtp.password
+        ) {
+            logger.warn(
+                '[Email] Dashboard SMTP password could not be decrypted; using SMTP_PASSWORD from environment. Re-save the SMTP password in Admin → Settings or fix SETTINGS_ENCRYPTION_KEY.'
+            );
+        }
         /** Empty DB password falls back to SMTP_PASSWORD in .env (documented in admin UI). */
         const password = dbPass || env.smtp.password;
         const secure = d.smtpSecure ?? port === 465;

@@ -9,6 +9,7 @@ export type TemplateKey =
     | 'account.welcome'
     | 'account.verify_email'
     | 'account.password_reset'
+    | 'account.login_alert'
     // Billing
     | 'billing.invoice_created'
     | 'billing.payment_success'

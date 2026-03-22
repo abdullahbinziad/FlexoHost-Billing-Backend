@@ -42,6 +42,17 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         supportEmail,
         websiteUrl: website,
     },
+    'account.login_alert': {
+        customerName: 'Alex Johnson',
+        loginTime: 'Mon, 15 Jan 2024, 14:32 (UTC)',
+        ipAddress: '203.0.113.42',
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        signInMethod: 'Google',
+        accountSettingsUrl: `${base}/settings`,
+        companyName,
+        supportEmail,
+        websiteUrl: website,
+    },
     'billing.invoice_created': {
         customerName: 'Acme Corp',
         invoiceNumber: 'INV-2024-001',

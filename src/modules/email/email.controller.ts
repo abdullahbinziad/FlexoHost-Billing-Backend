@@ -43,6 +43,37 @@ class EmailController {
             return ApiResponse.badRequest(res, `Maximum ${MAX_RECIPIENTS} recipients per request`);
         }
 
+        if (!(await isTransportConfigured())) {
+            return ApiResponse.badRequest(
+                res,
+                'SMTP is not configured. Set credentials under Admin → Settings → SMTP or SMTP_USER and SMTP_PASSWORD in the API environment.'
+            );
+        }
+
+        const verify = await verifySmtpConnection();
+        if (!verify.ok) {
+            const resolved = await resolveEmailSmtpConfig();
+            const detail = verify.error || 'SMTP verification failed';
+            const isAuth = /535|authentication|auth|invalid login|credentials|533|5\.7\.8/i.test(detail);
+            return ApiResponse.error(
+                res,
+                503,
+                isAuth
+                    ? 'SMTP authentication failed before sending. The mail server rejected the username or password.'
+                    : 'SMTP connection failed before sending.',
+                {
+                    code: verify.code,
+                    detail,
+                    smtpSource: resolved.source,
+                    smtpHost: resolved.smtp.host,
+                    smtpPort: resolved.smtp.port,
+                    hint: isAuth
+                        ? 'Update credentials in Admin → Settings → SMTP (or SMTP_* env vars on the API server). For Gmail/Google Workspace with 2FA, use an App Password; SMTP user is usually the full mailbox address. If the dashboard password was saved encrypted, SETTINGS_ENCRYPTION_KEY must match or re-save the password.'
+                        : 'Check SMTP host, port (587 vs 465), outbound firewall, and TLS (SMTP_SECURE / SMTP_REQUIRE_TLS).',
+                }
+            );
+        }
+
         const senderLabel = req.user?.email || 'Support Team';
         const results: Array<{ clientId: string; email: string | null; success: boolean; error?: string }> = [];
         let sent = 0;

@@ -7,7 +7,7 @@
 
 import type { BaseEmailTemplate, TemplateKey } from './types';
 import type { TemplatePropsMap } from './props-map';
-import { welcomeTemplate, verifyEmailTemplate, passwordResetTemplate } from './account';
+import { welcomeTemplate, verifyEmailTemplate, passwordResetTemplate, loginAlertTemplate } from './account';
 import {
     invoiceCreatedTemplate,
     paymentSuccessTemplate,
@@ -36,6 +36,7 @@ export const TEMPLATE_REGISTRY: Record<TemplateKey, BaseEmailTemplate<any>> = {
     'account.welcome': welcomeTemplate,
     'account.verify_email': verifyEmailTemplate,
     'account.password_reset': passwordResetTemplate,
+    'account.login_alert': loginAlertTemplate,
     'billing.invoice_created': invoiceCreatedTemplate,
     'billing.payment_success': paymentSuccessTemplate,
     'billing.payment_failed': paymentFailedTemplate,
@@ -60,6 +61,7 @@ export const TEMPLATE_KEYS: TemplateKey[] = [
     'account.welcome',
     'account.verify_email',
     'account.password_reset',
+    'account.login_alert',
     'order.confirmation',
     'billing.invoice_created',
     'billing.payment_success',
