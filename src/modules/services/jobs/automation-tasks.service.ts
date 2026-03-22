@@ -11,10 +11,10 @@ import {
     getAutomationTaskRegistryItem,
 } from './automation-task.registry';
 import { auditLogSafe } from '../../activity-log/activity-log.service';
-import { automationAlertService } from '../services/automation-alert.service';
-import { automationDigestService } from '../services/automation-digest.service';
-import { automationTaskLockService } from '../services/automation-task-lock.service';
-import { automationRunService } from '../services/automation-run.service';
+import { automationAlertService } from '../core/automation-alert.service';
+import { automationDigestService } from '../core/automation-digest.service';
+import { automationTaskLockService } from '../core/automation-task-lock.service';
+import { automationRunService } from '../core/automation-run.service';
 import logger from '../../../utils/logger';
 
 type TaskSource = 'cron' | 'manual';

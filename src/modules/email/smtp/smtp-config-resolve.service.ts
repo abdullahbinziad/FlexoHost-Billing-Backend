@@ -2,8 +2,8 @@
  * Resolve effective SMTP + From for sending: dashboard (BillingSettings) or environment.
  */
 
-import config from '../../config';
-import BillingSettings from '../settings/billing-settings.model';
+import config from '../../../config';
+import BillingSettings from '../../billing-settings/billing-settings.model';
 import { decryptSmtpPasswordForUse } from './smtp-password-crypto';
 
 const SETTINGS_KEY = 'global';

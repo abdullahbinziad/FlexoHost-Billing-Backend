@@ -378,7 +378,7 @@ class UserService {
                 throw ApiError.forbidden('Only superadmin can assign Super Admin role');
             }
         } else if (updateData.role === 'staff') {
-            const { getBillingSettings } = await import('../settings/billing-settings.service');
+            const { getBillingSettings } = await import('../billing-settings/billing-settings.service');
             const settings = await getBillingSettings();
             if (settings.defaultStaffRoleId) {
                 const role = await Role.findById(settings.defaultStaffRoleId).lean();

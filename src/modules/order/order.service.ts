@@ -12,7 +12,7 @@ import Server from '../server/server.model';
 import { serverService } from '../server/server.service';
 import invoiceService from '../invoice/invoice.service';
 import Invoice from '../invoice/invoice.model';
-import { getInvoicePdfBuffer } from '../invoice/invoice-pdf.service';
+import { getInvoicePdfBuffer } from '../invoice/pdf/invoice-pdf.service';
 import notificationService from '../notification/notification.service';
 import * as emailService from '../email/email.service';
 import { buildCustomEmailHtml } from '../email/build-custom-email';
@@ -26,7 +26,7 @@ import logger from '../../utils/logger';
 import { escapeRegex } from '../../utils/string.util';
 import { affiliateService } from '../affiliate/affiliate.service';
 import { AffiliateReferralSource } from '../affiliate/affiliate.types';
-import { getBillingSettings } from '../settings/billing-settings.service';
+import { getBillingSettings } from '../billing-settings/billing-settings.service';
 import { SUPPORTED_CURRENCIES } from '../../config/currency.config';
 
 /** Default payment methods for admin order creation (extend via settings if needed) */

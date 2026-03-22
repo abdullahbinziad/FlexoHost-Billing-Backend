@@ -8,7 +8,7 @@ import {
     AutomationTaskKey,
     getAutomationTaskRegistryItem,
 } from '../jobs/automation-task.registry';
-import { automationRunService } from '../services/automation-run.service';
+import { automationRunService } from '../core/automation-run.service';
 
 export const systemAdminController = {
     // ---- Jobs Management ----

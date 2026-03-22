@@ -1,7 +1,7 @@
 import DomainServiceDetails from '../models/domain-details.model';
 import DomainReminderLog from '../../domain/domain-reminder-log.model';
 import { notificationProvider } from '../providers/notification.provider';
-import { getBillingSettings } from '../../settings/billing-settings.service';
+import { getBillingSettings } from '../../billing-settings/billing-settings.service';
 import { auditLogSafe } from '../../activity-log/activity-log.service';
 import tldService from '../../domain/tld/tld.service';
 import logger from '../../../utils/logger';

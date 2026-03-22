@@ -9,10 +9,10 @@ import { BillingCycle, ServiceStatus, ServiceActionType, ProvisioningJobStatus }
 import { InvoiceStatus, InvoiceItemType } from '../../invoice/invoice.interface';
 import { getNextSequence, formatSequenceId } from '../../../models/counter.model';
 import { DEFAULT_CURRENCY } from '../../../config/currency.config';
-import { getBillingSettings } from '../../settings/billing-settings.service';
+import { getBillingSettings } from '../../billing-settings/billing-settings.service';
 import config from '../../../config';
 import * as emailService from '../../email/email.service';
-import { getInvoicePdfBuffer } from '../../invoice/invoice-pdf.service';
+import { getInvoicePdfBuffer } from '../../invoice/pdf/invoice-pdf.service';
 import logger from '../../../utils/logger';
 
 export class ServiceRenewalScheduler {

@@ -3,8 +3,8 @@
  * Same structure and design as /invoices/[id] (InvoiceDetail + InvoiceHeader + InvoiceBody).
  */
 
-import type { IInvoiceDocument } from './invoice.interface';
-import PaymentTransaction from '../transaction/transaction.model';
+import type { IInvoiceDocument } from '../invoice.interface';
+import PaymentTransaction from '../../transaction/transaction.model';
 import { buildInvoiceHtml, type InvoicePdfData } from './invoice-pdf-html';
 
 export type InvoiceForPdf = IInvoiceDocument;

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { protect, restrictTo } from '../../middlewares/auth';
 import { requireAnyPermission } from '../../middlewares/requirePermission';
-import { getSettings, updateBillingSettingsHandler } from './settings.controller';
+import { getSettings, updateBillingSettingsHandler } from './admin-settings.controller';
 
 const router = Router();
 

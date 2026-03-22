@@ -3,7 +3,7 @@
  * Mirrors: InvoiceDetail.tsx (container) + InvoiceHeader.tsx + InvoiceBody.tsx
  */
 
-import { escapeHtml } from '../../utils/string.util';
+import { escapeHtml } from '../../../utils/string.util';
 
 export interface InvoicePdfData {
     invoiceNumber: string;

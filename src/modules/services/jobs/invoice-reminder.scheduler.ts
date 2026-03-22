@@ -4,8 +4,8 @@ import { notificationProvider } from '../providers/notification.provider';
 import { InvoiceStatus, InvoiceItemType } from '../../invoice/invoice.interface';
 import { auditLogSafe } from '../../activity-log/activity-log.service';
 import logger from '../../../utils/logger';
-import { getBillingSettings } from '../../settings/billing-settings.service';
-import type { BillingSettingsDto } from '../../settings/billing-settings.service';
+import { getBillingSettings } from '../../billing-settings/billing-settings.service';
+import type { BillingSettingsDto } from '../../billing-settings/billing-settings.service';
 
 function getTemplateForReminderType(reminderType: string): string {
     if (reminderType === 'DUE_TODAY') return 'invoice-due-today';

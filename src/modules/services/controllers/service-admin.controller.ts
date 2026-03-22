@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import serviceAdminService from '../services/service-admin.service';
+import serviceAdminService from '../core/service-admin.service';
 import { ServiceAdminAction } from '../models/service-audit-log.model';
 
 export const performServiceAction = async (req: Request, res: Response, action: ServiceAdminAction): Promise<void> => {

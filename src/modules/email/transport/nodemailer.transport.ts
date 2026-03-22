@@ -9,7 +9,7 @@ import {
     resolveEmailSmtpConfig,
     invalidateEmailSmtpConfigCache,
     type ResolvedEmailTransportConfig,
-} from '../../smtp';
+} from '../smtp';
 
 let transporter: nodemailer.Transporter | null = null;
 let transporterCacheKey: string | null = null;

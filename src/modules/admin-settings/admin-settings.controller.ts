@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
 import ApiError from '../../utils/apiError';
-import { getBillingSettings, updateBillingSettings } from './billing-settings.service';
+import { getBillingSettings, updateBillingSettings } from '../billing-settings/billing-settings.service';
 import { AuthRequest } from '../../middlewares/auth';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 import { resetEmailTransporter } from '../email/transport/nodemailer.transport';

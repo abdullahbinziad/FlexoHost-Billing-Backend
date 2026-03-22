@@ -7,7 +7,7 @@ import Order from '../../order/order.model';
 import Client from '../../client/client.model';
 import { orderService } from '../../order/order.service';
 import * as emailService from '../../email/email.service';
-import { sendHostingAccountCreatedEmail } from '../services';
+import { sendHostingAccountCreatedEmail } from '../core';
 import { ProvisioningJobStatus, ServiceStatus, ServiceType, normalizeBillingCycle } from '../types/enums';
 import { getNextSequence, formatSequenceId } from '../../../models/counter.model';
 import { DEFAULT_CURRENCY } from '../../../config/currency.config';

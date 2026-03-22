@@ -1,5 +1,5 @@
 import BillingSettings, { DEFAULT_BILLING_SETTINGS } from './billing-settings.model';
-import { encryptSmtpPasswordForStorage } from '../smtp';
+import { encryptSmtpPasswordForStorage } from '../email/smtp';
 
 export interface BillingSettingsDto {
     defaultStaffRoleId?: string | null;

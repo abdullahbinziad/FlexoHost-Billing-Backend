@@ -3,7 +3,7 @@ import PaymentTransaction from '../transaction/transaction.model';
 import { TransactionStatus, TransactionType } from '../transaction/transaction.interface';
 import ExchangeRate from '../exchange-rate/exchange-rate.model';
 import { Ticket } from '../ticket/ticket.model';
-import { automationReportingService } from '../services/services/automation-reporting.service';
+import { automationReportingService } from '../services/core/automation-reporting.service';
 
 function startOfUtcDay(date: Date): Date {
     const d = new Date(date);

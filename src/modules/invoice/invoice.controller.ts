@@ -4,7 +4,7 @@ import ApiResponse from '../../utils/apiResponse';
 import ApiError from '../../utils/apiError';
 import invoiceService from './invoice.service';
 import { InvoiceStatus } from './invoice.interface';
-import { getInvoicePdfBuffer } from './invoice-pdf.service';
+import { getInvoicePdfBuffer } from './pdf/invoice-pdf.service';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 import type { AuthRequest } from '../../middlewares/auth';
 import { getEffectiveClientId } from '../client-access-grant/effective-client';

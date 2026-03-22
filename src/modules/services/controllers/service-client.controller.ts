@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import serviceClientService from '../services/service-client.service';
+import serviceClientService from '../core/service-client.service';
 import { ServiceType } from '../types/enums';
 import { requireClientAccess } from '../../client-access-grant/require-client-access';
 

@@ -5,7 +5,7 @@ import ServiceActionJob from '../models/service-action-job.model';
 import ServiceAuditLog from '../models/service-audit-log.model';
 import TerminationWarningLog from '../models/termination-warning-log.model';
 import { ServiceStatus, ServiceActionType, ProvisioningJobStatus } from '../types/enums';
-import { getBillingSettings } from '../../settings/billing-settings.service';
+import { getBillingSettings } from '../../billing-settings/billing-settings.service';
 import config from '../../../config';
 import * as emailService from '../../email/email.service';
 import logger from '../../../utils/logger';
