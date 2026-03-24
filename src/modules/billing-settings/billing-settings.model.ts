@@ -38,18 +38,6 @@ export interface IBillingSettings extends Document {
     reminderDueTodayEnabled: boolean;
     /** Default role for new staff users (ObjectId ref Role). When creating/assigning staff, auto-assign if no role selected. */
     defaultStaffRoleId?: mongoose.Types.ObjectId;
-    /** When true, SMTP below overrides server environment variables. */
-    smtpUseCustom: boolean;
-    smtpHost: string;
-    smtpPort: number;
-    smtpUser: string;
-    /** Stored secret; omitted from default queries (select +smtpPassword). */
-    smtpPassword?: string;
-    smtpSecure: boolean;
-    smtpRequireTls: boolean;
-    smtpTlsRejectUnauthorized: boolean;
-    /** From address for outbound mail when using custom SMTP (optional; falls back to env). */
-    emailFrom: string;
     updatedAt: Date;
     updatedBy?: mongoose.Types.ObjectId;
 }
@@ -75,15 +63,6 @@ const billingSettingsSchema = new Schema<IBillingSettings>(
         domainExpiryReminderDays: { type: [Number], default: [90, 60, 30, 14, 7] },
         reminderDueTodayEnabled: { type: Boolean, default: true },
         defaultStaffRoleId: { type: Schema.Types.ObjectId, ref: 'Role', default: null },
-        smtpUseCustom: { type: Boolean, default: false },
-        smtpHost: { type: String, default: '' },
-        smtpPort: { type: Number, default: 587, min: 1, max: 65535 },
-        smtpUser: { type: String, default: '' },
-        smtpPassword: { type: String, default: '', select: false },
-        smtpSecure: { type: Boolean, default: false },
-        smtpRequireTls: { type: Boolean, default: true },
-        smtpTlsRejectUnauthorized: { type: Boolean, default: true },
-        emailFrom: { type: String, default: '' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     },
     { timestamps: true }
@@ -107,14 +86,6 @@ export const DEFAULT_BILLING_SETTINGS = {
     terminationWarningDays: [7, 3, 1],
     domainExpiryReminderDays: [90, 60, 30, 14, 7],
     reminderDueTodayEnabled: true,
-    smtpUseCustom: false,
-    smtpHost: '',
-    smtpPort: 587,
-    smtpUser: '',
-    smtpSecure: false,
-    smtpRequireTls: true,
-    smtpTlsRejectUnauthorized: true,
-    emailFrom: '',
 };
 
 export default mongoose.model<IBillingSettings>('BillingSettings', billingSettingsSchema);

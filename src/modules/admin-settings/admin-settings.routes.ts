@@ -10,7 +10,7 @@ router.use(restrictTo('admin', 'superadmin', 'staff'));
 
 router.get(
     '/',
-    requireAnyPermission(['settings:read', 'settings:update_billing', 'settings:smtp']),
+    requireAnyPermission(['settings:read', 'settings:update_billing']),
     getSettings
 );
 router.patch('/billing', updateBillingSettingsHandler);

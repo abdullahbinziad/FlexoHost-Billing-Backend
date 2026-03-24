@@ -46,7 +46,7 @@ class EmailController {
         if (!(await isTransportConfigured())) {
             return ApiResponse.badRequest(
                 res,
-                'SMTP is not configured. Set credentials under Admin → Settings → SMTP or SMTP_USER and SMTP_PASSWORD in the API environment.'
+                'SMTP is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD, and EMAIL_FROM in the API environment.'
             );
         }
 
@@ -68,8 +68,8 @@ class EmailController {
                     smtpHost: resolved.smtp.host,
                     smtpPort: resolved.smtp.port,
                     hint: isAuth
-                        ? 'Update credentials in Admin → Settings → SMTP (or SMTP_* env vars on the API server). For Gmail/Google Workspace with 2FA, use an App Password; SMTP user is usually the full mailbox address. If the dashboard password was saved encrypted, SETTINGS_ENCRYPTION_KEY must match or re-save the password.'
-                        : 'Check SMTP host, port (587 vs 465), outbound firewall, and TLS (SMTP_SECURE / SMTP_REQUIRE_TLS).',
+                        ? 'Update SMTP_USER and SMTP_PASSWORD in the API environment. For Gmail/Google Workspace with 2FA, use an App Password; SMTP user is usually the full mailbox address.'
+                        : 'This is usually not a wrong password: the API could not complete TCP/TLS to the mail server. Cloud/VPS providers often block outbound SMTP (587/465) or require a relay; your laptop does not. Confirm the production API loads the same SMTP_* as local, host/port match the provider (587+STARTTLS vs 465+SSL), and egress/firewall allows that port. See the error detail above (e.g. ECONNREFUSED, ETIMEDOUT, certificate).',
                 }
             );
         }
@@ -191,17 +191,31 @@ class EmailController {
         if (!(await isTransportConfigured())) {
             return ApiResponse.badRequest(
                 res,
-                'SMTP is not configured. Use Admin → Settings (SMTP) or set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and EMAIL_FROM on the API server.'
+                'SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and EMAIL_FROM on the API server.'
             );
         }
 
         const verify = await verifySmtpConnection();
         if (!verify.ok) {
+            const detail = verify.error || 'SMTP verification failed';
+            const resolved = await resolveEmailSmtpConfig();
+            const isAuth = /535|authentication|auth|invalid login|credentials|533|5\.7\.8/i.test(detail);
             return ApiResponse.error(
                 res,
                 503,
-                verify.error || 'SMTP connection or authentication failed',
-                { code: verify.code, hint: 'Check firewall outbound 587/465, credentials, and SMTP_TLS_* / SMTP_REQUIRE_TLS if your provider needs special TLS settings.' }
+                isAuth
+                    ? 'SMTP authentication failed. The mail server rejected the username or password.'
+                    : 'SMTP connection failed before sending a test message.',
+                {
+                    code: verify.code,
+                    detail,
+                    smtpSource: resolved.source,
+                    smtpHost: resolved.smtp.host,
+                    smtpPort: resolved.smtp.port,
+                    hint: isAuth
+                        ? 'Update SMTP_USER and SMTP_PASSWORD in the API environment. For Gmail with 2FA use an App Password.'
+                        : 'Often blocked outbound SMTP on cloud hosts vs localhost. Confirm host/port/TLS, firewall egress, and that production env matches the machine where it worked locally.',
+                }
             );
         }
 

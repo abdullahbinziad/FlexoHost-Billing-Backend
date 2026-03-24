@@ -1,12 +1,6 @@
 /**
- * SMTP feature module: outbound mail configuration (env + dashboard), password crypto, resolve/cache for nodemailer.
+ * SMTP feature module: outbound mail configuration (env), resolve/cache for nodemailer.
  */
-
-export {
-    encryptSmtpPasswordForStorage,
-    decryptSmtpPasswordForUse,
-    isSmtpPasswordEncrypted,
-} from './smtp-password-crypto';
 
 export {
     resolveEmailSmtpConfig,

@@ -56,8 +56,6 @@ interface Config {
         csrfEnabled: boolean;
         /** Token length in bytes (32 = 256 bits). */
         csrfTokenBytes: number;
-        /** Derives AES-256 key (SHA-256) for encrypting dashboard SMTP password in MongoDB. */
-        settingsEncryptionKey: string;
     };
     whm: {
         host: string;
@@ -177,7 +175,6 @@ const config: Config = {
         bcryptSaltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS || '12', 10),
         csrfEnabled: (process.env.ENABLE_CSRF || '').toLowerCase() !== 'false',
         csrfTokenBytes: 32,
-        settingsEncryptionKey: process.env.SETTINGS_ENCRYPTION_KEY || '',
     },
     whm: {
         host: process.env.WHM_HOST || '',

@@ -1,13 +1,8 @@
 /**
- * Resolve effective SMTP + From for sending: dashboard (BillingSettings) or environment.
+ * Resolve SMTP + From for sending — environment variables only (SMTP_*, EMAIL_FROM).
  */
 
 import config from '../../../config';
-import logger from '../../../utils/logger';
-import BillingSettings from '../../billing-settings/billing-settings.model';
-import { decryptSmtpPasswordForUse, isSmtpPasswordEncrypted } from './smtp-password-crypto';
-
-const SETTINGS_KEY = 'global';
 
 export type ResolvedSmtpTls = {
     host: string;
@@ -22,8 +17,8 @@ export type ResolvedSmtpTls = {
 export type ResolvedEmailTransportConfig = {
     smtp: ResolvedSmtpTls;
     from: string;
-    /** Where values came from for logging / test responses */
-    source: 'env' | 'dashboard';
+    /** Always env — kept for API compatibility */
+    source: 'env';
 };
 
 let cache: { expires: number; value: ResolvedEmailTransportConfig } | null = null;
@@ -33,56 +28,8 @@ export function invalidateEmailSmtpConfigCache(): void {
     cache = null;
 }
 
-async function loadResolved(): Promise<ResolvedEmailTransportConfig> {
+function loadFromEnv(): ResolvedEmailTransportConfig {
     const env = config.email;
-    const doc = await BillingSettings.findOne({ key: SETTINGS_KEY }).select('+smtpPassword').lean().exec();
-
-    const useCustom = !!(doc as { smtpUseCustom?: boolean } | null)?.smtpUseCustom;
-    const d = doc as {
-        smtpHost?: string;
-        smtpPort?: number;
-        smtpUser?: string;
-        smtpPassword?: string;
-        smtpSecure?: boolean;
-        smtpRequireTls?: boolean;
-        smtpTlsRejectUnauthorized?: boolean;
-        emailFrom?: string;
-    } | null;
-
-    if (useCustom && d?.smtpHost?.trim() && d?.smtpUser?.trim()) {
-        const port = typeof d.smtpPort === 'number' && d.smtpPort > 0 ? d.smtpPort : 587;
-        const dbPass = decryptSmtpPasswordForUse(d.smtpPassword).trim();
-        if (
-            d.smtpPassword &&
-            isSmtpPasswordEncrypted(d.smtpPassword) &&
-            !dbPass &&
-            env.smtp.password
-        ) {
-            logger.warn(
-                '[Email] Dashboard SMTP password could not be decrypted; using SMTP_PASSWORD from environment. Re-save the SMTP password in Admin → Settings or fix SETTINGS_ENCRYPTION_KEY.'
-            );
-        }
-        /** Empty DB password falls back to SMTP_PASSWORD in .env (documented in admin UI). */
-        const password = dbPass || env.smtp.password;
-        const secure = d.smtpSecure ?? port === 465;
-        const requireTls = d.smtpRequireTls ?? port === 587;
-        const tlsRejectUnauthorized = d.smtpTlsRejectUnauthorized !== false;
-
-        return {
-            from: (d.emailFrom && d.emailFrom.trim()) || env.from,
-            smtp: {
-                host: d.smtpHost.trim(),
-                port,
-                user: d.smtpUser.trim(),
-                password,
-                secure,
-                requireTls,
-                tlsRejectUnauthorized,
-            },
-            source: 'dashboard',
-        };
-    }
-
     return {
         from: env.from,
         smtp: {
@@ -103,7 +50,7 @@ export async function resolveEmailSmtpConfig(): Promise<ResolvedEmailTransportCo
     if (cache && cache.expires > now) {
         return cache.value;
     }
-    const value = await loadResolved();
+    const value = loadFromEnv();
     cache = { expires: now + CACHE_TTL_MS, value };
     return value;
 }

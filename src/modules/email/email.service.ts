@@ -46,11 +46,11 @@ export async function sendTemplatedEmail<T>(
 
     if (!(await isTransportConfigured())) {
         logger.warn(
-            `[Email] SMTP not configured – no email sent. Would send ${templateKey} to ${to} | Subject: ${subject}. Configure SMTP in Admin → Settings or set SMTP_* in .env.`
+            `[Email] SMTP not configured – no email sent. Would send ${templateKey} to ${to} | Subject: ${subject}. Set SMTP_* in the API environment.`
         );
         return {
             success: false,
-            error: 'SMTP not configured. Set credentials under Admin → Settings (SMTP) or SMTP_USER and SMTP_PASSWORD in .env.',
+            error: 'SMTP not configured. Set SMTP_USER and SMTP_PASSWORD in the API environment.',
         };
     }
 
@@ -81,7 +81,7 @@ export async function sendEmail(options: IEmailOptions): Promise<SendResult> {
         logger.warn(`[Email-Stub] to ${options.to} | Subject: ${options.subject}`);
         return {
             success: false,
-            error: 'SMTP not configured. Set credentials under Admin → Settings (SMTP) or SMTP_USER and SMTP_PASSWORD in .env.',
+            error: 'SMTP not configured. Set SMTP_USER and SMTP_PASSWORD in the API environment.',
         };
     }
 

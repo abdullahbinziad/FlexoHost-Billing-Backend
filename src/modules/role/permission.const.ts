@@ -173,9 +173,11 @@ export const PERMISSION_META: Record<string, PermissionMeta[]> = {
     settings: [
         { id: 'settings:read', label: 'View settings', category: 'settings' },
         { id: 'settings:update_billing', label: 'Update billing/reminder settings', category: 'settings' },
+    ],
+    email: [
         {
-            id: 'settings:smtp',
-            label: 'Manage SMTP configuration and test email',
+            id: 'email:test',
+            label: 'Send SMTP test email (uses API env)',
             category: 'settings',
             riskLevel: 'high',
         },

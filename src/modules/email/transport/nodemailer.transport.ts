@@ -31,6 +31,11 @@ function transportKey(resolved: ResolvedEmailTransportConfig): string {
 
 function buildTransportOptions(resolved: ResolvedEmailTransportConfig) {
     const { host, port, user, password, secure, requireTls, tlsRejectUnauthorized } = resolved.smtp;
+    /** Many VPS/Docker hosts have broken IPv6; forcing IPv4 fixes ETIMEDOUT to SMTP. */
+    const forceIpv4 =
+        process.env.SMTP_FORCE_IPV4 === 'true' ||
+        process.env.SMTP_FORCE_IPV4 === '1' ||
+        process.env.SMTP_FAMILY === '4';
 
     return {
         host,
@@ -42,6 +47,7 @@ function buildTransportOptions(resolved: ResolvedEmailTransportConfig) {
         tls: {
             rejectUnauthorized: tlsRejectUnauthorized,
         },
+        ...(forceIpv4 ? { family: 4 as const } : {}),
         connectionTimeout: parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '25000', 10),
         greetingTimeout: parseInt(process.env.SMTP_GREETING_TIMEOUT_MS || '25000', 10),
         socketTimeout: parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS || '60000', 10),
@@ -64,7 +70,8 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
                 .catch((err: NodeJS.ErrnoException) => {
                     logger.warn(
                         `[Email] SMTP verify failed (${err?.code || 'unknown'}): ${err?.message || err}. ` +
-                            'Check dashboard SMTP settings or SMTP_* / EMAIL_FROM in .env, firewall (587/465), and credentials.'
+                            'Check SMTP_* and EMAIL_FROM in .env, firewall (587/465), and credentials. ' +
+                            'or set SMTP_FORCE_IPV4=true if the host has broken IPv6.'
                     );
                 });
         }
@@ -72,7 +79,7 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
     return transporter;
 }
 
-/** Reset singleton (e.g. after SMTP settings change). */
+/** Reset singleton (e.g. after reloading env in dev). */
 export function resetEmailTransporter(): void {
     transporter = null;
     transporterCacheKey = null;
@@ -87,7 +94,7 @@ export async function verifySmtpConnection(): Promise<{ ok: boolean; error?: str
         return {
             ok: false,
             error:
-                'SMTP credentials missing. Set them under Admin → Settings (custom SMTP) or SMTP_USER and SMTP_PASSWORD in environment.',
+                'SMTP credentials missing. Set SMTP_USER and SMTP_PASSWORD in the API environment.',
         };
     }
     try {
