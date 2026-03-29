@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import { AuthRequest } from '../../middlewares/auth';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
-import config from '../../config';
 import Client from '../client/client.model';
 import emailService from './email.service';
 import { buildCustomEmailHtml } from './build-custom-email';
@@ -181,78 +180,6 @@ class EmailController {
         });
     });
 
-    /**
-     * POST /email/test
-     * Verifies SMTP (TCP + auth) and sends one test message. Admin/staff only.
-     */
-    testSmtp = catchAsync(async (req: AuthRequest, res: Response) => {
-        const { to } = req.body as { to: string };
-
-        if (!(await isTransportConfigured())) {
-            return ApiResponse.badRequest(
-                res,
-                'SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and EMAIL_FROM on the API server.'
-            );
-        }
-
-        const verify = await verifySmtpConnection();
-        if (!verify.ok) {
-            const detail = verify.error || 'SMTP verification failed';
-            const resolved = await resolveEmailSmtpConfig();
-            const isAuth = /535|authentication|auth|invalid login|credentials|533|5\.7\.8/i.test(detail);
-            return ApiResponse.error(
-                res,
-                503,
-                isAuth
-                    ? 'SMTP authentication failed. The mail server rejected the username or password.'
-                    : 'SMTP connection failed before sending a test message.',
-                {
-                    code: verify.code,
-                    detail,
-                    smtpSource: resolved.source,
-                    smtpHost: resolved.smtp.host,
-                    smtpPort: resolved.smtp.port,
-                    hint: isAuth
-                        ? 'Update SMTP_USER and SMTP_PASSWORD in the API environment. For Gmail with 2FA use an App Password.'
-                        : 'Often blocked outbound SMTP on cloud hosts vs localhost. Confirm host/port/TLS, firewall egress, and that production env matches the machine where it worked locally.',
-                }
-            );
-        }
-
-        const resolved = await resolveEmailSmtpConfig();
-        const company = config.app.companyName;
-        const result = await emailService.sendEmail({
-            to,
-            subject: `SMTP test — ${company}`,
-            text: `If you received this, outbound SMTP is working.\nHost: ${resolved.smtp.host}:${resolved.smtp.port} (${resolved.source})`,
-            html: `<p>If you received this, outbound SMTP is working.</p><p><strong>${company}</strong></p><p style="color:#666;font-size:12px;">Host: ${resolved.smtp.host}:${resolved.smtp.port} · ${resolved.source}</p>`,
-        });
-
-        if (!result.success) {
-            return ApiResponse.error(res, 500, result.error || 'Test send failed after verify succeeded', {
-                verify: { ok: true },
-            });
-        }
-
-        auditLogSafe({
-            message: 'SMTP test email sent',
-            type: 'email_sent',
-            category: 'email',
-            actorType: 'user',
-            actorId: req.user?._id?.toString?.(),
-            source: 'manual',
-            status: 'success',
-            meta: { emailType: 'smtp_test', to },
-        });
-
-        return ApiResponse.ok(res, 'Test email sent', {
-            to,
-            messageId: result.messageId,
-            smtpHost: resolved.smtp.host,
-            smtpPort: resolved.smtp.port,
-            smtpSource: resolved.source,
-        });
-    });
 }
 
 export default new EmailController();

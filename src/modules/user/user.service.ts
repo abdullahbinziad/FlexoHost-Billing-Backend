@@ -102,6 +102,13 @@ class UserService {
             throw ApiError.unauthorized('Your account has been deactivated');
         }
 
+        // Social-only accounts may not have a local password hash.
+        // Return a clean auth error instead of bubbling a bcrypt/internal error as 500.
+        if (!user.password) {
+            await user.incrementLoginAttempts();
+            throw ApiError.unauthorized('Invalid email or password');
+        }
+
         // Verify password
         const isPasswordCorrect = await user.comparePassword(password);
 

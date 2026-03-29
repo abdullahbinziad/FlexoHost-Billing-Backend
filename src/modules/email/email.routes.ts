@@ -1,7 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { protect, restrictTo } from '../../middlewares/auth';
-import { requirePermission } from '../../middlewares/requirePermission';
-import { emailTestRateLimit } from '../../middlewares/emailTestRateLimit';
 import { validate } from '../../middlewares/validate';
 import { previewTemplate } from './preview';
 import { validateProps } from './templates/schemas';
@@ -10,7 +8,7 @@ import { hasTemplate } from './templates/registry';
 import ApiResponse from '../../utils/apiResponse';
 import type { TemplateKey } from './templates/types';
 import emailController from './email.controller';
-import { sendBulkEmailValidation, testSmtpValidation } from './email.validation';
+import { sendBulkEmailValidation } from './email.validation';
 
 const router = Router();
 
@@ -25,18 +23,6 @@ router.post(
     emailController.sendBulk
 );
 
-/**
- * POST /email/test — verify SMTP + send one test message (admin/staff)
- */
-router.post(
-    '/test',
-    protect,
-    restrictTo('superadmin', 'admin', 'staff'),
-    requirePermission('email:test'),
-    emailTestRateLimit,
-    validate(testSmtpValidation),
-    emailController.testSmtp
-);
 
 /**
  * GET /email/templates - List all template keys

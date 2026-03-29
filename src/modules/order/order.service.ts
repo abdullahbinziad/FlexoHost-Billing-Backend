@@ -70,6 +70,16 @@ function normalizeCodeSafe(value: unknown): string {
     return typeof value === 'string' ? value.trim().toUpperCase() : '';
 }
 
+function parseServerGroups(raw: unknown): string[] {
+    if (Array.isArray(raw)) {
+        return raw.map((v) => String(v || '').trim()).filter(Boolean);
+    }
+    if (typeof raw === 'string') {
+        return raw.split(',').map((v) => v.trim()).filter(Boolean);
+    }
+    return [];
+}
+
 class OrderService {
     /** Get order config for admin new order: server locations, payment methods, currencies */
     async getOrderConfig(): Promise<{
@@ -202,6 +212,7 @@ class OrderService {
                 const hostingConfigSnapshot: any = {
                     serverLocation: payload.serverLocation,
                     serverGroup: product.module?.serverGroup,
+                    serverGroups: parseServerGroups((product as any)?.module?.serverGroups ?? product.module?.serverGroup),
                     primaryDomain,
                 };
 
@@ -1039,7 +1050,12 @@ class OrderService {
         const location = config.serverLocation ? String(config.serverLocation).toLowerCase() : '';
         const serverGroup = config.serverGroup || '';
         const product = await Product.findById(orderItem?.productId).lean();
-        const productServerGroup = serverGroup || (product as any)?.module?.serverGroup;
+        const configuredServerGroups = parseServerGroups(
+            config.serverGroups
+            ?? serverGroup
+            ?? (product as any)?.module?.serverGroups
+            ?? (product as any)?.module?.serverGroup
+        );
         const defaultPackageName = (product as any)?.module?.packageName || '';
         const whmPackageName = chosenPackage || defaultPackageName;
 
@@ -1051,9 +1067,9 @@ class OrderService {
             }
             const locMatch = (s: any) => !location || String(s.location || '').toLowerCase() === location;
             const groupMatch = (s: any) => {
-                const groups = Array.isArray(s.groups) ? s.groups : (s.group ? [s.group] : []);
-                if (!productServerGroup) return true;
-                return groups.length === 0 || groups.includes(productServerGroup);
+                if (configuredServerGroups.length === 0) return true;
+                const groups = parseServerGroups(Array.isArray(s.groups) ? s.groups : s.group);
+                return groups.length === 0 || configuredServerGroups.some((g) => groups.includes(g));
             };
             const eligible = candidateServers.filter((s: any) => locMatch(s) && groupMatch(s));
             const serversToConsider = eligible.length > 0 ? eligible : candidateServers;

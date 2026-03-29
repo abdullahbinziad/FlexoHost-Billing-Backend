@@ -18,10 +18,6 @@
         "backfill:fx": "ts-node src/scripts/backfill-fx.ts",
         "migrate:whmcs": "ts-node src/scripts/whmcs-migration/run.ts",
         "migrate:whmcs:import": "ts-node src/scripts/whmcs-migration/import-sql.ts",
-        "email:test-all": "ts-node src/scripts/send-all-email-templates.ts",
-        "email:test-all:dist": "node dist/scripts/send-all-email-templates.js",
-        "email:verify": "ts-node src/scripts/verify-smtp-env.ts",
-        "email:verify:dist": "node dist/scripts/verify-smtp-env.js",
         "migrate:unset-legacy-smtp-fields": "ts-node src/scripts/migrate-unset-legacy-smtp-dashboard-fields.ts"
     },
     "keywords": [

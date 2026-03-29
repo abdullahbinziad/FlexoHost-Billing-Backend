@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Product from './product.model';
+import Server from '../server/server.model';
 import { IProduct, IProductQueryFilter } from './product.interface';
 import ApiError from '../../utils/apiError';
 import { escapeRegex } from '../../utils/escapeRegex';
@@ -9,6 +10,21 @@ import { escapeRegex } from '../../utils/escapeRegex';
  * Handles all business logic for product operations
  */
 class ProductService {
+    private parseServerGroups(raw: unknown): string[] {
+        if (Array.isArray(raw)) {
+            return raw
+                .map((v) => String(v || '').trim())
+                .filter(Boolean);
+        }
+        if (typeof raw === 'string') {
+            return raw
+                .split(',')
+                .map((v) => v.trim())
+                .filter(Boolean);
+        }
+        return [];
+    }
+
     private buildProductQuery(filter: IProductQueryFilter = {}, options?: { publicOnly?: boolean }) {
         const { type, group, isHidden } = filter;
 
@@ -131,6 +147,51 @@ class ProductService {
         }
 
         return product;
+    }
+
+    /**
+     * Get public checkout configuration for a specific product.
+     * Server locations are resolved from enabled servers that match
+     * the product's module.serverGroup (or product group as fallback).
+     */
+    async getPublicCheckoutConfigByProductId(id: string): Promise<{
+        serverLocations: Array<{ id: string; name: string }>;
+    }> {
+        const product = await this.getPublicProductById(id);
+        const productServerGroups = this.parseServerGroups(
+            (product as any)?.module?.serverGroups
+                ?? (product as any)?.module?.serverGroup
+                ?? (product as any)?.group
+        );
+
+        const candidateServers = await Server.find({ isEnabled: true })
+            .select('location groups group')
+            .lean();
+
+        const groupMatches = (server: any): boolean => {
+            if (productServerGroups.length === 0) return true;
+            const groups = this.parseServerGroups(
+                Array.isArray(server.groups) && server.groups.length > 0
+                    ? server.groups
+                    : server.group
+            );
+            return groups.length === 0 || productServerGroups.some((g) => groups.includes(g));
+        };
+
+        const eligibleServers = candidateServers.filter(groupMatches);
+        const effectiveServers = eligibleServers.length > 0 ? eligibleServers : candidateServers;
+
+        const uniqueLocations = Array.from(
+            new Set(
+                effectiveServers
+                    .map((s: any) => String(s.location || '').trim())
+                    .filter(Boolean)
+            )
+        );
+
+        return {
+            serverLocations: uniqueLocations.map((loc) => ({ id: loc, name: loc })),
+        };
     }
 
     /**

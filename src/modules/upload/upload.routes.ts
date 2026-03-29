@@ -9,7 +9,7 @@ const router = Router();
 router.use(protect);
 router.post(
     '/',
-    restrictTo('client', 'user', 'admin', 'staff'),
+    restrictTo('client', 'user', 'admin', 'staff', 'superadmin'),
     upload.single('file'),
     handleMulterError,
     virusScanUpload,

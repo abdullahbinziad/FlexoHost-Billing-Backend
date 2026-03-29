@@ -31,6 +31,16 @@ class ProductController {
     });
 
     /**
+     * @desc    Get public checkout config for a specific product
+     * @route   GET /api/v1/store/products/:id/checkout-config
+     * @access  Public
+     */
+    getPublicCheckoutConfig = catchAsync(async (req: Request, res: Response) => {
+        const config = await productService.getPublicCheckoutConfigByProductId(req.params.id);
+        return ApiResponse.success(res, 200, 'Store checkout config retrieved successfully', config);
+    });
+
+    /**
      * @desc    Create new product
      * @route   POST /api/v1/admin/products
      * @access  Private/Admin

@@ -231,9 +231,26 @@ class TicketController {
     addReply = catchAsync(async (req: AuthRequest, res: Response) => {
         const { id } = req.params;
         const { message, messageHtml, internal } = req.body as { message: string; messageHtml?: string; internal?: boolean };
+        const attachments =
+            (req.files as Express.Multer.File[] | undefined)?.map((file) => ({
+                url: `/${config.upload.uploadPath}/${file.filename}`,
+                filename: file.originalname,
+                mimeType: file.mimetype,
+                size: file.size,
+            })) || [];
 
-        if (!message) {
-            return ApiResponse.badRequest(res, 'Message is required');
+        const plainMessage = String(message || '').trim();
+        const html = String(messageHtml || '').trim();
+        const htmlText = html
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/gi, ' ')
+            .trim();
+        const hasImageInHtml = /<img[\s\S]*?>/i.test(html);
+        const hasContent = plainMessage.length > 0 || htmlText.length > 0 || hasImageInHtml || attachments.length > 0;
+        const persistedMessage = plainMessage || htmlText || (hasImageInHtml || attachments.length > 0 ? '[Image attachment]' : '');
+
+        if (!hasContent) {
+            return ApiResponse.badRequest(res, 'Message or attachment is required');
         }
 
         const ticket = await Ticket.findById(id);
@@ -242,6 +259,7 @@ class TicketController {
         }
 
         const isStaff = ['admin', 'staff', 'superadmin'].includes(req.user.role);
+        const isInternalNote = !!(isStaff && internal);
 
         if (!isStaff) {
             const effectiveClientId = await getEffectiveClientId(req, res, 'tickets');
@@ -252,23 +270,16 @@ class TicketController {
         }
 
         const authorType = isStaff ? 'staff' : 'client';
-
-        const attachments =
-            (req.files as Express.Multer.File[] | undefined)?.map((file) => ({
-                url: `/${config.upload.uploadPath}/${file.filename}`,
-                filename: file.originalname,
-                mimeType: file.mimetype,
-                size: file.size,
-            })) || [];
+        const previewMessage = persistedMessage;
 
         await TicketMessage.create({
             ticketId: ticket._id,
             authorType,
             authorId: req.user._id,
-            message,
+            message: persistedMessage,
             messageHtml,
             attachments,
-            internal: !!(isStaff && internal),
+            internal: isInternalNote,
         });
 
         // Update ticket status and last replied
@@ -303,7 +314,7 @@ class TicketController {
             await notificationService.createForAdminStaff({
                 category: 'support',
                 title: `Client replied: ${ticket.ticketNumber}`,
-                message: `${clientName}: ${message.substring(0, 150)}${message.length > 150 ? '...' : ''}`,
+                message: `${clientName}: ${previewMessage.substring(0, 150)}${previewMessage.length > 150 ? '...' : ''}`,
                 linkPath: `/admin/tickets/${ticket._id.toString()}`,
                 linkLabel: 'View ticket',
                 clientId: ticket.clientId as any,
@@ -311,10 +322,12 @@ class TicketController {
             });
         }
 
-        // Notify client on staff reply
-        if (authorType === 'staff') {
+        // Notify client on any non-client public reply (staff/admin/system-facing).
+        // Internal notes must never email the client.
+        if (authorType !== 'client' && !isInternalNote) {
             const client = await Client.findById(ticket.clientId).populate('user', 'email').lean();
             const frontendUrl = config.frontendUrl;
+            const recipientEmail = (client as any)?.contactEmail || (client as any)?.user?.email || '';
 
             if (client) {
                 await notificationService.create({
@@ -322,15 +335,15 @@ class TicketController {
                     clientId: client._id as any,
                     category: 'support',
                     title: `Support replied to ticket ${ticket.ticketNumber}`,
-                    message: message.substring(0, 200),
+                    message: previewMessage.substring(0, 200),
                     linkPath: `/tickets/${ticket._id.toString()}`,
                     linkLabel: 'View ticket',
                     meta: { ticketId: ticket._id.toString(), ticketNumber: ticket.ticketNumber },
                 });
 
-                if (client.contactEmail) {
+                if (recipientEmail) {
                     await notificationProvider.sendEmail(
-                        client.contactEmail,
+                        recipientEmail,
                         `New reply on Ticket #${ticket.ticketNumber}`,
                         'support.ticket_reply',
                         {
@@ -340,7 +353,8 @@ class TicketController {
                             priority: ticket.priority.toUpperCase(),
                             department: ticket.department,
                             createdAt: new Date().toISOString(),
-                            summaryMessage: message.substring(0, 200),
+                            // Include full admin reply body in the email so client can read it directly.
+                            summaryMessage: previewMessage,
                             ticketUrl: `${frontendUrl}/tickets/${ticket._id.toString()}`,
                             replyType: 'staff_reply',
                         }
@@ -355,6 +369,27 @@ class TicketController {
     updateStatus = catchAsync(async (req: AuthRequest, res: Response) => {
         const { id } = req.params;
         const { status } = req.body as { status: TicketStatus };
+        const isStaff = ['admin', 'staff', 'superadmin'].includes(req.user.role);
+        // #region agent log
+        (globalThis as any).fetch?.('http://127.0.0.1:7287/ingest/c55b7ae4-ccd1-4407-a781-3fbbf0a359ea', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2581b5' },
+            body: JSON.stringify({
+                sessionId: '2581b5',
+                runId: 'ticket-status-email-run1',
+                hypothesisId: 'S1',
+                location: 'src/modules/ticket/ticket.controller.ts:updateStatus:entry',
+                message: 'Ticket status change request',
+                data: {
+                    ticketId: id,
+                    requestedStatus: status,
+                    actorRole: req.user.role,
+                    isStaffActor: isStaff,
+                },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
 
         if (!status) {
             return ApiResponse.badRequest(res, 'Status is required');
@@ -365,8 +400,49 @@ class TicketController {
             return ApiResponse.notFound(res, 'Ticket not found');
         }
 
+        // #region agent log
+        (globalThis as any).fetch?.('http://127.0.0.1:7287/ingest/c55b7ae4-ccd1-4407-a781-3fbbf0a359ea', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2581b5' },
+            body: JSON.stringify({
+                sessionId: '2581b5',
+                runId: 'ticket-status-email-run1',
+                hypothesisId: 'S2',
+                location: 'src/modules/ticket/ticket.controller.ts:updateStatus:ticket-loaded',
+                message: 'Ticket loaded before status save',
+                data: {
+                    ticketId: String(ticket._id),
+                    previousStatus: ticket.status,
+                    nextStatus: status,
+                    clientId: String(ticket.clientId),
+                },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
+
         ticket.status = status;
         await ticket.save();
+
+        // #region agent log
+        (globalThis as any).fetch?.('http://127.0.0.1:7287/ingest/c55b7ae4-ccd1-4407-a781-3fbbf0a359ea', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2581b5' },
+            body: JSON.stringify({
+                sessionId: '2581b5',
+                runId: 'ticket-status-email-run1',
+                hypothesisId: 'S3',
+                location: 'src/modules/ticket/ticket.controller.ts:updateStatus:saved',
+                message: 'Ticket status saved',
+                data: {
+                    ticketId: String(ticket._id),
+                    savedStatus: ticket.status,
+                    actorRole: req.user.role,
+                },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
 
         auditLogSafe({
             message: `Ticket ${ticket.ticketNumber} status changed to ${status}`,
@@ -380,6 +456,79 @@ class TicketController {
             clientId: ticket.clientId.toString(),
             ticketId: ticket._id.toString(),
         });
+
+        // Notify client by email when administrative actors change ticket status.
+        if (isStaff) {
+            const client = await Client.findById(ticket.clientId).populate('user', 'email').lean();
+            const recipientEmail = (client as any)?.contactEmail || (client as any)?.user?.email || '';
+            const frontendUrl = config.frontendUrl;
+            const customerName = client
+                ? `${(client as any).firstName || ''} ${(client as any).lastName || ''}`.trim() || 'Customer'
+                : 'Customer';
+            const statusLabel = String(status).replace(/_/g, ' ');
+            const statusMessage = `Your ticket status was updated by support to "${statusLabel}".`;
+
+            // #region agent log
+            (globalThis as any).fetch?.('http://127.0.0.1:7287/ingest/c55b7ae4-ccd1-4407-a781-3fbbf0a359ea', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2581b5' },
+                body: JSON.stringify({
+                    sessionId: '2581b5',
+                    runId: 'ticket-status-email-run2',
+                    hypothesisId: 'S4',
+                    location: 'src/modules/ticket/ticket.controller.ts:updateStatus:email-branch',
+                    message: 'Status email branch evaluated',
+                    data: {
+                        ticketId: String(ticket._id),
+                        status,
+                        hasClient: Boolean(client),
+                        hasRecipientEmail: Boolean(recipientEmail),
+                    },
+                    timestamp: Date.now(),
+                }),
+            }).catch(() => {});
+            // #endregion
+
+            if (recipientEmail) {
+                const emailSent = await notificationProvider.sendEmail(
+                    recipientEmail,
+                    `Ticket #${ticket.ticketNumber} status updated`,
+                    'support.ticket_reply',
+                    {
+                        customerName,
+                        ticketId: ticket.ticketNumber,
+                        ticketSubject: ticket.subject,
+                        priority: String(ticket.priority || 'normal').toUpperCase(),
+                        department: ticket.department || 'support',
+                        createdAt: new Date().toISOString(),
+                        summaryMessage: statusMessage,
+                        ticketUrl: `${frontendUrl}/tickets/${ticket._id.toString()}`,
+                        replyType: 'staff_reply',
+                    }
+                );
+
+                // #region agent log
+                (globalThis as any).fetch?.('http://127.0.0.1:7287/ingest/c55b7ae4-ccd1-4407-a781-3fbbf0a359ea', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2581b5' },
+                    body: JSON.stringify({
+                        sessionId: '2581b5',
+                        runId: 'ticket-status-email-run2',
+                        hypothesisId: 'S5',
+                        location: 'src/modules/ticket/ticket.controller.ts:updateStatus:email-sent',
+                        message: 'Status change email dispatch completed',
+                        data: {
+                            ticketId: String(ticket._id),
+                            status,
+                            emailSent,
+                            recipientDomain: recipientEmail.split('@')[1] || '',
+                        },
+                        timestamp: Date.now(),
+                    }),
+                }).catch(() => {});
+                // #endregion
+            }
+        }
 
         return ApiResponse.ok(res, `Ticket marked as ${status}`, ticket);
     });

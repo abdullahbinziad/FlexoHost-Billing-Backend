@@ -21,10 +21,10 @@ export const defaultRoles = [
         name: 'Staff',
         slug: 'staff',
         permissions: ALL_PERMISSION_IDS.filter(
-            (p) => !p.startsWith('roles:') && p !== 'email:test'
+            (p) => !p.startsWith('roles:')
         ),
         description:
-            'Default staff role with all permissions except role management and SMTP test email (assign email:test separately).',
+            'Default staff role with all permissions except role management.',
         isSystem: true,
         hasFullAccess: false,
     },

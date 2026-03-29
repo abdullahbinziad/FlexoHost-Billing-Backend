@@ -249,6 +249,7 @@ const LEGACY_TEMPLATE_MAP: Record<string, TemplateKey> = {
     'invoice-payment-confirmation': 'billing.payment_success',
     'invoice-modified': 'billing.invoice_created',
     'support.ticket_opened': 'support.ticket_opened',
+    'support.ticket_reply': 'support.ticket_reply',
     'domain.renewal_reminder': 'domain.renewal_reminder',
     'domain.expired': 'domain.expired_notice',
     'domain.expired_notice': 'domain.expired_notice',
@@ -386,6 +387,18 @@ export async function sendEmailByTemplate(
             summaryMessage: context.summaryMessage,
             ticketUrl: context.ticketUrl || `${base}/tickets`,
             attachments,
+        };
+    } else if (templateKey === 'support.ticket_reply') {
+        props = {
+            customerName: context.customerName || 'Customer',
+            ticketId: context.ticketId || 'N/A',
+            ticketSubject: context.ticketSubject || 'Support Request',
+            priority: context.priority || 'NORMAL',
+            department: context.department || 'Support',
+            createdAt: context.createdAt || new Date().toISOString(),
+            summaryMessage: context.summaryMessage || '',
+            ticketUrl: context.ticketUrl || `${base}/tickets`,
+            replyType: context.replyType || 'staff_reply',
         };
     }
 
