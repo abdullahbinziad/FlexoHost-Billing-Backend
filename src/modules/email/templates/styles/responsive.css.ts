@@ -16,7 +16,8 @@ export const RESPONSIVE_STYLES = `
     .email-container { width: 100% !important; max-width: 100% !important; }
     .email-content { padding: 20px 16px !important; font-size: 15px !important; line-height: 1.6 !important; }
     .email-header-padding { padding: 24px 16px !important; }
-    .email-logo { max-width: 140px !important; height: auto !important; }
+    .email-logo-wrap { padding: 12px 18px !important; }
+    .email-logo { max-width: 180px !important; width: 100% !important; height: auto !important; }
     .email-slogan { font-size: 11px !important; padding: 0 16px 24px !important; }
     .email-greeting { font-size: 17px !important; padding: 16px !important; }
     .email-section { padding: 16px !important; font-size: 15px !important; }
@@ -38,7 +39,8 @@ export const RESPONSIVE_STYLES = `
     .email-wrapper { padding: 8px 12px !important; }
     .email-content { padding: 16px 12px !important; font-size: 14px !important; }
     .email-header-padding { padding: 20px 12px !important; }
-    .email-logo { max-width: 120px !important; }
+    .email-logo-wrap { padding: 10px 14px !important; }
+    .email-logo { max-width: 160px !important; }
     .email-section { padding: 12px !important; font-size: 14px !important; }
     .email-cta { padding: 12px 16px !important; font-size: 14px !important; }
     .email-footer { padding: 16px 12px !important; }

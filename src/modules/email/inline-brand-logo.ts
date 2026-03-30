@@ -39,6 +39,22 @@ export function extractEmailLogoSrc(html: string): string | null {
     return null;
 }
 
+function mimeFromExtension(ext: string): string | undefined {
+    switch (ext) {
+        case 'png':
+            return 'image/png';
+        case 'jpg':
+        case 'jpeg':
+            return 'image/jpeg';
+        case 'gif':
+            return 'image/gif';
+        case 'webp':
+            return 'image/webp';
+        default:
+            return undefined;
+    }
+}
+
 function extensionFromBuffer(buf: Buffer, contentType: string | undefined): string {
     const ct = (contentType || '').toLowerCase();
     if (ct.includes('png')) return 'png';
@@ -104,11 +120,15 @@ export async function inlineEmailBrandLogo(html: string): Promise<{
 
         const ext = extensionFromBuffer(buf, res.headers.get('content-type') || undefined);
         const filename = ext === 'bin' ? 'logo' : `logo.${ext}`;
+        const contentType = mimeFromExtension(ext);
 
         const cidRef = `cid:${EMAIL_BRAND_LOGO_CID}`;
-        const replaced = html.split(remoteUrl).join(cidRef);
+        const replaced = html.replace(IMG_WITH_EMAIL_LOGO_RE, (tag) =>
+            /\bsrc="/i.test(tag) ? tag.replace(/\bsrc="[^"]*"/i, `src="${cidRef}"`) : tag
+        );
+        IMG_WITH_EMAIL_LOGO_RE.lastIndex = 0;
         if (replaced === html) {
-            logger.warn('[Email] Logo URL not found in HTML for inline (encoding mismatch?)');
+            logger.warn('[Email] Logo img not updated for inline (missing email-logo / src?)');
             return { html, attachments: [] };
         }
 
@@ -119,6 +139,7 @@ export async function inlineEmailBrandLogo(html: string): Promise<{
                     filename,
                     content: buf,
                     cid: EMAIL_BRAND_LOGO_CID,
+                    ...(contentType ? { contentType } : {}),
                 },
             ],
         };

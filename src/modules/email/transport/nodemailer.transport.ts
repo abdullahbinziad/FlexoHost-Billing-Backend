@@ -116,6 +116,8 @@ export interface EmailAttachment {
     content: Buffer;
     /** Inline image: set cid and use src="cid:{cid}" in HTML. */
     cid?: string;
+    /** e.g. image/png — helps Outlook render CID images reliably */
+    contentType?: string;
 }
 
 export interface SendOptions {
@@ -145,6 +147,7 @@ export async function sendViaTransport(options: SendOptions): Promise<SendResult
             attachments: options.attachments?.map((a) => ({
                 filename: a.filename,
                 content: a.content,
+                ...(a.contentType ? { contentType: a.contentType } : {}),
                 ...(a.cid
                     ? { cid: a.cid, contentDisposition: 'inline' as const }
                     : {}),
