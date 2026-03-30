@@ -205,10 +205,10 @@ class PaymentService {
                     { session }
                 );
 
-                // 4. Process services
-                await handleInvoicePaid(invoice._id as any);
-
                 await session.commitTransaction();
+
+                // Provisioning jobs run outside the payment txn; only queue after commit so unpaid invoices never get jobs if commit fails.
+                await handleInvoicePaid(invoice._id as any);
 
                 // Sync invoice FX snapshot (balanceDueInBase = 0)
                 const updatedInvoice = await Invoice.findById(invoice._id);
@@ -384,11 +384,6 @@ class PaymentService {
                     ],
                     { session }
                 );
-
-                // 3. Create Services & Evaluate Suspensions
-                await handleInvoicePaid(invoice._id as any);
-                await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
-                await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
             }
 
             await session.commitTransaction();
@@ -396,7 +391,11 @@ class PaymentService {
             const updatedInvoice = await Invoice.findById(order.invoiceId);
             if (updatedInvoice) await invoiceService.setInvoiceFxSnapshot(updatedInvoice);
             if (order.invoiceId) {
-                await affiliateService.processPaidInvoice(order.invoiceId.toString());
+                const invId = order.invoiceId as any;
+                await affiliateService.processPaidInvoice(invId.toString());
+                await handleInvoicePaid(invId);
+                await serviceLifecycleService.onInvoicePaidUnsuspend(invId);
+                await serviceLifecycleService.applyRenewalPayment(invId);
             }
 
             return { message: 'Payment processed successfully', orderId };
