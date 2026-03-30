@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Invoice from '../../invoice/invoice.model';
+import { InvoiceStatus } from '../../invoice/invoice.interface';
 import Order from '../../order/order.model';
 import { provisioningJobRepository } from '../repositories';
 import { ProvisioningJobStatus } from '../types/enums';
@@ -17,6 +18,13 @@ export const handleInvoicePaid = async (invoiceId: string | mongoose.Types.Objec
 
     const invoice = await Invoice.findById(invoiceId).exec();
     if (!invoice) throw new Error(`Invoice not found: ${invoiceId}`);
+
+    if (invoice.status !== InvoiceStatus.PAID || (invoice.balanceDue ?? 0) > 0) {
+        logger.warn(
+            `[Provisioning] Invoice ${invoiceId} is not fully paid (status=${invoice.status}, balanceDue=${invoice.balanceDue}). Skipping provisioning.`
+        );
+        return { createdJobs, skippedJobs };
+    }
 
     if (!invoice.orderId) {
         logger.warn(`[Provisioning] Invoice ${invoiceId} has no orderId. Skipping.`);

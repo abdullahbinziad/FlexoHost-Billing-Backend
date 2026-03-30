@@ -83,6 +83,23 @@ export class ProvisioningJobRepository {
 
         return await ProvisioningJob.findByIdAndUpdate(id, updatePayload, { new: true }).exec();
     }
+
+    /**
+     * Put a locked job back in the queue without counting a processing attempt
+     * (used when the job was picked up but invoice is not paid yet).
+     * `attemptsAfterLock` is the value after lockBatchForProcessing incremented it.
+     */
+    async releaseLockRequeueWithoutRetryPenalty(id: string, attemptsAfterLock: number): Promise<void> {
+        const dec = attemptsAfterLock > 0 ? -1 : 0;
+        const update: Record<string, unknown> = {
+            $set: { status: ProvisioningJobStatus.QUEUED },
+            $unset: { lockedAt: 1, lockOwner: 1 },
+        };
+        if (dec) {
+            update.$inc = { attempts: dec };
+        }
+        await ProvisioningJob.findByIdAndUpdate(id, update as any).exec();
+    }
 }
 
 export default new ProvisioningJobRepository();

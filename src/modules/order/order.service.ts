@@ -28,6 +28,7 @@ import { affiliateService } from '../affiliate/affiliate.service';
 import { AffiliateReferralSource } from '../affiliate/affiliate.types';
 import { getBillingSettings } from '../billing-settings/billing-settings.service';
 import { SUPPORTED_CURRENCIES } from '../../config/currency.config';
+import { InvoiceStatus } from '../invoice/invoice.interface';
 
 /** Default payment methods for admin order creation (extend via settings if needed) */
 const DEFAULT_PAYMENT_METHODS = [
@@ -1187,6 +1188,17 @@ class OrderService {
     }> }, _userId?: string) {
         const order = await this.getOrderWithItems(orderId);
         if (!order) throw new Error('Order not found');
+
+        const orderDoc = await Order.findById(orderId).select('invoiceId').lean();
+        const invoiceId = (order as any).invoiceId ?? orderDoc?.invoiceId;
+        if (!invoiceId) {
+            throw new Error('Order has no invoice; hosting can only be created after an invoice exists and is paid');
+        }
+        const invoice = await Invoice.findById(invoiceId).select('status balanceDue').lean();
+        if (!invoice || invoice.status !== InvoiceStatus.PAID || (invoice.balanceDue ?? 0) > 0) {
+            throw new Error('Invoice must be fully paid before creating hosting accounts');
+        }
+
         const items = await this.getOrderItemsByOrderId(orderId);
         let clientEmail = (order as any).client?.email || '';
         if (!clientEmail) {

@@ -17,6 +17,8 @@ import { registerProvisioningProviders } from '../provisioning/providers';
 import type { ProvisioningContext } from '../provisioning/types';
 import { computeInitialNextDueDate } from '../utils/billing-cycle.util';
 import logger from '../../../utils/logger';
+import Invoice from '../../invoice/invoice.model';
+import { InvoiceStatus } from '../../invoice/invoice.interface';
 
 let providersRegistered = false;
 
@@ -62,6 +64,24 @@ export class ProvisioningWorker {
         const serviceType = (typeof rawType === 'string' ? rawType.toUpperCase() : rawType) as ServiceType;
 
         logger.info(`[Provisioning] Processing job ${job._id} orderItem=${orderItemId} type=${serviceType}.`);
+
+        if (job.invoiceId) {
+            const inv = await Invoice.findById(job.invoiceId).select('status balanceDue').lean();
+            if (
+                !inv ||
+                inv.status !== InvoiceStatus.PAID ||
+                (inv.balanceDue ?? 0) > 0
+            ) {
+                logger.warn(
+                    `[Provisioning] Job ${job._id} deferred: invoice ${job.invoiceId} not fully paid (status=${inv?.status}).`
+                );
+                await provisioningJobRepository.releaseLockRequeueWithoutRetryPenalty(
+                    job._id as string,
+                    typeof job.attempts === 'number' ? job.attempts : 0
+                );
+                return;
+            }
+        }
 
         // 1. Idempotency: if Service exists and is not awaiting reprovision, mark job SUCCESS
         let service = await serviceRepository.findByOrderItemId(orderItemId);
