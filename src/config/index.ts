@@ -185,11 +185,12 @@ const config: Config = {
          * Hosted image URL (HTTPS). Env wins, else Cloudinary default.
          * WebP is inlined as CID when logoInline is true so more clients render it reliably.
          */
+        /** Default uses f_png — WebP remote/CID breaks many clients (Outlook, some webmail). */
         logoUrl:
             (process.env.EMAIL_LOGO_URL?.trim()
                 ? normalizeEmailLogoUrl(process.env.EMAIL_LOGO_URL.trim())
                 : '') ||
-            'https://res.cloudinary.com/dzmglrehf/image/upload/v1774867247/FlexoHostHorizontalforDark_kwcztr.webp',
+            'https://res.cloudinary.com/dzmglrehf/image/upload/f_png/v1774867247/FlexoHostHorizontalforDark_kwcztr.webp',
         logoInline: process.env.EMAIL_LOGO_INLINE?.toLowerCase() !== 'false',
     },
 

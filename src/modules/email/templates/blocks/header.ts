@@ -17,11 +17,17 @@ export function renderEmailHeader(props: BlockProps): string {
 <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="background:${BRAND.gradient}; background-color:${BRAND.gradientFallback};">
   <tr>
     <td align="center" class="email-header-padding" style="padding:${BRAND.space.xxl}px ${BRAND.space.xl}px ${BRAND.space.sm}px;">
-      <a href="${websiteUrl}" target="_blank" style="text-decoration:none; display:inline-block;">
       ${logoUrl
-        ? `<img src="${logoUrl}" alt="${escapeHtml(companyName)}" class="email-logo" width="200" style="display:block;border:0;outline:none;text-decoration:none;max-width:200px;width:200px;height:auto;-ms-interpolation-mode:bicubic;" />`
-        : `<span style="font-size:24px; font-weight:700; color:#ffffff;">${escapeHtml(companyName)}</span>`} 
+        ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
+  <tr>
+    <td class="email-logo-wrap" align="center" style="padding:14px 22px;border-radius:12px;mso-padding-alt:14px 22px;">
+      <a href="${websiteUrl}" target="_blank" style="text-decoration:none; display:inline-block; line-height:0;">
+        <img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(companyName)}" class="email-logo" width="220" style="display:block;border:0;outline:none;text-decoration:none;max-width:220px;width:100%;height:auto;-ms-interpolation-mode:bicubic;" />
       </a>
+    </td>
+  </tr>
+</table>`
+        : `<a href="${websiteUrl}" target="_blank" style="text-decoration:none; display:inline-block;"><span style="font-size:24px; font-weight:700; color:#ffffff;">${escapeHtml(companyName)}</span></a>`}
     </td>
   </tr>
   <tr>

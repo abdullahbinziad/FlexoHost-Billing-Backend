@@ -6,7 +6,7 @@
 export const BRAND = {
     primary: '#3a9cfd',
     primaryDark: '#245bd9',
-    gradient: 'linear-gradient(135deg, #3a9cfd 0%, #245bd9 100%)',
+    gradient: 'linear-gradient(135deg,rgb(26, 138, 249) 0%,rgb(0, 49, 164) 100%)',
     gradientFallback: '#245bd9',
 
     text: '#1f2937',
