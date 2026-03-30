@@ -2,6 +2,7 @@
  * EmailHeader - Brand header with gradient, logo and slogan
  */
 
+import { escapeHtml } from '../../../../utils/string.util';
 import type { BlockProps } from './block.types';
 import { BRAND } from './brand';
 
@@ -17,9 +18,9 @@ export function renderEmailHeader(props: BlockProps): string {
   <tr>
     <td align="center" class="email-header-padding" style="padding:${BRAND.space.xxl}px ${BRAND.space.xl}px ${BRAND.space.sm}px;">
       <a href="${websiteUrl}" target="_blank" style="text-decoration:none; display:inline-block;">
-        ${logoUrl
-            ? `<img src="${logoUrl}" alt="${companyName}" class="email-logo" width="180" height="48" style="display:block; border:0; max-width:180px; width:100%; height:auto;" />`
-            : `<span style="font-size:24px; font-weight:700; color:#ffffff;">${companyName}</span>`}
+      ${logoUrl
+        ? `<img src="${logoUrl}" alt="${escapeHtml(companyName)}" class="email-logo" width="200" style="display:block;border:0;outline:none;text-decoration:none;max-width:200px;width:200px;height:auto;-ms-interpolation-mode:bicubic;" />`
+        : `<span style="font-size:24px; font-weight:700; color:#ffffff;">${escapeHtml(companyName)}</span>`} 
       </a>
     </td>
   </tr>

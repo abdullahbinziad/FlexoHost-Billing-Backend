@@ -114,6 +114,8 @@ export async function verifySmtpConnection(): Promise<{ ok: boolean; error?: str
 export interface EmailAttachment {
     filename: string;
     content: Buffer;
+    /** Inline image: set cid and use src="cid:{cid}" in HTML. */
+    cid?: string;
 }
 
 export interface SendOptions {
@@ -140,7 +142,13 @@ export async function sendViaTransport(options: SendOptions): Promise<SendResult
             replyTo: options.replyTo,
             cc: options.cc?.join(','),
             bcc: options.bcc?.join(','),
-            attachments: options.attachments?.map((a) => ({ filename: a.filename, content: a.content })),
+            attachments: options.attachments?.map((a) => ({
+                filename: a.filename,
+                content: a.content,
+                ...(a.cid
+                    ? { cid: a.cid, contentDisposition: 'inline' as const }
+                    : {}),
+            })),
         });
 
         return {

@@ -8,6 +8,7 @@ import { getTemplate } from './templates/registry';
 import { mergeBrandProps } from './templates/config';
 import { validateProps } from './templates/schemas';
 import { sendViaTransport, isTransportConfigured, type EmailAttachment } from './transport';
+import { inlineEmailBrandLogo } from './inline-brand-logo';
 import type { TemplateKey } from './templates/types';
 import type { SendResult } from './templates/types';
 
@@ -54,15 +55,23 @@ export async function sendTemplatedEmail<T>(
         };
     }
 
+    let sendHtml = html;
+    let sendAttachments = attachments ? [...attachments] : [];
+    if (config.email.logoInline) {
+        const inlined = await inlineEmailBrandLogo(html);
+        sendHtml = inlined.html;
+        sendAttachments = [...sendAttachments, ...inlined.attachments];
+    }
+
     return sendViaTransport({
         to,
         subject,
-        html,
+        html: sendHtml,
         text,
         replyTo,
         cc,
         bcc,
-        attachments,
+        attachments: sendAttachments.length ? sendAttachments : undefined,
     });
 }
 
@@ -85,11 +94,20 @@ export async function sendEmail(options: IEmailOptions): Promise<SendResult> {
         };
     }
 
+    let sendHtml = options.html;
+    let attachments: EmailAttachment[] | undefined;
+    if (config.email.logoInline) {
+        const inlined = await inlineEmailBrandLogo(options.html);
+        sendHtml = inlined.html;
+        attachments = inlined.attachments.length ? inlined.attachments : undefined;
+    }
+
     return sendViaTransport({
         to: options.to,
         subject: options.subject,
-        html: options.html,
+        html: sendHtml,
         text: options.text,
+        attachments,
     });
 }
 

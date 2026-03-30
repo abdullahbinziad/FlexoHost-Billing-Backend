@@ -49,6 +49,8 @@ interface Config {
         };
         from: string;
         logoUrl: string;
+        /** When true, fetch EMAIL_LOGO_URL and embed as inline CID (better WebP/client support). */
+        logoInline: boolean;
     };
     security: {
         bcryptSaltRounds: number;
@@ -118,6 +120,15 @@ interface Config {
     };
 }
 
+/** Public site origin for links and default email assets; same value stored on config.websiteUrl */
+const websiteUrl =
+    process.env.WEBSITE_URL || process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:3000';
+
+/** ImgBB and some docs use i.ibb.co; a common typo i.ibb.co.com breaks TLS / does not resolve. */
+function normalizeEmailLogoUrl(url: string): string {
+    return url.replace(/i\.ibb\.co\.com/gi, 'i.ibb.co');
+}
+
 const config: Config = {
     env: process.env.NODE_ENV || 'development',
     port: parseInt(process.env.PORT || '5000', 10),
@@ -170,7 +181,16 @@ const config: Config = {
             tlsRejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
         },
         from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
-        logoUrl: process.env.EMAIL_LOGO_URL || 'https://flexohost.com/logo.png',
+        /**
+         * Hosted image URL (HTTPS). Env wins, else Cloudinary default.
+         * WebP is inlined as CID when logoInline is true so more clients render it reliably.
+         */
+        logoUrl:
+            (process.env.EMAIL_LOGO_URL?.trim()
+                ? normalizeEmailLogoUrl(process.env.EMAIL_LOGO_URL.trim())
+                : '') ||
+            'https://res.cloudinary.com/dzmglrehf/image/upload/v1774867247/FlexoHostHorizontalforDark_kwcztr.webp',
+        logoInline: process.env.EMAIL_LOGO_INLINE?.toLowerCase() !== 'false',
     },
 
     security: {
@@ -231,7 +251,7 @@ const config: Config = {
         baseUrl: process.env.API_URL ? new URL(process.env.API_URL).origin : `http://localhost:${parseInt(process.env.PORT || '5000', 10)}`,
         fullBaseUrl: process.env.API_URL || `http://localhost:${parseInt(process.env.PORT || '5000', 10)}/api/${process.env.API_VERSION || 'v1'}`,
     },
-    websiteUrl: process.env.WEBSITE_URL || process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:3000',
+    websiteUrl,
     controlPanel: {
         protocol: process.env.CONTROL_PANEL_PROTOCOL || 'https',
         port: parseInt(process.env.CONTROL_PANEL_PORT || '2083', 10),
