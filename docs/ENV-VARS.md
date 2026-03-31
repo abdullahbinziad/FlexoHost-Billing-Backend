@@ -32,7 +32,7 @@
 | **Upload / ClamAV** | |
 | `MAX_FILE_SIZE` / `UPLOAD_PATH` | Upload config. |
 | `ENABLE_CLAMAV_SCAN` / `CLAMAV_HOST` / `CLAMAV_PORT` | Virus scan. |
-| **Email** | SMTP and `EMAIL_FROM` / `EMAIL_LOGO_URL`. |
+| **Email** | SMTP, `EMAIL_FROM`, `EMAIL_LOGO_URL`, `EMAIL_LOGO_INLINE` (default on: embed logo as CID for reliable rendering). |
 | **Security** | `BCRYPT_SALT_ROUNDS`. |
 | **Integrations** | Google, Dynadot, Namely, SSLCommerz, WHMCS (see .env.example). |
 

@@ -6,6 +6,10 @@
 import { escapeHtml } from '../../../utils/string.util';
 
 export interface InvoicePdfData {
+    /** Resolved https URL or data URI for inline PDF rendering */
+    logoSrc?: string;
+    /** Alt / fallback label for logo */
+    companyName?: string;
     invoiceNumber: string;
     status: string;
     invoiceDate: string;
@@ -89,6 +93,8 @@ export function buildInvoiceHtml(inv: InvoicePdfData): string {
     body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .invoice-a4 { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 0; background: #fff; border: 1px solid #e5e7eb; overflow: hidden; }
     .invoice-header { border-bottom: 1px solid #e5e7eb; padding: 40px 32px 32px 32px; }
+    .invoice-pdf-logo-wrap { margin-bottom: 20px; display: flex; justify-content: flex-end; }
+    .invoice-pdf-logo { display: block; max-width: 240px; max-height: 56px; width: auto; height: auto; object-fit: contain; object-position: right center; }
     .invoice-header-inner { display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; margin-bottom: 32px; }
     .invoice-header-left { flex: 1; }
     .invoice-header-right { flex-shrink: 0; }
@@ -162,6 +168,9 @@ export function buildInvoiceHtml(inv: InvoicePdfData): string {
           </div>
         </div>
         <div class="invoice-header-right">
+          ${inv.logoSrc
+        ? `<div class="invoice-pdf-logo-wrap"><img src="${escapeHtml(inv.logoSrc)}" alt="${escapeHtml(inv.companyName || 'Logo')}" class="invoice-pdf-logo" /></div>`
+        : ''}
           <div class="invoice-dates">
             <div class="invoice-date-block">
               <p class="invoice-date-label">Invoice Date</p>

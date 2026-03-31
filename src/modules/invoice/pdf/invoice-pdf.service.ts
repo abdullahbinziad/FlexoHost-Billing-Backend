@@ -3,6 +3,7 @@
  * Same structure and design as /invoices/[id] (InvoiceDetail + InvoiceHeader + InvoiceBody).
  */
 
+import config from '../../../config';
 import type { IInvoiceDocument } from '../invoice.interface';
 import PaymentTransaction from '../../transaction/transaction.model';
 import { buildInvoiceHtml, type InvoicePdfData } from './invoice-pdf-html';
@@ -22,6 +23,10 @@ const PAY_TO = {
     address: process.env.COMPANY_ADDRESS || 'Ghunti, Mymensingh Sadar, Mymensingh, Bangladesh, Post-2200',
 };
 
+const INVOICE_PDF_LOGO_URL =
+    process.env.INVOICE_PDF_LOGO_URL?.trim() ||
+    'https://res.cloudinary.com/dzmglrehf/image/upload/v1774877112/FlexoHostHorizontalforLight_gszd0a.webp';
+
 /** Invoiced address: same as portal formatInvoicedAddress – address • country */
 function formatInvoicedAddress(address: string, country: string): string {
     const a = (address || '').trim();
@@ -29,6 +34,27 @@ function formatInvoicedAddress(address: string, country: string): string {
     if (!a && !c) return '—';
     if (!a) return c;
     return c ? `${a} • ${c}` : a;
+}
+
+/** Inline image for Puppeteer so PDF does not depend on remote fetch at render time. */
+async function fetchLogoAsDataUri(logoUrl: string): Promise<string | undefined> {
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15_000);
+        const res = await fetch(logoUrl, {
+            signal: controller.signal,
+            headers: { 'User-Agent': 'FlexoHost-InvoicePdf/1.0' },
+        });
+        clearTimeout(timer);
+        if (!res.ok) return undefined;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > 2 * 1024 * 1024) return undefined;
+        let mime = (res.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
+        if (!mime.startsWith('image/')) mime = 'image/png';
+        return `data:${mime};base64,${buf.toString('base64')}`;
+    } catch {
+        return undefined;
+    }
 }
 
 function toPdfData(inv: any, transactions: TransactionForPdf[]): InvoicePdfData {
@@ -76,7 +102,16 @@ export async function generateInvoicePdf(
     const inv = invoice as any;
     const transactions = options?.transactions ?? [];
     const data = toPdfData(inv, transactions);
-    const html = buildInvoiceHtml(data);
+    const rawLogo = INVOICE_PDF_LOGO_URL || config.email?.logoUrl?.trim();
+    let logoSrc: string | undefined;
+    if (rawLogo) {
+        logoSrc = (await fetchLogoAsDataUri(rawLogo)) || rawLogo;
+    }
+    const html = buildInvoiceHtml({
+        ...data,
+        logoSrc,
+        companyName: config.app.companyName,
+    });
 
     const puppeteer = await import('puppeteer');
     const browser = await puppeteer.default.launch({
