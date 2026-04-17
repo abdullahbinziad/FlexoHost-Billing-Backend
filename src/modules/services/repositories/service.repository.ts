@@ -31,6 +31,10 @@ export class ServiceRepository {
         ).exec();
     }
 
+    async deleteById(id: string): Promise<IService | null> {
+        return await Service.findByIdAndDelete(id).exec();
+    }
+
     async listByClientId(
         clientId: string,
         options: {
@@ -91,6 +95,8 @@ export class ServiceRepository {
             updatePayload.$set.suspendedAt = new Date();
         } else if (newStatus === ServiceStatus.TERMINATED && !extraData.terminatedAt) {
             updatePayload.$set.terminatedAt = new Date();
+        } else if (newStatus === ServiceStatus.CANCELLED && !(extraData as any).cancelledAt) {
+            updatePayload.$set.cancelledAt = new Date();
         }
 
         return await Service.findByIdAndUpdate(id, updatePayload, { new: true }).exec();

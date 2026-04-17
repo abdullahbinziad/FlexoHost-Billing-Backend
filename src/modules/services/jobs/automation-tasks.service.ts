@@ -6,6 +6,7 @@ import provisioningWorker from './provisioning.worker';
 import serviceActionWorker from './service-action.worker';
 import domainSyncScheduler from './domain-sync.scheduler';
 import domainExpiryReminderScheduler from './domain-expiry-reminder.scheduler';
+import { billableItemService } from '../../billable-item/billable-item.service';
 import {
     AutomationTaskKey,
     getAutomationTaskRegistryItem,
@@ -126,6 +127,13 @@ class AutomationTasksService {
         });
     }
 
+    runBillableItemsRecurring(source: TaskSource = 'cron') {
+        return runWithAudit('billable-items-recurring', source, async () => {
+            const result = await billableItemService.processRecurringDueItems(source);
+            return result;
+        });
+    }
+
     runInvoiceReminders(source: TaskSource = 'cron') {
         return runWithAudit('invoice-reminders', source, () =>
             invoiceReminderScheduler.processReminders()
@@ -180,6 +188,8 @@ class AutomationTasksService {
         switch (taskKey) {
             case 'renewals':
                 return this.runRenewals(source);
+            case 'billable-items-recurring':
+                return this.runBillableItemsRecurring(source);
             case 'overdue-suspensions':
                 return this.runOverdueSuspensions(source);
             case 'invoice-reminders':

@@ -113,6 +113,27 @@ class ProductController {
     });
 
     /**
+     * @desc    Duplicate product
+     * @route   POST /api/v1/admin/products/:id/duplicate
+     * @access  Private/Admin
+     */
+    duplicate = catchAsync(async (req: Request, res: Response) => {
+        const cloned = await productService.duplicateProduct(req.params.id);
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Product duplicated from ${req.params.id} to ${(cloned as any)._id?.toString?.()}`,
+            type: 'product_created',
+            category: 'settings',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?._id?.toString?.(),
+            source: 'manual',
+            targetType: 'product',
+            targetId: String((cloned as any)._id ?? ''),
+        });
+        return ApiResponse.created(res, 'Product duplicated successfully', cloned);
+    });
+
+    /**
      * @desc    Toggle product visibility
      * @route   PATCH /api/v1/admin/products/:id/visibility
      * @access  Private/Admin

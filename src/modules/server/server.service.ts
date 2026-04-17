@@ -139,6 +139,42 @@ class ServerService {
     }
 
     /**
+     * Duplicate an existing server configuration into a new one.
+     * Hostname is suffixed with "-copy" (and with numeric suffix if needed) to avoid conflicts.
+     * Sensitive credentials (API token / password) are carried over so the clone behaves as a usable template.
+     */
+    async duplicateServer(id: string, actorId?: string): Promise<any> {
+        const existing = await Server.findById(id).lean<any>();
+        if (!existing) {
+            throw new ApiError(404, 'Server not found');
+        }
+
+        const baseHostname = String(existing.hostname || '').trim() || 'cloned-server';
+        let newHostname = `${baseHostname}-copy`;
+        let counter = 1;
+        // Ensure hostname uniqueness
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            const taken = await Server.findOne({ hostname: newHostname }).select('_id').lean();
+            if (!taken) break;
+            counter += 1;
+            newHostname = `${baseHostname}-copy-${counter}`;
+        }
+
+        const payload: Partial<IServer> = {
+            ...(existing as IServer),
+        };
+        delete (payload as any)._id;
+        delete (payload as any).createdAt;
+        delete (payload as any).updatedAt;
+        payload.hostname = newHostname;
+        payload.name = `${existing.name || baseHostname} (Copy)`;
+
+        const created = await this.createServer(payload, actorId);
+        return created;
+    }
+
+    /**
      * Test WHM connection for a server. Updates lastConnectionCheckAt and lastConnectionStatus.
      */
     async testWhmConnection(serverId: string): Promise<{ success: boolean; message?: string; error?: string; [k: string]: any }> {
@@ -201,7 +237,14 @@ class ServerService {
     /**
      * Sync account count from WHM for a cPanel server. Updates server.accountCount and accountCountSyncedAt; returns count and max for display.
      */
-    async syncAccountCount(serverId: string): Promise<{ count: number; maxAccounts: number; syncedAt: string } | { error: string }> {
+    async syncAccountCount(serverId: string): Promise<{
+        count: number;
+        maxAccounts: number;
+        syncedAt: string;
+        packages: string[];
+        packageCount: number;
+        packagesSyncedAt: string;
+    } | { error: string }> {
         const server = await Server.findById(serverId).lean();
         if (!server) {
             return { error: 'Server not found' };
@@ -214,13 +257,30 @@ class ServerService {
         if (error) {
             return { error };
         }
+        const { packages: rawPackages } = await this.listWhmPackages(serverId);
+        const packageNames = Array.from(
+            new Set(
+                (rawPackages || [])
+                    .map((pkg: any) => String(pkg?.name || pkg?.pkg || '').trim())
+                    .filter(Boolean)
+            )
+        );
         const now = new Date();
         await Server.findByIdAndUpdate(serverId, {
             accountCount: count,
             accountCountSyncedAt: now,
+            whmPackages: packageNames,
+            whmPackagesSyncedAt: now,
         });
         const maxAccounts = (server as any).maxAccounts ?? 200;
-        return { count, maxAccounts, syncedAt: now.toISOString() };
+        return {
+            count,
+            maxAccounts,
+            syncedAt: now.toISOString(),
+            packages: packageNames,
+            packageCount: packageNames.length,
+            packagesSyncedAt: now.toISOString(),
+        };
     }
 }
 

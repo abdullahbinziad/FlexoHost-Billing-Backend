@@ -19,6 +19,7 @@ export interface IService extends Document {
     graceUntil?: Date;
     suspendedAt?: Date;
     terminatedAt?: Date;
+    cancelledAt?: Date;
     provisioning?: ProvisioningMeta;
     lastInvoicedDueDate?: Date;
     meta?: Record<string, any>; // Small safe JSON for extra dynamic details

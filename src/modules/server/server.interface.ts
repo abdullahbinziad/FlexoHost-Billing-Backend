@@ -52,6 +52,9 @@ export interface IServer {
     /** Last known cPanel account count from WHM (display only; provisioning uses live getWhmAccountCount). */
     accountCount?: number;
     accountCountSyncedAt?: Date;
+    /** Last synced WHM package names from this server. */
+    whmPackages?: string[];
+    whmPackagesSyncedAt?: Date;
     createdBy?: mongoose.Types.ObjectId;
 
     createdAt?: Date;

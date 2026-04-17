@@ -20,7 +20,7 @@ import { promotionService } from '../promotion/promotion.service';
 import { OrderStatus } from './order.interface';
 import { DomainActionType } from './order-item.interface';
 import { TLDModel } from '../domain/tld/tld.model';
-import { ServiceType, normalizeBillingCycle } from '../services/types/enums';
+import { ServiceType, ServiceStatus, normalizeBillingCycle } from '../services/types/enums';
 import { ControlPanelType } from '../services/models/hosting-details.model';
 import logger from '../../utils/logger';
 import { escapeRegex } from '../../utils/string.util';
@@ -29,6 +29,12 @@ import { AffiliateReferralSource } from '../affiliate/affiliate.types';
 import { getBillingSettings } from '../billing-settings/billing-settings.service';
 import { SUPPORTED_CURRENCIES } from '../../config/currency.config';
 import { InvoiceStatus } from '../invoice/invoice.interface';
+import { serviceRepository } from '../services/repositories';
+import { getDetailPersister } from '../services/provisioning/detail-persisters';
+import { provisioningProviderRegistry } from '../services/provisioning/provider-registry';
+import { registerProvisioningProviders } from '../services/provisioning/providers';
+import { computeInitialNextDueDate } from '../services/utils/billing-cycle.util';
+import { encrypt } from '../../utils/encryption';
 
 /** Default payment methods for admin order creation (extend via settings if needed) */
 const DEFAULT_PAYMENT_METHODS = [
@@ -40,6 +46,14 @@ const DEFAULT_PAYMENT_METHODS = [
     { id: 'bkash', name: 'bKash' },
     { id: 'nagad', name: 'Nagad' },
 ];
+let provisioningProvidersRegistered = false;
+
+function ensureProvisioningProvidersRegistered(): void {
+    if (!provisioningProvidersRegistered) {
+        registerProvisioningProviders();
+        provisioningProvidersRegistered = true;
+    }
+}
 
 /** Result of creating one hosting account (for runModuleCreate and provisioning provider). */
 export interface CreateHostingAccountResult {
@@ -215,6 +229,10 @@ class OrderService {
                     serverGroup: product.module?.serverGroup,
                     serverGroups: parseServerGroups((product as any)?.module?.serverGroups ?? product.module?.serverGroup),
                     primaryDomain,
+                    /** Exact WHM package name from product module (used for provisioning + admin UI). */
+                    whmPackageName: (product as any)?.module?.packageName
+                        ? String((product as any).module.packageName).trim()
+                        : '',
                 };
 
                 orderItemsPayloads.push({
@@ -237,7 +255,12 @@ class OrderService {
 
                 invoiceItemsPayloads.push({
                     type: product.type.toUpperCase() as any,
-                    description: qty > 1 ? `${product.name} - ${billingCycle} (×${qty})` : `${product.name} - ${billingCycle}`,
+                    description: (() => {
+                        const cycleLabel = `${product.name} - ${billingCycle}`;
+                        const domainLabel = primaryDomain ? ` (${primaryDomain})` : '';
+                        const qtyLabel = qty > 1 ? ` (×${qty})` : '';
+                        return `${cycleLabel}${domainLabel}${qtyLabel}`;
+                    })(),
                     amount: hostingTotal,
                     meta: { type: 'HOSTING' }
                 });
@@ -395,7 +418,61 @@ class OrderService {
             }], { session, ordered: true });
 
             // 6. Create Order Items
-            await OrderItem.create(orderItemsPayloads.map(item => ({ ...item, orderId: order._id })), { session, ordered: true });
+            const createdOrderItems = await OrderItem.create(
+                orderItemsPayloads.map((item) => ({ ...item, orderId: order._id })),
+                { session, ordered: true }
+            );
+
+            // 6b. Create pending services immediately so clients/admin can see ordered services before payment.
+            for (const orderItem of createdOrderItems as any[]) {
+                const svcSeq = await getNextSequence('service');
+                const billingCycle = normalizeBillingCycle(orderItem.billingCycle);
+                const cfg = orderItem.configSnapshot || {};
+                const serviceMeta: Record<string, string> = {};
+                if (orderItem.productId) {
+                    serviceMeta.adminPackageProductId = orderItem.productId.toString();
+                }
+                if (orderItem.nameSnapshot) {
+                    serviceMeta.adminPackageName = String(orderItem.nameSnapshot).trim();
+                }
+                const itemType = String(orderItem.type || '').toUpperCase();
+                if (itemType === 'HOSTING') {
+                    if (cfg.serverLocation) {
+                        const loc = String(cfg.serverLocation).trim();
+                        serviceMeta.orderedServerLocation = loc;
+                    }
+                    if (cfg.serverGroup) {
+                        serviceMeta.orderedServerGroup = String(cfg.serverGroup).trim();
+                    }
+                    if (cfg.whmPackageName) {
+                        serviceMeta.orderedWhmPackage = String(cfg.whmPackageName).trim();
+                    }
+                }
+
+                await serviceRepository.create({
+                    serviceNumber: formatSequenceId('SVC', svcSeq),
+                    clientId: clientId as any,
+                    userId: userId as any,
+                    orderId: order._id as any,
+                    orderItemId: orderItem._id as any,
+                    invoiceId: undefined,
+                    type: (typeof orderItem.type === 'string' ? orderItem.type.toUpperCase() : orderItem.type) as any,
+                    status: ServiceStatus.PENDING,
+                    billingCycle,
+                    currency,
+                    priceSnapshot: {
+                        setup: Number(orderItem?.pricingSnapshot?.setup || 0),
+                        recurring: Number(orderItem?.pricingSnapshot?.recurring || orderItem?.pricingSnapshot?.total || 0),
+                        discount: Number(orderItem?.pricingSnapshot?.discount || 0),
+                        tax: Number(orderItem?.pricingSnapshot?.tax || 0),
+                        total: Number(orderItem?.pricingSnapshot?.total || 0),
+                        currency,
+                    },
+                    autoRenew: billingCycle !== 'one-time',
+                    nextDueDate: computeInitialNextDueDate(new Date(), billingCycle),
+                    meta: Object.keys(serviceMeta).length > 0 ? serviceMeta : undefined,
+                } as any);
+            }
 
             const skipInvoice = isAdminContext && payload.generateInvoice === false;
             let invoice: any = null;
@@ -447,6 +524,11 @@ class OrderService {
                 // Update order with invoiceId
                 order.invoiceId = invoice._id as any;
                 await order.save({ session });
+                await Service.updateMany(
+                    { orderId: order._id },
+                    { $set: { invoiceId: invoice._id } },
+                    { session }
+                );
             }
 
             // Record promotion usage for analytics (inside transaction) - even when invoice is skipped
@@ -983,6 +1065,7 @@ class OrderService {
                 domain: item.configSnapshot?.primaryDomain ?? item.configSnapshot?.domain ?? item.domain ?? null,
                 provisioningStatus: service?.status ?? null,
                 provisioningError: service?.provisioning?.lastError ?? null,
+                provisioningUpdatedAt: service?.updatedAt ?? null,
             };
         });
 
@@ -1002,6 +1085,7 @@ class OrderService {
             whmPackage?: string;
             username?: string;
             password?: string;
+            primaryDomainOverride?: string;
             updateOrderItemMeta?: boolean;
             sendWelcomeEmail?: boolean;
             forceCreate?: boolean;
@@ -1012,6 +1096,7 @@ class OrderService {
             whmPackage: chosenPackage,
             username: chosenUsername,
             password: chosenPassword,
+            primaryDomainOverride,
             updateOrderItemMeta = true,
             sendWelcomeEmail = false,
             forceCreate = false,
@@ -1044,7 +1129,7 @@ class OrderService {
         }
 
         const config = orderItem?.configSnapshot || {};
-        const primaryDomain = String(config.primaryDomain ?? config.domain ?? '').trim();
+        const primaryDomain = String(primaryDomainOverride || config.primaryDomain || config.domain || '').trim();
         if (!primaryDomain) {
             throw new Error('Primary domain is required for cPanel account creation');
         }
@@ -1076,11 +1161,16 @@ class OrderService {
             const serversToConsider = eligible.length > 0 ? eligible : candidateServers;
             const withCount = await Promise.all(serversToConsider.map(async (s: any) => {
                 const { count, error } = await serverService.getWhmAccountCount(s._id.toString());
-                // When WHM account count cannot be read (error), use 0 so the server can still be selected; createAccount will fail with a clear error if WHM is unreachable.
-                const effectiveCount = error ? 0 : count;
-                return { server: s, count: effectiveCount, maxAccounts: s.maxAccounts ?? 200, countError: error };
+                return {
+                    server: s,
+                    count,
+                    maxAccounts: Number(s.maxAccounts ?? 200),
+                    countError: error,
+                };
             }));
-            const withCapacity = withCount.filter((w: any) => w.count < w.maxAccounts);
+            // Never select servers when WHM account count could not be verified.
+            const readableCounts = withCount.filter((w: any) => !w.countError);
+            const withCapacity = readableCounts.filter((w: any) => w.count < w.maxAccounts);
             withCapacity.sort((a: any, b: any) => a.count - b.count);
             const picked = withCapacity[0]?.server;
             if (!picked) {
@@ -1093,6 +1183,24 @@ class OrderService {
         }
         if (!serverId) {
             throw new Error('No server selected for hosting account');
+        }
+
+        // Hard safety check: even when server is manually/chosen provided, do not allow provisioning on full servers.
+        const selectedServer = await Server.findById(serverId).select('name hostname maxAccounts').lean();
+        if (!selectedServer) {
+            throw new Error('Selected server not found');
+        }
+        const { count: selectedCount, error: selectedCountError } = await serverService.getWhmAccountCount(serverId);
+        if (selectedCountError) {
+            throw new Error(
+                `Could not verify account count for selected server ${selectedServer.name || selectedServer.hostname || serverId}: ${selectedCountError}`
+            );
+        }
+        const selectedMax = Number((selectedServer as any).maxAccounts ?? 200);
+        if (selectedCount >= selectedMax) {
+            throw new Error(
+                `Selected server is at capacity (${selectedCount}/${selectedMax}). Please choose a server with available capacity.`
+            );
         }
 
         const whmResult = await serverService.getWhmClientOrError(serverId);
@@ -1183,9 +1291,11 @@ class OrderService {
         whmPackage?: string;
         username?: string;
         password?: string;
+        registrar?: string;
         runModuleCreate?: boolean;
         sendWelcomeEmail?: boolean;
     }> }, _userId?: string) {
+        ensureProvisioningProvidersRegistered();
         const order = await this.getOrderWithItems(orderId);
         if (!order) throw new Error('Order not found');
 
@@ -1206,15 +1316,15 @@ class OrderService {
             const clientDoc = orderDoc?.clientId ? await Client.findById(orderDoc.clientId).select('contactEmail').lean() : null;
             clientEmail = clientDoc?.contactEmail || '';
         }
-        const results: Array<{ itemIndex: number; success: boolean; serverId?: string; accountUsername?: string; error?: string; created?: boolean }> = [];
+        const results: Array<{ itemIndex: number; success: boolean; orderItemId?: string; serverId?: string; accountUsername?: string; error?: string; created?: boolean }> = [];
 
         for (const spec of body.items || []) {
-            const { itemIndex, orderItemId: specOrderItemId, serverId: chosenServerId, whmPackage: chosenPackage, username: chosenUsername, password: chosenPassword, runModuleCreate, sendWelcomeEmail } = spec;
+            const { itemIndex, orderItemId: specOrderItemId, serverId: chosenServerId, whmPackage: chosenPackage, username: chosenUsername, password: chosenPassword, registrar: chosenRegistrar, runModuleCreate, sendWelcomeEmail } = spec;
             const item = specOrderItemId
                 ? items.find((i: any) => String(i._id) === String(specOrderItemId))
                 : items[itemIndex];
-            if (!item || (item as any).type !== ServiceType.HOSTING) {
-                results.push({ itemIndex, success: false, error: 'Item not found or not HOSTING' });
+            if (!item || ![ServiceType.HOSTING, ServiceType.DOMAIN].includes((item as any).type)) {
+                results.push({ itemIndex, success: false, error: 'Item not found or not provisionable' });
                 continue;
             }
             if (!runModuleCreate) {
@@ -1223,24 +1333,176 @@ class OrderService {
             }
 
             try {
-                const created = await this.createHostingAccountForOrderItem(
-                    item,
-                    order,
-                    clientEmail,
-                    {
-                        serverId: chosenServerId,
-                        whmPackage: chosenPackage,
-                        username: chosenUsername,
-                        password: chosenPassword,
-                        updateOrderItemMeta: true,
-                        sendWelcomeEmail: !!sendWelcomeEmail,
+                if ((item as any).type === ServiceType.HOSTING) {
+                    const created = await this.createHostingAccountForOrderItem(
+                        item,
+                        order,
+                        clientEmail,
+                        {
+                            serverId: chosenServerId,
+                            whmPackage: chosenPackage,
+                            username: chosenUsername,
+                            password: chosenPassword,
+                            updateOrderItemMeta: true,
+                            sendWelcomeEmail: !!sendWelcomeEmail,
+                        }
+                    );
+                    let service = await serviceRepository.findByOrderItemId((item as any)._id.toString());
+                    if (!service) {
+                        const svcSeq = await getNextSequence('service');
+                        const billingCycle = normalizeBillingCycle((item as any).billingCycle);
+                        service = await serviceRepository.create({
+                            serviceNumber: formatSequenceId('SVC', svcSeq),
+                            clientId: (order as any).clientId,
+                            userId: (order as any).userId,
+                            orderId: (order as any)._id,
+                            orderItemId: (item as any)._id,
+                            invoiceId: invoiceId as any,
+                            type: ServiceType.HOSTING,
+                            status: ServiceStatus.PROVISIONING,
+                            billingCycle,
+                            currency: (order as any).currency || DEFAULT_CURRENCY,
+                            priceSnapshot: {
+                                setup: Number((item as any)?.pricingSnapshot?.setup || 0),
+                                recurring: Number((item as any)?.pricingSnapshot?.recurring || (item as any)?.pricingSnapshot?.total || 0),
+                                discount: Number((item as any)?.pricingSnapshot?.discount || 0),
+                                tax: Number((item as any)?.pricingSnapshot?.tax || 0),
+                                total: Number((item as any)?.pricingSnapshot?.total || 0),
+                                currency: (order as any).currency || DEFAULT_CURRENCY,
+                            },
+                            autoRenew: true,
+                            nextDueDate: computeInitialNextDueDate(new Date(), billingCycle),
+                        } as any);
                     }
-                );
+                    const persister = getDetailPersister(ServiceType.HOSTING);
+                    if (persister && created.details && Object.keys(created.details).length > 0) {
+                        await persister((service as any)._id, created.details);
+                    }
+                    const serverDoc = created.serverId
+                        ? await Server.findById(created.serverId).select('location').lean()
+                        : null;
+                    const itemCfg = (item as any)?.configSnapshot || {};
+                    const prevMeta = ((service as any).meta || {}) as Record<string, unknown>;
+                    const nextMeta: Record<string, unknown> = {
+                        ...prevMeta,
+                        lastModuleUsername: created.accountUsername,
+                        lastModuleServerId: created.serverId,
+                        lastModuleServerGroup: String(itemCfg.serverGroup || '').trim() || undefined,
+                        lastModuleServerLocation:
+                            (serverDoc as any)?.location
+                                ? String((serverDoc as any).location)
+                                : String(itemCfg.serverLocation || '').trim() || undefined,
+                        lastModuleWhmPackage: String(created.whmPackageName || '').trim() || undefined,
+                        lastModuleUsedAt: new Date().toISOString(),
+                    };
+                    if (created.password) {
+                        nextMeta.lastModulePasswordEncrypted = encrypt(created.password);
+                        nextMeta.lastModulePasswordUpdatedAt = new Date().toISOString();
+                    }
+                    await serviceRepository.updateStatus((service as any)._id.toString(), ServiceStatus.ACTIVE, {
+                        suspendedAt: null as any,
+                        terminatedAt: null as any,
+                        cancelledAt: null as any,
+                        provisioning: {
+                            provider: 'whm',
+                            remoteId: created.accountUsername,
+                            lastSyncedAt: new Date(),
+                        } as any,
+                        meta: nextMeta,
+                    } as any);
+                    const { auditLogSafe } = await import('../activity-log/activity-log.service');
+                    auditLogSafe({
+                        message: created.actuallyCreated !== false ? `Hosting module created for order ${orderId}: ${created.accountUsername}@${created.primaryDomain}` : `Hosting module linked for order ${orderId}`,
+                        type: 'module_created',
+                        category: 'service',
+                        actorType: _userId ? 'user' : 'system',
+                        actorId: _userId,
+                        source: 'manual',
+                        targetType: 'order',
+                        targetId: orderId,
+                        clientId: (order as any).clientId?.toString?.(),
+                        orderId,
+                        meta: { serverId: created.serverId, accountUsername: created.accountUsername, primaryDomain: created.primaryDomain, actuallyCreated: created.actuallyCreated } as Record<string, unknown>,
+                    });
+                    results.push({
+                        itemIndex,
+                        success: true,
+                        orderItemId: String((item as any)._id || ''),
+                        serverId: created.serverId,
+                        accountUsername: created.accountUsername,
+                        created: created.actuallyCreated !== false,
+                    });
+                    continue;
+                }
+
+                const clientDoc = await Client.findById((order as any).clientId).lean();
+                const adjustedConfig = { ...(item as any).configSnapshot };
+                if (chosenRegistrar && typeof chosenRegistrar === 'string') {
+                    adjustedConfig.registrar = chosenRegistrar;
+                    await OrderItem.findByIdAndUpdate((item as any)._id, { $set: { configSnapshot: adjustedConfig } });
+                }
+                const domainOrderItem = { ...(item as any), configSnapshot: adjustedConfig };
+
+                let service = await serviceRepository.findByOrderItemId((item as any)._id.toString());
+                if (!service) {
+                    const svcSeq = await getNextSequence('service');
+                    const billingCycle = normalizeBillingCycle((item as any).billingCycle);
+                    service = await serviceRepository.create({
+                        serviceNumber: formatSequenceId('SVC', svcSeq),
+                        clientId: (order as any).clientId,
+                        userId: (order as any).userId,
+                        orderId: (order as any)._id,
+                        orderItemId: (item as any)._id,
+                        invoiceId: invoiceId as any,
+                        type: ServiceType.DOMAIN,
+                        status: ServiceStatus.PROVISIONING,
+                        billingCycle,
+                        currency: (order as any).currency || DEFAULT_CURRENCY,
+                        priceSnapshot: {
+                            setup: 0,
+                            recurring: (item as any).pricingSnapshot?.total || 0,
+                            discount: 0,
+                            tax: 0,
+                            total: (item as any).pricingSnapshot?.total || 0,
+                            currency: (order as any).currency || DEFAULT_CURRENCY,
+                        },
+                        autoRenew: true,
+                        nextDueDate: computeInitialNextDueDate(new Date(), billingCycle),
+                    } as any);
+                }
+
+                const provider = provisioningProviderRegistry.get(ServiceType.DOMAIN);
+                if (!provider) throw new Error('Domain provisioning provider not available');
+                const provisionResult = await provider.provision({
+                    order,
+                    orderItem: domainOrderItem,
+                    client: clientDoc,
+                    service,
+                    reprovision: service.status === ServiceStatus.PROVISIONING || service.status === ServiceStatus.FAILED,
+                });
+                if (!provisionResult.success) {
+                    throw new Error(provisionResult.error || 'Domain module action failed');
+                }
+
+                const persister = getDetailPersister(ServiceType.DOMAIN);
+                if (persister && provisionResult.details && Object.keys(provisionResult.details).length > 0) {
+                    await persister((service as any)._id, provisionResult.details);
+                }
+                await serviceRepository.updateStatus((service as any)._id.toString(), ServiceStatus.ACTIVE, {
+                    suspendedAt: null as any,
+                    terminatedAt: null as any,
+                    provisioning: {
+                        provider: provisionResult.providerName || adjustedConfig.registrar || 'registrar',
+                        remoteId: provisionResult.remoteId ?? undefined,
+                        lastSyncedAt: new Date(),
+                    } as any,
+                } as any);
+
                 const { auditLogSafe } = await import('../activity-log/activity-log.service');
                 auditLogSafe({
-                    message: created.actuallyCreated !== false ? `Hosting module created for order ${orderId}: ${created.accountUsername}@${created.primaryDomain}` : `Hosting module linked for order ${orderId}`,
-                    type: 'module_created',
-                    category: 'service',
+                    message: `Domain module ${domainOrderItem.actionType === 'TRANSFER' ? 'transfer' : 'registration'} completed for ${(domainOrderItem.configSnapshot?.domainName || 'domain')}`,
+                    type: domainOrderItem.actionType === 'TRANSFER' ? 'domain_transferred' : 'domain_registered',
+                    category: 'domain',
                     actorType: _userId ? 'user' : 'system',
                     actorId: _userId,
                     source: 'manual',
@@ -1248,14 +1510,13 @@ class OrderService {
                     targetId: orderId,
                     clientId: (order as any).clientId?.toString?.(),
                     orderId,
-                    meta: { serverId: created.serverId, accountUsername: created.accountUsername, primaryDomain: created.primaryDomain, actuallyCreated: created.actuallyCreated } as Record<string, unknown>,
+                    serviceId: (service as any)._id?.toString?.(),
+                    meta: { registrar: chosenRegistrar || adjustedConfig.registrar } as Record<string, unknown>,
                 });
                 results.push({
                     itemIndex,
                     success: true,
-                    serverId: created.serverId,
-                    accountUsername: created.accountUsername,
-                    created: created.actuallyCreated !== false,
+                    created: true,
                 });
             } catch (err: any) {
                 results.push({

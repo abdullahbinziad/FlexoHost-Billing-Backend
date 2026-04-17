@@ -96,11 +96,48 @@ export class WhmApiClient {
         return { success: true, message: 'Connected', version: data?.version };
     }
 
-    /** List WHM packages (for product linking). */
-    async listPackages(): Promise<any[]> {
+    /**
+     * List WHM hosting packages (WHM API1 /listpkgs).
+     * The docs show nested response variants; normalize all common shapes to
+     * [{ name, ...raw }] so callers can reliably read package names.
+     */
+    async listPackages(): Promise<Array<{ name: string; [k: string]: any }>> {
         const data = await this.request('listpkgs');
-        const p = this.payload<{ package?: any[] }>(data);
-        return p?.package || [];
+        const p = this.payload<any>(data);
+
+        const rawList =
+            p?.package ||
+            p?.packages ||
+            p?.pkg ||
+            p?.pkgs ||
+            data?.data?.package ||
+            data?.data?.packages ||
+            data?.data?.pkg ||
+            data?.data?.pkgs ||
+            [];
+
+        // Array form: [{ name: "basic" }, ...] OR [{ pkg: "basic" }, ...]
+        if (Array.isArray(rawList)) {
+            return rawList
+                .map((item: any) => {
+                    const name = String(item?.name || item?.pkg || item?.package || '').trim();
+                    if (!name) return null;
+                    return { name, ...item };
+                })
+                .filter(Boolean) as Array<{ name: string; [k: string]: any }>;
+        }
+
+        // Object map form: { basic: {...}, pro: {...} }
+        if (rawList && typeof rawList === 'object') {
+            return Object.entries(rawList).map(([key, value]) => {
+                const valueObj = value && typeof value === 'object' ? value : {};
+                const nestedName = String((valueObj as any).name || '').trim();
+                const name = nestedName || key;
+                return { name, ...(valueObj as Record<string, unknown>) };
+            });
+        }
+
+        return [];
     }
 
     /** List cPanel accounts on this server (for capacity / fill-until-full). */

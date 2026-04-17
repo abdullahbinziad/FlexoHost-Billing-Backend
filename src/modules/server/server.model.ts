@@ -63,6 +63,8 @@ const serverSchema = new Schema<IServerDocument, IServerModel>(
         lastConnectionStatus: { type: String, enum: ['success', 'failed'], default: null },
         accountCount: { type: Number },
         accountCountSyncedAt: { type: Date },
+        whmPackages: { type: [String], default: [] },
+        whmPackagesSyncedAt: { type: Date },
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     },
     {

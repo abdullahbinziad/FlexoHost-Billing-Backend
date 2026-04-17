@@ -241,6 +241,45 @@ class ProductService {
     }
 
     /**
+     * Duplicate an existing product into a new one.
+     * Name is suffixed with " (Copy)" and pid is cleared so it can be re-assigned if needed.
+     */
+    async duplicateProduct(id: string): Promise<IProduct> {
+        const source = await Product.findById(id).lean<IProduct & { _id: any }>();
+        if (!source) {
+            throw new ApiError(404, 'Product not found');
+        }
+
+        const baseName = String(source.name || '').trim() || 'Cloned product';
+        let newName = `${baseName} (Copy)`;
+        // Ensure name uniqueness by appending numeric suffix if necessary
+        let counter = 1;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            // Check for existing product with same name (case-insensitive)
+            // Reuse escapeRegex to avoid special-char issues
+            const existing = await Product.findOne({
+                name: { $regex: new RegExp(`^${escapeRegex(newName)}$`, 'i') },
+            }).lean();
+            if (!existing) break;
+            counter += 1;
+            newName = `${baseName} (Copy ${counter})`;
+        }
+
+        const payload: Partial<IProduct> = {
+            ...source,
+        };
+        delete (payload as any)._id;
+        delete (payload as any).pid;
+        delete (payload as any).createdAt;
+        delete (payload as any).updatedAt;
+        payload.name = newName;
+
+        const created = await Product.create(payload);
+        return created;
+    }
+
+    /**
      * Toggle product visibility
      */
     async toggleVisibility(id: string, isHidden: boolean): Promise<IProduct | null> {

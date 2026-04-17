@@ -4,6 +4,7 @@ import { ServiceType } from '../types/enums';
 import { serverService } from '../../server/server.service';
 import Server from '../../server/server.model';
 import OrderItem from '../../order/order-item.model';
+import Product from '../../product/product.model';
 import HostingServiceDetails from '../models/hosting-details.model';
 import type { WhmApiClient } from '../../whm/whm-api-client';
 import logger from '../../../utils/logger';
@@ -64,7 +65,7 @@ export class ServiceClientService {
         if (!services.length) return [];
         const orderItemIds = services.map((s) => s.orderItemId);
         const orderItems = await OrderItem.find({ _id: { $in: orderItemIds } })
-            .select('_id nameSnapshot')
+            .select('_id nameSnapshot configSnapshot')
             .lean();
         const orderItemMap = Object.fromEntries(orderItems.map((o: any) => [o._id.toString(), o]));
 
@@ -97,8 +98,15 @@ export class ServiceClientService {
             svc.displayName = oi?.nameSnapshot || 'Hosting';
             if (s.type === ServiceType.HOSTING) {
                 const h = hostingMap[(s._id as any)?.toString?.() || s._id];
-                svc.identifier = h?.primaryDomain || '—';
-                svc.serverLocation = h?.serverLocation || undefined;
+                const meta = (svc.meta || {}) as Record<string, unknown>;
+                const fromOrderLoc = oi?.configSnapshot?.serverLocation;
+                const orderedMetaLoc = meta.orderedServerLocation;
+                svc.identifier = h?.primaryDomain || oi?.configSnapshot?.primaryDomain || oi?.configSnapshot?.domain || '—';
+                svc.serverLocation =
+                    h?.serverLocation ||
+                    (fromOrderLoc ? String(fromOrderLoc).trim() : undefined) ||
+                    (orderedMetaLoc ? String(orderedMetaLoc).trim() : undefined) ||
+                    undefined;
             }
             return svc;
         });
@@ -113,12 +121,49 @@ export class ServiceClientService {
             return null; // Don't leak exists status
         }
 
-        // Enrich with product/package name (WHMCS-style) from order item
-        const orderItem = await OrderItem.findById(result.service.orderItemId).select('nameSnapshot').lean();
+        // Enrich with product/package + order config (location, group) from order item — source of truth for checkout choices
+        const orderItem = await OrderItem.findById(result.service.orderItemId)
+            .select('nameSnapshot configSnapshot productId type')
+            .lean();
         const serviceObj = result.service.toObject ? result.service.toObject() : { ...result.service };
-        serviceObj.displayName = (orderItem as any)?.nameSnapshot || 'Hosting';
+        const oi = orderItem as any;
+        const cfg = oi?.configSnapshot || {};
+        serviceObj.displayName = oi?.nameSnapshot || 'Hosting';
         if (result.details && (result.details as any).packageId) {
             (serviceObj as any).packageId = (result.details as any).packageId;
+        }
+
+        const meta = { ...((serviceObj as any).meta || {}) } as Record<string, unknown>;
+        if (oi?.productId && !meta.adminPackageProductId) {
+            meta.adminPackageProductId = oi.productId.toString();
+        }
+        if (oi?.nameSnapshot && !meta.adminPackageName) {
+            meta.adminPackageName = String(oi.nameSnapshot).trim();
+        }
+        if (String(oi?.type || '').toUpperCase() === 'HOSTING') {
+            if (cfg.serverLocation && !meta.orderedServerLocation) {
+                meta.orderedServerLocation = String(cfg.serverLocation).trim();
+            }
+            if (cfg.serverGroup && !meta.orderedServerGroup) {
+                meta.orderedServerGroup = String(cfg.serverGroup).trim();
+            }
+            if (cfg.whmPackageName && !meta.orderedWhmPackage) {
+                meta.orderedWhmPackage = String(cfg.whmPackageName).trim();
+            }
+        }
+        if (
+            String(oi?.type || '').toUpperCase() === 'HOSTING' &&
+            oi?.productId &&
+            !meta.orderedWhmPackage
+        ) {
+            const prod = await Product.findById(oi.productId).select('module.packageName').lean();
+            const pn = (prod as any)?.module?.packageName;
+            if (pn) meta.orderedWhmPackage = String(pn).trim();
+        }
+        (serviceObj as any).meta = meta;
+        const orderedLoc = meta.orderedServerLocation ? String(meta.orderedServerLocation) : '';
+        if (orderedLoc && !(serviceObj as any).serverLocation) {
+            (serviceObj as any).serverLocation = orderedLoc;
         }
 
         // Resolve details for response; backfill serverLocation from Server when missing (e.g. legacy hosting)
@@ -135,6 +180,18 @@ export class ServiceClientService {
             if (server?.location) {
                 detailsForResponse.serverLocation = server.location;
                 await hostingDetailsRepository.updateByServiceId(serviceId, { serverLocation: server.location } as any);
+            }
+        }
+
+        // Pending hosting: no HostingServiceDetails row yet — expose checkout choices for admin/client UI
+        if (result.service.type === ServiceType.HOSTING && !detailsForResponse && oi) {
+            const c = oi.configSnapshot || {};
+            if (c.primaryDomain || c.domain || c.serverLocation || orderedLoc) {
+                detailsForResponse = {
+                    primaryDomain: (c.primaryDomain || c.domain || '').trim() || undefined,
+                    serverLocation: (c.serverLocation ? String(c.serverLocation).trim() : '') || orderedLoc || undefined,
+                    resourceLimits: { diskMb: 0, bandwidthMb: 0, inodeLimit: 0 },
+                };
             }
         }
 

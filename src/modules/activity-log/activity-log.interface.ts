@@ -45,6 +45,7 @@ export type AuditEventType =
     | 'service_suspended'
     | 'service_unsuspended'
     | 'service_terminated'
+    | 'service_cancelled'
     | 'service_renewed'
     | 'hosting_provisioned'
     | 'hosting_suspended'

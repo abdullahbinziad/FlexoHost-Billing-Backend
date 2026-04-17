@@ -96,7 +96,7 @@ export class OrderController {
         if (!['admin', 'superadmin', 'staff'].includes(user.role)) {
             return ApiResponse.error(res, 403, 'Only staff can run module create');
         }
-        const body = req.body as { items: Array<{ itemIndex: number; orderItemId?: string; serverId?: string; whmPackage?: string; username?: string; password?: string; runModuleCreate?: boolean; sendWelcomeEmail?: boolean }> };
+        const body = req.body as { items: Array<{ itemIndex: number; orderItemId?: string; serverId?: string; whmPackage?: string; username?: string; password?: string; registrar?: string; runModuleCreate?: boolean; sendWelcomeEmail?: boolean }> };
         const result = await orderService.runModuleCreate(orderId, body, user.id);
         return ApiResponse.success(res, 200, 'Run module create completed', result);
     });

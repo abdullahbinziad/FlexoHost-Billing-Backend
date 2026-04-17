@@ -182,22 +182,23 @@ class InvoiceService {
         if (status === InvoiceStatus.PAID) {
             invoice.balanceDue = 0;
             invoice.credit = invoice.total;
-
-            // Handle Order and Service Activation seamlessly with new background Provisioning hook queue processing.
-            if (invoice.orderId) {
-                await handleInvoicePaid(invoice._id as any);
-            }
-            // Trigger Unsuspend Evaluation for Renewals
-            await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
-            // Advance due dates
-            await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
         } else if (status === InvoiceStatus.UNPAID) {
             invoice.credit = 0;
             invoice.balanceDue = invoice.total;
         }
 
+        // Persist before provisioning: handleInvoicePaid reloads the invoice from DB and requires PAID + zero balance.
         await invoice.save();
         await this.setInvoiceFxSnapshot(invoice);
+
+        if (status === InvoiceStatus.PAID) {
+            // Order / service activation (inline hosting WHM create, jobs for other types)
+            if (invoice.orderId) {
+                await handleInvoicePaid(invoice._id as any);
+            }
+            await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
+            await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
+        }
 
         if (status === InvoiceStatus.PAID) {
             await affiliateService.processPaidInvoice(invoice._id.toString());

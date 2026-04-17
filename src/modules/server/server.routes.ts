@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { serverController } from './server.controller';
 import { protect, restrictTo } from '../../middlewares/auth';
+import { requirePermission } from '../../middlewares/requirePermission';
 
 const router = Router();
 
@@ -10,17 +11,19 @@ router.use(restrictTo('admin', 'superadmin'));
 
 router
     .route('/')
-    .get(serverController.getAll)
-    .post(serverController.create);
+    .get(requirePermission('servers:list'), serverController.getAll)
+    .post(requirePermission('servers:create'), serverController.create);
 
 router
     .route('/:id')
-    .get(serverController.getOne)
-    .patch(serverController.update)
-    .delete(serverController.delete);
+    .get(requirePermission('servers:read'), serverController.getOne)
+    .patch(requirePermission('servers:update'), serverController.update)
+    .delete(requirePermission('servers:delete'), serverController.delete);
 
-router.post('/:id/test-connection', serverController.testConnection);
-router.get('/:id/packages', serverController.getPackages);
-router.post('/:id/sync-accounts', serverController.syncAccounts);
+router.post('/:id/test-connection', requirePermission('servers:test_connection'), serverController.testConnection);
+router.get('/:id/packages', requirePermission('servers:packages'), serverController.getPackages);
+router.post('/:id/sync-accounts', requirePermission('servers:sync_accounts'), serverController.syncAccounts);
+
+router.post('/:id/duplicate', requirePermission('servers:duplicate'), serverController.duplicate);
 
 export default router;

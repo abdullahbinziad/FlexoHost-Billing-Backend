@@ -54,6 +54,22 @@ class ServerController {
         return ApiResponse.success(res, 200, 'Server updated successfully', server);
     });
 
+    duplicate = catchAsync(async (req: Request, res: Response) => {
+        const userId = (req as AuthRequest).user?._id?.toString();
+        const cloned = await serverService.duplicateServer(req.params.id, userId);
+        auditLogSafe({
+            message: `Server duplicated from ${req.params.id} to ${(cloned as any)._id?.toString?.()}`,
+            type: 'server_created',
+            category: 'settings',
+            actorType: userId ? 'user' : 'system',
+            actorId: userId,
+            source: 'manual',
+            targetType: 'server',
+            targetId: (cloned as any)._id?.toString?.(),
+        });
+        return ApiResponse.created(res, 'Server duplicated successfully', cloned);
+    });
+
     delete = catchAsync(async (req: Request, res: Response) => {
         const server = await serverService.deleteServer(req.params.id);
         if (!server) {
@@ -83,7 +99,7 @@ class ServerController {
         if ('error' in result) {
             return ApiResponse.error(res, 400, result.error, null);
         }
-        return ApiResponse.success(res, 200, 'Account count synced', result);
+        return ApiResponse.success(res, 200, 'Server data synced', result);
     });
 }
 

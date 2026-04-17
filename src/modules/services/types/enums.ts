@@ -11,7 +11,10 @@ export enum ServiceStatus {
     PROVISIONING = 'PROVISIONING',
     ACTIVE = 'ACTIVE',
     SUSPENDED = 'SUSPENDED',
+    /** Ended on the server (WHM terminate, etc.) */
     TERMINATED = 'TERMINATED',
+    /** Cancelled before activation — no WHM terminate; distinct from terminated */
+    CANCELLED = 'CANCELLED',
     FAILED = 'FAILED',
 }
 

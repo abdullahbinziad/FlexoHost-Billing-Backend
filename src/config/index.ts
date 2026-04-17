@@ -80,6 +80,7 @@ interface Config {
         enabled: boolean;
         runOnStart: boolean;
         renewalsIntervalMs: number;
+        billableItemsRecurringIntervalMs: number;
         overdueSuspensionsIntervalMs: number;
         invoiceRemindersIntervalMs: number;
         terminationsIntervalMs: number;
@@ -218,6 +219,7 @@ const config: Config = {
         enabled: (process.env.CRON_ENABLED || 'true').toLowerCase() !== 'false',
         runOnStart: (process.env.CRON_RUN_ON_START || 'false').toLowerCase() === 'true',
         renewalsIntervalMs: parseInt(process.env.CRON_RENEWALS_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
+        billableItemsRecurringIntervalMs: parseInt(process.env.CRON_BILLABLE_ITEMS_RECURRING_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
         overdueSuspensionsIntervalMs: parseInt(process.env.CRON_OVERDUE_SUSPENSIONS_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
         invoiceRemindersIntervalMs: parseInt(process.env.CRON_INVOICE_REMINDERS_INTERVAL_MS || `${6 * 60 * 60 * 1000}`, 10),
         terminationsIntervalMs: parseInt(process.env.CRON_TERMINATIONS_INTERVAL_MS || `${12 * 60 * 60 * 1000}`, 10),
