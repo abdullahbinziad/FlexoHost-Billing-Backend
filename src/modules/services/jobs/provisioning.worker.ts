@@ -21,7 +21,9 @@ import Invoice from '../../invoice/invoice.model';
 import { InvoiceStatus } from '../../invoice/invoice.interface';
 
 let providersRegistered = false;
-const PROVISIONING_STEP_TIMEOUT_MS = 3 * 1000;
+const _envProvMs = Number(process.env.PROVISIONING_STEP_TIMEOUT_MS);
+const PROVISIONING_STEP_TIMEOUT_MS =
+    Number.isFinite(_envProvMs) && _envProvMs >= 30000 ? _envProvMs : 120000;
 
 function ensureProvidersRegistered(): void {
     if (!providersRegistered) {

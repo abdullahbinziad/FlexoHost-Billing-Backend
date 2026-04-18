@@ -35,6 +35,7 @@ import { provisioningProviderRegistry } from '../services/provisioning/provider-
 import { registerProvisioningProviders } from '../services/provisioning/providers';
 import { computeInitialNextDueDate } from '../services/utils/billing-cycle.util';
 import { encrypt } from '../../utils/encryption';
+import type { WhmApiClient } from '../whm/whm-api-client';
 
 /** Default payment methods for admin order creation (extend via settings if needed) */
 const DEFAULT_PAYMENT_METHODS = [
@@ -93,6 +94,41 @@ function parseServerGroups(raw: unknown): string[] {
         return raw.split(',').map((v) => v.trim()).filter(Boolean);
     }
     return [];
+}
+
+/** Match WHM listaccts domain field to our primary domain (createacct can succeed after HTTP timeout). */
+function normalizeHostingDomainForMatch(d: string): string {
+    return String(d || '')
+        .replace(/^www\./i, '')
+        .split('/')[0]
+        .trim()
+        .toLowerCase();
+}
+
+/**
+ * After createacct errors (timeout or "already exists"), confirm whether WHM actually has the account.
+ */
+async function findCpanelUsernameOnServerAfterCreateFailure(
+    whmClient: WhmApiClient,
+    primaryDomain: string,
+    expectedUsername: string
+): Promise<string | null> {
+    try {
+        const accts = await whmClient.listAccounts();
+        const targetDom = normalizeHostingDomainForMatch(primaryDomain);
+        const expectLower = String(expectedUsername || '').trim().toLowerCase();
+        for (const a of accts || []) {
+            const row = a as Record<string, unknown>;
+            const dom = normalizeHostingDomainForMatch(String(row.domain ?? row.servername ?? ''));
+            const user = String(row.user ?? row.username ?? '').trim();
+            if (!user) continue;
+            if (targetDom && dom && dom === targetDom) return user;
+            if (expectLower && user.toLowerCase() === expectLower) return user;
+        }
+    } catch (e: any) {
+        logger.warn(`[Hosting] listAccounts during reconcile failed: ${e?.message || e}`);
+    }
+    return null;
 }
 
 class OrderService {
@@ -1221,13 +1257,55 @@ class OrderService {
 
         const password = chosenPassword || generateHostingAccountPassword();
         const email = clientEmail || `admin@${primaryDomain}`;
-        await whmClient.createAccount({
-            username,
-            domain: primaryDomain,
-            plan: whmPackageName || 'default',
-            email,
-            password,
-        });
+        try {
+            await whmClient.createAccount({
+                username,
+                domain: primaryDomain,
+                plan: whmPackageName || 'default',
+                email,
+                password,
+            });
+        } catch (createErr: any) {
+            const msg = String(createErr?.message ?? createErr ?? '');
+            const timedOut =
+                msg.includes('timed out') ||
+                msg.includes('AbortError') ||
+                createErr?.name === 'AbortError';
+            const maybeAlreadyThere =
+                /already\s+exists|not\s+available|duplicate|account\s+already/i.test(msg) ||
+                /\(\s*XID\s*[^\)]*\)\s*.+\bexists\b/i.test(msg);
+
+            let reconciled: string | null = null;
+            if (timedOut || maybeAlreadyThere) {
+                reconciled = await findCpanelUsernameOnServerAfterCreateFailure(
+                    whmClient,
+                    primaryDomain,
+                    username
+                );
+            }
+
+            if (reconciled) {
+                username = reconciled.slice(0, 16);
+                logger.info(
+                    `[Hosting] Reconciled cPanel account after WHM create error (${msg.slice(0, 120)}): domain=${primaryDomain} user=${username}`
+                );
+                try {
+                    const { auditLogSafe } = await import('../activity-log/activity-log.service');
+                    auditLogSafe({
+                        message: `cPanel account reconciled after WHM API error for ${primaryDomain} (${username})`,
+                        type: 'hosting_provisioned',
+                        category: 'service',
+                        actorType: 'system',
+                        source: 'system',
+                        meta: { serverId, primaryDomain, accountUsername: username, reconciledAfterWhmError: true },
+                    });
+                } catch {
+                    /* optional */
+                }
+            } else {
+                throw createErr;
+            }
+        }
 
         if (updateOrderItemMeta && orderItem?._id) {
             await OrderItem.findByIdAndUpdate(orderItem._id, {
@@ -1250,9 +1328,13 @@ class OrderService {
         }
 
         const nameservers: string[] = [];
+        let serverLocationForDetails: string | undefined;
         try {
-            const serverDoc = await Server.findById(serverId).select('nameservers').lean();
+            const serverDoc = await Server.findById(serverId).select('nameservers location').lean();
             const ns = (serverDoc as any)?.nameservers;
+            if ((serverDoc as any)?.location) {
+                serverLocationForDetails = String((serverDoc as any).location);
+            }
             if (ns) {
                 if (ns.ns1) nameservers.push(ns.ns1);
                 if (ns.ns2) nameservers.push(ns.ns2);
@@ -1265,6 +1347,7 @@ class OrderService {
         const details: Record<string, unknown> = {
             primaryDomain,
             serverId,
+            serverLocation: serverLocationForDetails,
             controlPanel: ControlPanelType.CPANEL,
             packageId: orderItem?.productId?.toString() || '',
             accountUsername: username,

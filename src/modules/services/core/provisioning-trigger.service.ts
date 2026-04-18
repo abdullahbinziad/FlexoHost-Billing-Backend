@@ -11,6 +11,7 @@ import Server from '../../server/server.model';
 import provisioningWorker from '../jobs/provisioning.worker';
 import { getDetailPersister } from '../provisioning/detail-persisters';
 import logger from '../../../utils/logger';
+import { encrypt } from '../../../utils/encryption';
 
 /**
  * Handles the event when an invoice is fully paid.
@@ -85,6 +86,21 @@ export const handleInvoicePaid = async (invoiceId: string | mongoose.Types.Objec
                         ? await Server.findById(created.serverId).select('location').lean()
                         : null;
                     const existingMeta = ((latestService as any).meta || {}) as Record<string, unknown>;
+                    const nextInlineMeta: Record<string, unknown> = {
+                        ...existingMeta,
+                        lastModuleServerId: created.serverId,
+                        lastModuleWhmPackage: created.whmPackageName,
+                        lastModuleServerGroup: serverGroupMeta || undefined,
+                        lastModuleServerLocation: (serverDoc as any)?.location
+                            ? String((serverDoc as any).location)
+                            : undefined,
+                        lastModuleUsername: created.accountUsername,
+                        lastModuleUsedAt: new Date().toISOString(),
+                    };
+                    if (created.password) {
+                        nextInlineMeta.lastModulePasswordEncrypted = encrypt(created.password);
+                        nextInlineMeta.lastModulePasswordUpdatedAt = new Date().toISOString();
+                    }
                     await serviceRepository.updateStatus((latestService._id as any).toString(), ServiceStatus.ACTIVE, {
                         suspendedAt: null as any,
                         terminatedAt: null as any,
@@ -93,17 +109,7 @@ export const handleInvoicePaid = async (invoiceId: string | mongoose.Types.Objec
                             remoteId: created.accountUsername,
                             lastSyncedAt: new Date(),
                         } as any,
-                        meta: {
-                            ...existingMeta,
-                            lastModuleServerId: created.serverId,
-                            lastModuleWhmPackage: created.whmPackageName,
-                            lastModuleServerGroup: serverGroupMeta || undefined,
-                            lastModuleServerLocation: (serverDoc as any)?.location
-                                ? String((serverDoc as any).location)
-                                : undefined,
-                            lastModuleUsername: created.accountUsername,
-                            lastModuleUsedAt: new Date().toISOString(),
-                        },
+                        meta: nextInlineMeta,
                     } as any);
                 }
                 inlineProvisioned++;

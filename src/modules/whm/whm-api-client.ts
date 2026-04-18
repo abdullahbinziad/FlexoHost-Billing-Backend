@@ -34,7 +34,10 @@ export class WhmApiClient {
             .toLowerCase();
         this.baseUrl = hostname ? `${protocol}://${hostname}:${port}` : '';
         this.authHeader = `whm ${options.username.trim()}:${options.apiToken.trim()}`;
-        this.timeoutMs = options.timeoutMs ?? 30000;
+        const envMs = Number(process.env.WHM_HTTP_TIMEOUT_MS);
+        this.timeoutMs =
+            options.timeoutMs ??
+            (Number.isFinite(envMs) && envMs >= 10000 ? envMs : 120000);
         const rejectUnauthorized = options.rejectUnauthorized !== false;
         this.agent = options.useSSL !== false
             ? new https.Agent({ rejectUnauthorized })
