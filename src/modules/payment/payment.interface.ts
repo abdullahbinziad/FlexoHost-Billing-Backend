@@ -5,6 +5,16 @@ export interface IPaymentGateway {
     // Optional methods can be added later as needed
 }
 
+export enum PaymentInitStatus {
+    SUCCESS = 'SUCCESS',
+    FAILED = 'FAILED',
+}
+
+export enum PaymentValidationStatus {
+    VALID = 'VALID',
+    VALIDATED = 'VALIDATED',
+}
+
 export interface IPaymentInitData {
     total_amount: number;
     currency: string;

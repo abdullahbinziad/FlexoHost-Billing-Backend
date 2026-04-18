@@ -4,6 +4,9 @@
  */
 
 import { escapeHtml } from '../../utils/string.util';
+import { InvoiceStatus } from './invoice.interface';
+
+const INVOICE_PORTAL_PENDING_STATUS = 'pending';
 
 export interface InvoicePdfData {
     invoiceNumber: string;
@@ -43,14 +46,14 @@ function formatCurrency(amount: number, currency: string): string {
 /** Status badge: same classes as portal getInvoiceStatusStyles (light theme) */
 function statusClass(s: string): string {
     const status = (s || '').toLowerCase();
-    if (status === 'paid') return 'invoice-status-paid';
-    if (status === 'unpaid' || status === 'overdue') return 'invoice-status-unpaid';
-    if (status === 'pending') return 'invoice-status-pending';
+    if (status === InvoiceStatus.PAID.toLowerCase()) return 'invoice-status-paid';
+    if (status === InvoiceStatus.UNPAID.toLowerCase() || status === InvoiceStatus.OVERDUE.toLowerCase()) return 'invoice-status-unpaid';
+    if (status === INVOICE_PORTAL_PENDING_STATUS) return 'invoice-status-pending';
     return 'invoice-status-cancelled';
 }
 
 export function buildInvoiceHtml(inv: InvoicePdfData): string {
-    const status = (inv.status || 'unpaid').toLowerCase();
+    const status = (inv.status || InvoiceStatus.UNPAID).toLowerCase();
     const statusBadgeClass = statusClass(inv.status);
 
     const itemsRows = inv.items
@@ -158,7 +161,7 @@ export function buildInvoiceHtml(inv: InvoicePdfData): string {
           </div>
           <div class="invoice-status-wrap">
             <span class="invoice-status-badge ${statusBadgeClass}">${escapeHtml(status)}</span>
-            ${status === 'paid' && inv.paymentMethod ? `<p class="invoice-via">via ${escapeHtml(inv.paymentMethod)}</p>` : ''}
+            ${status === InvoiceStatus.PAID.toLowerCase() && inv.paymentMethod ? `<p class="invoice-via">via ${escapeHtml(inv.paymentMethod)}</p>` : ''}
           </div>
         </div>
         <div class="invoice-header-right">

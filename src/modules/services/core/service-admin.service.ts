@@ -1,6 +1,12 @@
 import { serviceRepository, provisioningJobRepository, hostingDetailsRepository } from '../repositories';
 import ServiceAuditLog, { ServiceAdminAction } from '../models/service-audit-log.model';
-import { ServiceStatus, ProvisioningJobStatus, ServiceType, normalizeBillingCycle } from '../types/enums';
+import {
+    ServiceStatus,
+    ProvisioningJobStatus,
+    ServiceType,
+    normalizeBillingCycle,
+    normalizeServiceStatus,
+} from '../types/enums';
 import { serverService } from '../../server/server.service';
 import provisioningWorker from '../jobs/provisioning.worker';
 import Order from '../../order/order.model';
@@ -71,16 +77,6 @@ export class ServiceAdminService {
         };
     }
 
-    private normalizeStatusInput(status: string): ServiceStatus {
-        const normalized = String(status || '').trim().toUpperCase();
-        if (normalized === 'ACTIVE') return ServiceStatus.ACTIVE;
-        if (normalized === 'SUSPENDED') return ServiceStatus.SUSPENDED;
-        if (normalized === 'TERMINATED') return ServiceStatus.TERMINATED;
-        if (normalized === 'CANCELLED') return ServiceStatus.CANCELLED;
-        if (normalized === 'PROVISIONING') return ServiceStatus.PROVISIONING;
-        if (normalized === 'FAILED') return ServiceStatus.FAILED;
-        return ServiceStatus.PENDING;
-    }
     private async callWhmForHosting(
         serviceId: string,
         action: 'suspend' | 'unsuspend' | 'terminate' | 'changePackage' | 'changePassword',
@@ -450,7 +446,7 @@ export class ServiceAdminService {
         if (!service) throw new Error('Service not found');
 
         const beforeSnapshot = service.toObject();
-        const targetStatus = this.normalizeStatusInput(status);
+        const targetStatus = normalizeServiceStatus(status);
         const extra: Record<string, unknown> = {};
         if (targetStatus === ServiceStatus.ACTIVE) {
             extra.suspendedAt = null;

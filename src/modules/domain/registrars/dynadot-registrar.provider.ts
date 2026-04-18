@@ -26,6 +26,12 @@ import type {
     AccountBalanceResult,
     OrderStatusResult,
 } from '../registrar/registrar.types';
+
+const DYNADOT_TRANSFER_STATUS_RAW = {
+    WAITING: 'waiting',
+    AUTH_CODE_NEEDED_SPACED: 'auth code needed',
+    AUTH_CODE_NEEDED_SNAKE: 'auth_code_needed',
+} as const;
 import { RegistrarError } from '../registrar/registrar.types';
 
 const REGISTRAR_NAME = 'dynadot';
@@ -180,8 +186,9 @@ export class DynadotRegistrarProvider implements IRegistrarProvider {
         const first = Array.isArray(list) ? list[0] : null;
         const status = first?.TransferStatus ?? 'none';
         const normalized: TransferStatusResult['status'] =
-            status === 'waiting' ? 'WAITING' :
-                status === 'auth code needed' || status === 'auth_code_needed' ? 'AUTH_CODE_NEEDED' :
+            status === DYNADOT_TRANSFER_STATUS_RAW.WAITING ? 'WAITING' :
+                status === DYNADOT_TRANSFER_STATUS_RAW.AUTH_CODE_NEEDED_SPACED ||
+                status === DYNADOT_TRANSFER_STATUS_RAW.AUTH_CODE_NEEDED_SNAKE ? 'AUTH_CODE_NEEDED' :
                     /completed|approved|success/i.test(status) ? 'COMPLETED' :
                         /reject|cancel|deny|fail/i.test(status) ? 'REJECTED' : 'PENDING';
         return {

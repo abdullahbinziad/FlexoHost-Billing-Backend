@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
 import paymentService from './payment.service';
-import { IPaymentInitData } from './payment.interface';
+import { IPaymentInitData, PaymentInitStatus } from './payment.interface';
 import { getEffectiveClientId } from '../client-access-grant/effective-client';
 import { AuthRequest } from '../../middlewares/auth';
 import config from '../../config';
@@ -39,7 +39,7 @@ class PaymentController {
 
         const result = await paymentService.payInvoice(invoiceId, gateway, requesterClientId);
 
-        if (result?.status === "FAILED") {
+        if (result?.status === PaymentInitStatus.FAILED) {
             return ApiResponse.error(res, 400, result.failedreason || 'Payment initialization failed', result);
         }
 

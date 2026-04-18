@@ -37,13 +37,16 @@ export class DomainSyncScheduler {
                 const transferState = await domainRegistrarService.getTransferStatus(domainRef.domainName, domainRef.registrar);
 
                 const updates: any = {};
-                if (transferState.status === 'COMPLETED') {
+                if (transferState.status === DomainTransferStatus.COMPLETED) {
                     updates.transferStatus = DomainTransferStatus.COMPLETED;
                     updates.transferredAt = new Date();
                     if (transferState.expiresAt) updates.expiresAt = transferState.expiresAt;
                     if (transferState.eppStatusCodes) updates.eppStatusCodes = transferState.eppStatusCodes;
                     completedCount++;
-                } else if (transferState.status === 'REJECTED' || transferState.status === 'CANCELLED') {
+                } else if (
+                    transferState.status === DomainTransferStatus.REJECTED ||
+                    transferState.status === DomainTransferStatus.CANCELLED
+                ) {
                     updates.transferStatus = transferState.status;
                     // Usually log the rejection reason safely to our audit ledger as well!
                     await ServiceAuditLog.create({
@@ -60,7 +63,7 @@ export class DomainSyncScheduler {
                 registrarAudit({
                     event: 'domain.transfer.status_updated',
                     domain: domainRef.domainName,
-                    status: transferState.status === 'COMPLETED' ? 'success' : 'pending',
+                    status: transferState.status === DomainTransferStatus.COMPLETED ? 'success' : 'pending',
                 });
 
                 // Apply details

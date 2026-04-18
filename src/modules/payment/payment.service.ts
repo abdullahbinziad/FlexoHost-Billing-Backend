@@ -1,4 +1,4 @@
-import { IPaymentGateway, IPaymentInitData } from './payment.interface';
+import { IPaymentGateway, IPaymentInitData, PaymentValidationStatus } from './payment.interface';
 import SslCommerzPayment from './gateways/sslcommerz';
 import ApiError from '../../utils/apiError';
 import Order from '../order/order.model';
@@ -112,7 +112,7 @@ class PaymentService {
         const gateway = this.getGateway(gatewayName);
         const result = await gateway.validate(validationData);
 
-        if (result.status === 'VALID' || result.status === 'VALIDATED') {
+        if (result.status === PaymentValidationStatus.VALID || result.status === PaymentValidationStatus.VALIDATED) {
             const invoiceId = result.value_a;
             if (!invoiceId) throw new ApiError(400, 'Invoice ID not found in transaction data');
 

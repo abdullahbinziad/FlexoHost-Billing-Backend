@@ -14,6 +14,12 @@ import { DomainTransferStatus, type IDomainContact } from '../services/models/do
 import RegistrarDiscoveredDomain from './registrar/registrar-discovered-domain.model';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 
+const DOMAIN_IMPORT_RESULT_STATUS = {
+    ALREADY_TRACKED: 'already-tracked',
+    IMPORTED: 'imported',
+    FAILED: 'failed',
+} as const;
+
 class DomainService {
     private readonly syncStaleMs = 24 * 60 * 60 * 1000;
 
@@ -388,11 +394,11 @@ class DomainService {
             if (details.operationType === 'TRANSFER' && details.transferStatus === 'PENDING') {
                 try {
                     const transferInfo = await domainRegistrarService.getTransferStatus(details.domainName, details.registrar);
-                    nextTransferStatus = transferInfo.status === 'COMPLETED'
+                    nextTransferStatus = transferInfo.status === DomainTransferStatus.COMPLETED
                         ? DomainTransferStatus.COMPLETED
-                        : transferInfo.status === 'REJECTED'
+                        : transferInfo.status === DomainTransferStatus.REJECTED
                             ? DomainTransferStatus.REJECTED
-                            : transferInfo.status === 'CANCELLED'
+                            : transferInfo.status === DomainTransferStatus.CANCELLED
                                 ? DomainTransferStatus.CANCELLED
                                 : details.transferStatus;
                 } catch {
@@ -602,7 +608,7 @@ class DomainService {
         const importedDomains: Array<{ domainName: string; status: string }> = [];
         for (const domainName of uniqueDomains) {
             if (existingKnownSet.has(domainName)) {
-                importedDomains.push({ domainName, status: 'already-tracked' });
+                importedDomains.push({ domainName, status: DOMAIN_IMPORT_RESULT_STATUS.ALREADY_TRACKED });
                 continue;
             }
 
@@ -643,7 +649,7 @@ class DomainService {
                     },
                 });
 
-                importedDomains.push({ domainName, status: 'imported' });
+                importedDomains.push({ domainName, status: DOMAIN_IMPORT_RESULT_STATUS.IMPORTED });
             } catch (error: any) {
                 await RegistrarDiscoveredDomain.findOneAndUpdate(
                     { domainName, registrar: normalizedRegistrar },
@@ -658,13 +664,13 @@ class DomainService {
                     },
                     { new: true, upsert: true }
                 );
-                importedDomains.push({ domainName, status: 'failed' });
+                importedDomains.push({ domainName, status: DOMAIN_IMPORT_RESULT_STATUS.FAILED });
             }
         }
 
         return {
             registrar: normalizedRegistrar,
-            importedCount: importedDomains.filter((item) => item.status === 'imported').length,
+            importedCount: importedDomains.filter((item) => item.status === DOMAIN_IMPORT_RESULT_STATUS.IMPORTED).length,
             importedDomains,
         };
     }
