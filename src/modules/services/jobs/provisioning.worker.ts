@@ -19,11 +19,10 @@ import { computeInitialNextDueDate } from '../utils/billing-cycle.util';
 import logger from '../../../utils/logger';
 import Invoice from '../../invoice/invoice.model';
 import { InvoiceStatus } from '../../invoice/invoice.interface';
+import config from '../../../config';
 
 let providersRegistered = false;
-const _envProvMs = Number(process.env.PROVISIONING_STEP_TIMEOUT_MS);
-const PROVISIONING_STEP_TIMEOUT_MS =
-    Number.isFinite(_envProvMs) && _envProvMs >= 30000 ? _envProvMs : 120000;
+const PROVISIONING_STEP_TIMEOUT_MS = config.provisioning.stepTimeoutMs;
 
 function ensureProvidersRegistered(): void {
     if (!providersRegistered) {

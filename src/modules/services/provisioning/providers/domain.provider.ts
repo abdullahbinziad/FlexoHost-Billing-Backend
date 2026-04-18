@@ -2,7 +2,9 @@ import { ServiceType } from '../../types/enums';
 import type { IProvisioningProvider, ProvisioningContext, ProvisioningResult } from '../types';
 import { DomainOperationType, DomainTransferStatus } from '../../models/domain-details.model';
 import { DOMAIN_CONFIG } from '../../../domain/domain.config';
+import { getEffectiveDefaultNameserversForProvision } from '../../../domain/domain-system-settings.service';
 import { domainRegistrarService } from '../../../domain/registrar/domain-registrar.service';
+import { normalizeDomainFqdn } from '../../../domain/utils/domain-display';
 
 const STUB_CONTACT = {
     firstName: 'Stub',
@@ -22,13 +24,17 @@ export class DomainProvisioningProvider implements IProvisioningProvider {
     async provision(ctx: ProvisioningContext): Promise<ProvisioningResult> {
         const { orderItem } = ctx;
         const config = orderItem?.configSnapshot || {};
-        const domainName = config.domainName || 'unknown.com';
+        const rawFqdn = String(config.domainName || '').trim() || 'unknown.com';
+        const domainName = normalizeDomainFqdn(rawFqdn) || rawFqdn.toLowerCase();
         const isTransfer = orderItem?.actionType === 'TRANSFER';
 
         try {
-            const nameservers = Array.isArray(config.nameservers) && config.nameservers.length >= 2
-                ? config.nameservers
-                : ['ns1.dynadot.com', 'ns2.dynadot.com'];
+            const fromOrder =
+                Array.isArray(config.nameservers) && config.nameservers.length >= 2
+                    ? (config.nameservers as string[]).map((n) => String(n).trim().toLowerCase()).filter(Boolean)
+                    : [];
+            const fallbackNs = await getEffectiveDefaultNameserversForProvision();
+            const nameservers = fromOrder.length >= 2 ? fromOrder : fallbackNs.length >= 2 ? fallbackNs : [];
             const contacts = config.contacts && typeof config.contacts === 'object' ? config.contacts : undefined;
 
             let remoteId: string;

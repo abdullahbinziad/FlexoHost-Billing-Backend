@@ -6,6 +6,7 @@
 import type { IInvoiceDocument } from './invoice.interface';
 import PaymentTransaction from '../transaction/transaction.model';
 import { buildInvoiceHtml, type InvoicePdfData } from './invoice-pdf-html';
+import config from '../../config';
 
 export type InvoiceForPdf = IInvoiceDocument;
 
@@ -17,9 +18,15 @@ export interface TransactionForPdf {
 }
 
 const PAY_TO = {
-    name: process.env.COMPANY_NAME || 'FlexoHost',
-    email: process.env.COMPANY_EMAIL || 'billing@flexohost.com',
-    address: process.env.COMPANY_ADDRESS || 'Ghunti, Mymensingh Sadar, Mymensingh, Bangladesh, Post-2200',
+    get name() {
+        return config.app.companyName;
+    },
+    get email() {
+        return config.app.companyEmail;
+    },
+    get address() {
+        return config.app.companyAddress;
+    },
 };
 
 /** Invoiced address: same as portal formatInvoicedAddress – address • country */

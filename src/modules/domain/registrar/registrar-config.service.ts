@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import ApiError from '../../../utils/apiError';
 import { decrypt, encrypt, isEncrypted } from '../../../utils/encryption';
 import RegistrarConfig from './registrar-config.model';
-import { normalizeRegistrarKey } from './registrar-registry';
+import { getRegistrarProvider, normalizeRegistrarKey } from './registrar-registry';
 
 export type RegistrarConfigFieldType = 'text' | 'password' | 'checkbox' | 'textarea';
 
@@ -37,6 +37,8 @@ export interface AdminRegistrarConfig {
     implemented: boolean;
     isActive: boolean;
     configFields: AdminRegistrarField[];
+    /** True when the provider implements registrar-side domain listing (admin inventory reconcile). */
+    supportsRegistrarInventory: boolean;
 }
 
 const REGISTRAR_DEFINITIONS: RegistrarDefinition[] = [
@@ -333,6 +335,7 @@ class RegistrarConfigService {
             const stored = storedByKey.get(definition.key);
             const mergedSettings = buildMergedSettings(definition.key, stored?.settings as Record<string, unknown> | undefined);
 
+            const provider = getRegistrarProvider(definition.key);
             return {
                 key: definition.key,
                 name: definition.name,
@@ -341,6 +344,7 @@ class RegistrarConfigService {
                 implemented: definition.implemented,
                 isActive: stored?.isActive ?? getDefaultActiveState(definition.key, mergedSettings),
                 configFields: definition.fields.map((field) => buildAdminField(field, mergedSettings)),
+                supportsRegistrarInventory: typeof provider?.listDomains === 'function',
             };
         });
     }
@@ -408,6 +412,7 @@ class RegistrarConfigService {
 
         const mergedSettings = buildMergedSettings(definition.key, doc.settings as Record<string, unknown>);
 
+        const provider = getRegistrarProvider(definition.key);
         return {
             key: definition.key,
             name: definition.name,
@@ -416,6 +421,7 @@ class RegistrarConfigService {
             implemented: definition.implemented,
             isActive: doc.isActive,
             configFields: definition.fields.map((field) => buildAdminField(field, mergedSettings)),
+            supportsRegistrarInventory: typeof provider?.listDomains === 'function',
         };
     }
 

@@ -16,7 +16,7 @@ import { scheduleLoginAlertEmail } from './login-alert.helper';
  * Order: GOOGLE_REDIRECT_URI → canonical URL from API_URL (see config.api.fullBaseUrl).
  */
 function getGoogleOAuthCallbackUrl(): string {
-    const explicit = process.env.GOOGLE_REDIRECT_URI?.trim();
+    const explicit = config.google.redirectUri?.trim();
     if (explicit) {
         return explicit.replace(/\/$/, '');
     }

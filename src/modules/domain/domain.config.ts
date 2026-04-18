@@ -1,20 +1,21 @@
 /**
- * Configuration for Domain Registrars
- * This file maps TLDs to specific registrars.
+ * Static TLD → registrar key fallback when Mongo TLD `autoRegistration.provider` is empty.
+ * Default registrar key comes from Mongo (DomainSystemSettings), cached in memory.
  */
 
-export const DOMAIN_CONFIG = {
-    // Default registrar if no TLD match is found
-    defaultRegistrar: 'Dynadot',
+import { getDomainSystemDefaultsSync } from './domain-system-settings.service';
 
-    // Map specific TLDs to Registrars
-    // Format: 'tld': 'RegistrarName'
-    /** Fallback when Mongo TLD exists but `autoRegistration.provider` is empty. Do not list ccTLDs here — set provider on the TLD document instead. */
+export const DOMAIN_CONFIG = {
+    get defaultRegistrar(): string {
+        return getDomainSystemDefaultsSync().defaultRegistrarKey;
+    },
+
     tldRegistrarMap: {
-        com: 'Dynadot',
-        net: 'Dynadot',
-        org: 'Dynadot',
-        io: 'Dynadot',
-        xyz: 'Dynadot',
+        com: 'dynadot',
+        net: 'dynadot',
+        org: 'dynadot',
+        io: 'dynadot',
+        xyz: 'dynadot',
+        // Example: 'com.bd': 'namely',
     } as Record<string, string>,
 };

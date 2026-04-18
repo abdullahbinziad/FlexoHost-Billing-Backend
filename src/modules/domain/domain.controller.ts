@@ -7,6 +7,12 @@ import { getEffectiveClientId } from '../client-access-grant/effective-client';
 import registrarConfigService from './registrar/registrar-config.service';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 import type { AuthRequest } from '../../middlewares/auth';
+import {
+    getDomainSystemSettingsForAdmin,
+    updateDomainSystemSettings,
+    type DomainSystemSettingsDto,
+} from './domain-system-settings.service';
+import { getRegistrarProvider, normalizeRegistrarKey } from './registrar/registrar-registry';
 
 class DomainController {
     private getRequestedClientIdForStaff(req: Request): string | undefined {
@@ -331,6 +337,46 @@ class DomainController {
         if (!clientId) return;
         await domainService.saveDns(domain, records || []);
         return ApiResponse.ok(res, 'DNS records updated successfully');
+    });
+
+    /** Admin: global domain defaults (default registrar + fallback nameservers). */
+    getDomainSystemDefaultsAdmin = catchAsync(async (_req: Request, res: Response) => {
+        const settings = await getDomainSystemSettingsForAdmin();
+        return ApiResponse.ok(res, 'Domain system settings retrieved', settings);
+    });
+
+    updateDomainSystemDefaultsAdmin = catchAsync(async (req: Request, res: Response) => {
+        const user = (req as AuthRequest).user!;
+        const body = req.body || {};
+        const payload: Partial<DomainSystemSettingsDto> = {};
+        if (body.defaultRegistrarKey !== undefined) {
+            payload.defaultRegistrarKey = String(body.defaultRegistrarKey);
+        }
+        for (const k of ['nameserver1', 'nameserver2', 'nameserver3', 'nameserver4'] as const) {
+            if (body[k] !== undefined) {
+                payload[k] = String(body[k]);
+            }
+        }
+        if (payload.defaultRegistrarKey !== undefined) {
+            const nk = normalizeRegistrarKey(payload.defaultRegistrarKey);
+            if (!getRegistrarProvider(nk)) {
+                throw ApiError.badRequest(
+                    `Registrar "${payload.defaultRegistrarKey}" is not implemented. Add the provider first.`
+                );
+            }
+            payload.defaultRegistrarKey = nk;
+        }
+        const settings = await updateDomainSystemSettings(payload, user._id?.toString());
+        auditLogSafe({
+            message: 'Domain system settings updated',
+            type: 'settings_changed',
+            category: 'settings',
+            actorType: 'user',
+            actorId: user._id?.toString(),
+            source: 'manual',
+            meta: { keys: Object.keys(payload) } as Record<string, unknown>,
+        });
+        return ApiResponse.ok(res, 'Domain system settings updated', settings);
     });
 }
 

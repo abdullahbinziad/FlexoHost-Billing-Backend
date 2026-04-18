@@ -6,6 +6,8 @@ import Server from '../../server/server.model';
 import OrderItem from '../../order/order-item.model';
 import Product from '../../product/product.model';
 import HostingServiceDetails from '../models/hosting-details.model';
+import DomainServiceDetails from '../models/domain-details.model';
+import { resolveDomainFqdnFromDetailsAndOrderItem } from '../../domain/utils/domain-display';
 import type { WhmApiClient } from '../../whm/whm-api-client';
 import logger from '../../../utils/logger';
 
@@ -69,6 +71,17 @@ export class ServiceClientService {
             .lean();
         const orderItemMap = Object.fromEntries(orderItems.map((o: any) => [o._id.toString(), o]));
 
+        const domainServiceIds = services.filter((s) => s.type === ServiceType.DOMAIN).map((s) => s._id);
+        let domainMap: Record<string, { domainName?: string }> = {};
+        if (domainServiceIds.length > 0) {
+            const domainRows = await DomainServiceDetails.find({ serviceId: { $in: domainServiceIds } })
+                .select('serviceId domainName')
+                .lean();
+            domainMap = Object.fromEntries(
+                domainRows.map((d: any) => [d.serviceId.toString(), { domainName: d.domainName }])
+            );
+        }
+
         const hostingServiceIds = services.filter((s) => s.type === ServiceType.HOSTING).map((s) => s._id);
         let hostingMap: Record<string, any> = {};
         if (hostingServiceIds.length > 0) {
@@ -108,6 +121,14 @@ export class ServiceClientService {
                     (orderedMetaLoc ? String(orderedMetaLoc).trim() : undefined) ||
                     undefined;
             }
+            if (s.type === ServiceType.DOMAIN) {
+                const d = domainMap[(s._id as any)?.toString?.() || s._id];
+                const fqdn = resolveDomainFqdnFromDetailsAndOrderItem(d, oi);
+                if (fqdn) {
+                    svc.identifier = fqdn;
+                    svc.displayName = fqdn;
+                }
+            }
             return svc;
         });
     }
@@ -128,7 +149,8 @@ export class ServiceClientService {
         const serviceObj = result.service.toObject ? result.service.toObject() : { ...result.service };
         const oi = orderItem as any;
         const cfg = oi?.configSnapshot || {};
-        serviceObj.displayName = oi?.nameSnapshot || 'Hosting';
+        serviceObj.displayName =
+            oi?.nameSnapshot || (result.service.type === ServiceType.DOMAIN ? 'Domain' : 'Hosting');
         if (result.details && (result.details as any).packageId) {
             (serviceObj as any).packageId = (result.details as any).packageId;
         }
@@ -192,6 +214,22 @@ export class ServiceClientService {
                     serverLocation: (c.serverLocation ? String(c.serverLocation).trim() : '') || orderedLoc || undefined,
                     resourceLimits: { diskMb: 0, bandwidthMb: 0, inodeLimit: 0 },
                 };
+            }
+        }
+
+        if (result.service.type === ServiceType.DOMAIN && oi) {
+            const resolvedFqdn = resolveDomainFqdnFromDetailsAndOrderItem(detailsForResponse, oi);
+            if (resolvedFqdn) {
+                (serviceObj as any).identifier = resolvedFqdn;
+                (serviceObj as any).displayName = resolvedFqdn;
+                if (detailsForResponse) {
+                    detailsForResponse = { ...detailsForResponse, domainName: resolvedFqdn };
+                } else {
+                    detailsForResponse = {
+                        domainName: resolvedFqdn,
+                        resourceLimits: { diskMb: 0, bandwidthMb: 0, inodeLimit: 0 },
+                    };
+                }
             }
         }
 

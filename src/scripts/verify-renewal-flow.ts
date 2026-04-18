@@ -1,13 +1,11 @@
-import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import config from '../config';
 import Service from '../modules/services/service.model';
 import Invoice from '../modules/invoice/invoice.model';
 import RenewalLedger from '../modules/services/models/renewal-ledger.model';
 import serviceRenewalScheduler from '../modules/services/jobs/service-renewal.scheduler';
 import serviceTerminationScheduler from '../modules/services/jobs/service-termination.scheduler';
 import serviceLifecycleService from '../modules/services/core/service-lifecycle.service';
-
-dotenv.config();
 
 type NullableDate = Date | null | undefined;
 
@@ -100,11 +98,11 @@ async function main() {
     const argServiceId = process.argv[2];
     const dbName = process.env.MONGODB_DB || 'test';
 
-    if (!process.env.MONGODB_URI) {
+    if (!config.mongodb.uri) {
         throw new Error('MONGODB_URI is not configured.');
     }
 
-    await mongoose.connect(process.env.MONGODB_URI, { dbName });
+    await mongoose.connect(config.mongodb.uri, { dbName });
     const db = mongoose.connection.db;
     if (!db) {
         throw new Error('Mongo database connection is unavailable.');

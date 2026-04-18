@@ -13,6 +13,8 @@ import type { RegistrarRoutingSource } from './registrar/registrar-routing.servi
 import { DomainTransferStatus, type IDomainContact } from '../services/models/domain-details.model';
 import RegistrarDiscoveredDomain from './registrar/registrar-discovered-domain.model';
 import { auditLogSafe } from '../activity-log/activity-log.service';
+import OrderItem from '../order/order-item.model';
+import { resolveDomainFqdnFromDetailsAndOrderItem, normalizeDomainFqdn } from './utils/domain-display';
 
 const DOMAIN_IMPORT_RESULT_STATUS = {
     ALREADY_TRACKED: 'already-tracked',
@@ -24,9 +26,11 @@ class DomainService {
     private readonly syncStaleMs = 24 * 60 * 60 * 1000;
 
     private async getStoredRegistrarName(domainName: string): Promise<string | null> {
-        const normalized = (domainName || '').toLowerCase().trim();
+        const normalized = normalizeDomainFqdn(domainName);
         if (!normalized) return null;
-        const details = await DomainServiceDetails.findOne({ domainName: normalized })
+        const details = await DomainServiceDetails.findOne({
+            $expr: { $eq: [{ $toLower: '$domainName' }, normalized] },
+        })
             .select('registrar')
             .lean();
         return (details as any)?.registrar ?? null;
@@ -288,7 +292,9 @@ class DomainService {
     async saveContactDetails(domain: string, contacts: Partial<DomainContactDetails>): Promise<void> {
         const registrarName = await this.getStoredRegistrarName(domain);
         const result = await domainRegistrarService.saveContactDetails(domain, contacts, registrarName);
-        const existing = await DomainServiceDetails.findOne({ domainName: domain.toLowerCase().trim() })
+        const existing = await DomainServiceDetails.findOne({
+            $expr: { $eq: [{ $toLower: '$domainName' }, domain.toLowerCase().trim()] },
+        })
             .select('contacts')
             .lean();
         await this.syncStoredDomainDetails(domain, {
@@ -364,16 +370,40 @@ class DomainService {
         const totalResults = metadata[0]?.totalResults ?? 0;
         const totalPages = totalResults > 0 ? Math.ceil(totalResults / limit) : 1;
 
+        const withSync = results.map((item: any) => ({
+            ...item,
+            syncState: this.deriveSyncState(item),
+        }));
+        const enriched = await this.enrichAdminInventoryWithOrderFqdn(withSync);
+
         return {
-            results: results.map((item: any) => ({
-                ...item,
-                syncState: this.deriveSyncState(item),
-            })),
+            results: enriched,
             totalResults,
             page,
             limit,
             totalPages,
         };
+    }
+
+    /** Fill missing inventory domain names from order item config (same resolver as client domain list). */
+    private async enrichAdminInventoryWithOrderFqdn(results: any[]): Promise<any[]> {
+        if (!results?.length) return results;
+        const orderItemIds = results.map((r) => r.orderItemId).filter(Boolean);
+        if (!orderItemIds.length) {
+            return results.map(({ orderItemId: _oid, ...rest }) => rest);
+        }
+        const orderItems = await OrderItem.find({ _id: { $in: orderItemIds } })
+            .select('configSnapshot nameSnapshot')
+            .lean();
+        const byId = Object.fromEntries(orderItems.map((o: any) => [o._id.toString(), o]));
+        return results.map((row) => {
+            const oi = byId[(row.orderItemId as any)?.toString?.()];
+            const resolved = resolveDomainFqdnFromDetailsAndOrderItem(row, oi);
+            const domainName =
+                (resolved || normalizeDomainFqdn(row.domainName) || '').trim() || row.domainName;
+            const { orderItemId: _oid, ...rest } = row;
+            return { ...rest, domainName };
+        });
     }
 
     async syncDomainByServiceId(serviceId: string, actorId?: string): Promise<any> {
@@ -387,13 +417,25 @@ class DomainService {
             throw ApiError.notFound('Domain service not found');
         }
 
+        const orderItem = await OrderItem.findById(service.orderItemId).select('configSnapshot nameSnapshot').lean();
+        const fqdn =
+            resolveDomainFqdnFromDetailsAndOrderItem(details, orderItem) ||
+            normalizeDomainFqdn((details as any)?.domainName);
+        if (!fqdn) {
+            throw ApiError.badRequest('Domain name could not be resolved for sync.');
+        }
+        if (normalizeDomainFqdn((details as any)?.domainName) !== fqdn) {
+            await DomainServiceDetails.updateOne({ serviceId }, { $set: { domainName: fqdn } }).exec();
+            (details as any).domainName = fqdn;
+        }
+
         try {
-            const liveInfo = await domainRegistrarService.syncDomain(details.domainName, details.registrar);
+            const liveInfo = await domainRegistrarService.syncDomain(fqdn, details.registrar);
             let nextTransferStatus = details.transferStatus;
 
             if (details.operationType === 'TRANSFER' && details.transferStatus === 'PENDING') {
                 try {
-                    const transferInfo = await domainRegistrarService.getTransferStatus(details.domainName, details.registrar);
+                    const transferInfo = await domainRegistrarService.getTransferStatus(fqdn, details.registrar);
                     nextTransferStatus = transferInfo.status === DomainTransferStatus.COMPLETED
                         ? DomainTransferStatus.COMPLETED
                         : transferInfo.status === DomainTransferStatus.REJECTED
@@ -435,7 +477,7 @@ class DomainService {
             ).exec();
 
             auditLogSafe({
-                message: `Domain synced: ${details.domainName}`,
+                message: `Domain synced: ${fqdn}`,
                 type: 'domain_synced',
                 category: 'domain',
                 actorType: actorId ? 'user' : 'system',
@@ -445,7 +487,7 @@ class DomainService {
                 clientId: (service.clientId as any)?.toString?.(),
                 serviceId: serviceId,
                 meta: {
-                    domainName: details.domainName,
+                    domainName: fqdn,
                     registrar: liveInfo.registrar,
                     registrarStatus: liveInfo.status,
                 },
@@ -453,7 +495,7 @@ class DomainService {
 
             return {
                 serviceId,
-                domainName: details.domainName,
+                domainName: fqdn,
                 registrar: liveInfo.registrar,
                 registrarStatus: liveInfo.status,
                 expiresAt: liveInfo.expiryDate,
@@ -480,7 +522,7 @@ class DomainService {
             ).exec();
 
             auditLogSafe({
-                message: `Domain sync failed: ${details.domainName}`,
+                message: `Domain sync failed: ${fqdn}`,
                 type: 'domain_synced',
                 category: 'domain',
                 actorType: actorId ? 'user' : 'system',
@@ -491,7 +533,7 @@ class DomainService {
                 clientId: (service.clientId as any)?.toString?.(),
                 serviceId: serviceId,
                 meta: {
-                    domainName: details.domainName,
+                    domainName: fqdn,
                     registrar: details.registrar,
                     error: message,
                 },
@@ -560,17 +602,29 @@ class DomainService {
 
         const [knownDomains, importedDomains] = await Promise.all([
             DomainServiceDetails.find({
-                domainName: { $in: normalizedDomains },
-                registrar: normalizedRegistrar,
+                $expr: {
+                    $and: [
+                        { $in: [{ $toLower: '$domainName' }, normalizedDomains] },
+                        { $eq: [{ $toLower: { $ifNull: ['$registrar', ''] } }, normalizedRegistrar] },
+                    ],
+                },
             }).select('domainName').lean(),
             RegistrarDiscoveredDomain.find({
-                domainName: { $in: normalizedDomains },
-                registrar: normalizedRegistrar,
+                $expr: {
+                    $and: [
+                        { $in: [{ $toLower: '$domainName' }, normalizedDomains] },
+                        { $eq: [{ $toLower: { $ifNull: ['$registrar', ''] } }, normalizedRegistrar] },
+                    ],
+                },
             }).select('domainName').lean(),
         ]);
 
-        const knownSet = new Set(knownDomains.map((item: any) => item.domainName));
-        const importedSet = new Set(importedDomains.map((item: any) => item.domainName));
+        const knownSet = new Set(
+            knownDomains.map((item: any) => String(item.domainName || '').trim().toLowerCase()).filter(Boolean)
+        );
+        const importedSet = new Set(
+            importedDomains.map((item: any) => String(item.domainName || '').trim().toLowerCase()).filter(Boolean)
+        );
 
         const missingDomains = normalizedDomains
             .filter((domainName) => !knownSet.has(domainName))
@@ -600,10 +654,16 @@ class DomainService {
         }
 
         const existingKnown = await DomainServiceDetails.find({
-            domainName: { $in: uniqueDomains },
-            registrar: normalizedRegistrar,
+            $expr: {
+                $and: [
+                    { $in: [{ $toLower: '$domainName' }, uniqueDomains] },
+                    { $eq: [{ $toLower: { $ifNull: ['$registrar', ''] } }, normalizedRegistrar] },
+                ],
+            },
         }).select('domainName').lean();
-        const existingKnownSet = new Set(existingKnown.map((item: any) => item.domainName));
+        const existingKnownSet = new Set(
+            existingKnown.map((item: any) => String(item.domainName || '').trim().toLowerCase()).filter(Boolean)
+        );
 
         const importedDomains: Array<{ domainName: string; status: string }> = [];
         for (const domainName of uniqueDomains) {
@@ -691,6 +751,12 @@ class DomainService {
             return { domains: [], total: 0, page, limit, totalPages: 0 };
         }
         const serviceIds = services.map((s: any) => s._id);
+        const orderItemIds = services.map((s: any) => s.orderItemId).filter(Boolean);
+        const orderItems = await OrderItem.find({ _id: { $in: orderItemIds } })
+            .select('configSnapshot nameSnapshot')
+            .lean();
+        const orderItemById = Object.fromEntries(orderItems.map((o: any) => [o._id.toString(), o]));
+
         const detailsList = await DomainServiceDetails.find({ serviceId: { $in: serviceIds } })
             .select('-eppCodeEncrypted')
             .lean();
@@ -699,16 +765,29 @@ class DomainService {
         );
         const domains = services.map((s: any) => {
             const details = detailsByServiceId[s._id.toString()];
+            const oi = orderItemById[(s.orderItemId as any)?.toString?.() || String(s.orderItemId)];
+            const resolvedFqdn = resolveDomainFqdnFromDetailsAndOrderItem(details, oi);
+            const domainName = resolvedFqdn || normalizeDomainFqdn(details?.domainName) || '';
+            const cfg = (oi?.configSnapshot || {}) as Record<string, unknown>;
+            const registrarFromOrder = String(cfg.registrar || '').trim();
+            const mergedDetails =
+                details || domainName
+                    ? {
+                          ...(details || {}),
+                          domainName: domainName || (details as any)?.domainName,
+                      }
+                    : undefined;
             return {
                 serviceId: s._id,
                 serviceNumber: s.serviceNumber,
                 status: s.status,
-                domainName: details?.domainName,
+                domainName,
+                registrar: (details as any)?.registrar || registrarFromOrder || undefined,
                 expiresAt: details?.expiresAt ?? s.nextDueDate,
                 nameservers: details?.nameservers ?? [],
                 registrarLock: details?.registrarLock,
                 hasEppCode: details?.operationType === 'TRANSFER',
-                ...(details ? { details } : {}),
+                ...(mergedDetails ? { details: mergedDetails } : {}),
             };
         });
         return {
@@ -722,10 +801,10 @@ class DomainService {
 
     /** Resolve domain name to service + details if the domain belongs to the given client. Returns null if not found or not owned. */
     async getDomainServiceForClient(clientId: string, domainName: string): Promise<{ service: any; details: any } | null> {
-        const normalized = (domainName || '').toLowerCase().trim();
+        const normalized = normalizeDomainFqdn(domainName);
         if (!normalized) return null;
         const details = await DomainServiceDetails.findOne({
-            domainName: normalized,
+            $expr: { $eq: [{ $toLower: '$domainName' }, normalized] },
         }).lean();
         if (!details) return null;
         const service = await Service.findById(details.serviceId).lean();
@@ -738,8 +817,10 @@ class DomainService {
         const owned = await this.getDomainServiceForClient(clientId, domainName);
         if (!owned) return null;
 
+        const apiDomain =
+            normalizeDomainFqdn((owned.details as any)?.domainName) || normalizeDomainFqdn(domainName) || domainName;
         try {
-            const live = await domainRegistrarService.getEppCode(domainName, undefined, (owned.details as any)?.registrar);
+            const live = await domainRegistrarService.getEppCode(apiDomain, undefined, (owned.details as any)?.registrar);
             if (live.eppCode) {
                 registrarAudit({ event: 'domain.epp_code_requested', domain: domainName, status: 'success' });
                 return live.eppCode;
@@ -828,6 +909,45 @@ class DomainService {
                     serviceStatus: '$service.status',
                 },
             },
+            {
+                $lookup: {
+                    from: OrderItem.collection.collectionName,
+                    localField: 'service.orderItemId',
+                    foreignField: '_id',
+                    as: '_oiInv',
+                },
+            },
+            { $unwind: { path: '$_oiInv', preserveNullAndEmptyArrays: true } },
+            {
+                $addFields: {
+                    _inventorySearchDomain: {
+                        $let: {
+                            vars: {
+                                fromDetails: { $toLower: { $trim: { input: { $ifNull: ['$domainName', ''] } } } },
+                                fromOrder: {
+                                    $toLower: {
+                                        $trim: {
+                                            input: {
+                                                $ifNull: [
+                                                    '$_oiInv.configSnapshot.domainName',
+                                                    { $ifNull: ['$_oiInv.configSnapshot.domain', ''] },
+                                                ],
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                            in: {
+                                $cond: [
+                                    { $gt: [{ $strLenCP: '$$fromDetails' }, 0] },
+                                    '$$fromDetails',
+                                    '$$fromOrder',
+                                ],
+                            },
+                        },
+                    },
+                },
+            },
         ];
 
         const matchClauses: any[] = [];
@@ -837,6 +957,7 @@ class DomainService {
             matchClauses.push({
                 $or: [
                     { domainName: regex },
+                    { _inventorySearchDomain: regex },
                     { registrar: regex },
                     { registrarStatus: regex },
                     { serviceNumber: regex },
@@ -888,6 +1009,7 @@ class DomainService {
             $project: {
                 _id: 1,
                 serviceId: '$service._id',
+                orderItemId: '$service.orderItemId',
                 clientId: '$client._id',
                 clientNumber: 1,
                 clientName: 1,
@@ -970,8 +1092,8 @@ class DomainService {
         const normalized = domainName.toLowerCase().trim();
         if (!normalized) return;
         await DomainServiceDetails.updateOne(
-            { domainName: normalized },
-            { $set: updates }
+            { $expr: { $eq: [{ $toLower: '$domainName' }, normalized] } },
+            { $set: { ...updates, domainName: normalized } }
         ).exec();
     }
 

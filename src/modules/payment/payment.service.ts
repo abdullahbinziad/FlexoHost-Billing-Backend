@@ -27,16 +27,13 @@ class PaymentService {
     private defaultGateway: string = 'sslcommerz';
 
     constructor() {
-        // Initialize gateways with credentials from env
-        const sslStoreId = process.env.SSLCOMMERZ_STORE_ID || (config.env === 'production' ? '' : 'testbox');
-        const sslStorePassword = process.env.SSLCOMMERZ_STORE_PASSWORD || (config.env === 'production' ? '' : 'qwerty');
-        const sslIsLive = process.env.SSLCOMMERZ_IS_LIVE === 'true';
+        const { storeId, storePassword, isLive } = config.payment.sslcommerz;
 
-        if (config.env === 'production' && (!sslStoreId || !sslStorePassword)) {
+        if (config.env === 'production' && (!storeId || !storePassword)) {
             throw new Error('SSLCOMMERZ_STORE_ID and SSLCOMMERZ_STORE_PASSWORD are required in production');
         }
 
-        const sslCommerz = new SslCommerzPayment(sslStoreId, sslStorePassword, sslIsLive);
+        const sslCommerz = new SslCommerzPayment(storeId, storePassword, isLive);
         this.gateways.set(sslCommerz.name, sslCommerz);
     }
 

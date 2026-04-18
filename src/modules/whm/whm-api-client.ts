@@ -1,6 +1,7 @@
 import fetch, { Response } from 'node-fetch';
 import https from 'https';
 import http from 'http';
+import config from '../../config';
 
 export interface WhmApiClientOptions {
     hostname: string;
@@ -34,10 +35,7 @@ export class WhmApiClient {
             .toLowerCase();
         this.baseUrl = hostname ? `${protocol}://${hostname}:${port}` : '';
         this.authHeader = `whm ${options.username.trim()}:${options.apiToken.trim()}`;
-        const envMs = Number(process.env.WHM_HTTP_TIMEOUT_MS);
-        this.timeoutMs =
-            options.timeoutMs ??
-            (Number.isFinite(envMs) && envMs >= 10000 ? envMs : 120000);
+        this.timeoutMs = options.timeoutMs ?? config.whm.httpTimeoutMs;
         const rejectUnauthorized = options.rejectUnauthorized !== false;
         this.agent = options.useSSL !== false
             ? new https.Agent({ rejectUnauthorized })

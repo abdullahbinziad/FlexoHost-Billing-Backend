@@ -151,6 +151,13 @@ export const PERMISSION_META: Record<string, PermissionMeta[]> = {
         { id: 'domain_settings:create', label: 'Create TLD', category: 'infrastructure' },
         { id: 'domain_settings:update', label: 'Update TLD/pricing', category: 'infrastructure' },
         { id: 'domain_settings:delete', label: 'Delete TLD', category: 'infrastructure' },
+        { id: 'domain_settings:defaults_read', label: 'View global domain defaults', category: 'infrastructure' },
+        {
+            id: 'domain_settings:defaults_update',
+            label: 'Update global domain defaults (registrar, nameservers)',
+            category: 'infrastructure',
+            riskLevel: 'medium',
+        },
     ],
     servers: [
         { id: 'servers:list', label: 'List servers', category: 'infrastructure' },

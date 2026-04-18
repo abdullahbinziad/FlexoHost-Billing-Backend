@@ -18,14 +18,16 @@ export interface TransactionForPdf {
 }
 
 const PAY_TO = {
-    name: process.env.COMPANY_NAME || 'FlexoHost',
-    email: process.env.COMPANY_EMAIL || 'billing@flexohost.com',
-    address: process.env.COMPANY_ADDRESS || 'Ghunti, Mymensingh Sadar, Mymensingh, Bangladesh, Post-2200',
+    get name() {
+        return config.app.companyName;
+    },
+    get email() {
+        return config.app.companyEmail;
+    },
+    get address() {
+        return config.app.companyAddress;
+    },
 };
-
-const INVOICE_PDF_LOGO_URL =
-    process.env.INVOICE_PDF_LOGO_URL?.trim() ||
-    'https://res.cloudinary.com/dzmglrehf/image/upload/v1774877112/FlexoHostHorizontalforLight_gszd0a.webp';
 
 /** Invoiced address: same as portal formatInvoicedAddress – address • country */
 function formatInvoicedAddress(address: string, country: string): string {
@@ -102,7 +104,7 @@ export async function generateInvoicePdf(
     const inv = invoice as any;
     const transactions = options?.transactions ?? [];
     const data = toPdfData(inv, transactions);
-    const rawLogo = INVOICE_PDF_LOGO_URL || config.email?.logoUrl?.trim();
+    const rawLogo = config.app.invoicePdfLogoUrl || config.email.logoUrl?.trim();
     let logoSrc: string | undefined;
     if (rawLogo) {
         logoSrc = (await fetchLogoAsDataUri(rawLogo)) || rawLogo;
