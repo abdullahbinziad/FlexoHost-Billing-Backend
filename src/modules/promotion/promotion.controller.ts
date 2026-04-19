@@ -117,6 +117,20 @@ class PromotionController {
         if (!result.valid) {
             return ApiResponse.error(res, 400, result.error || 'Invalid coupon');
         }
+
+        const discountMeta =
+            result.source === 'promotion' && result.promotion
+                ? {
+                      kind: 'promotion' as const,
+                      productBillingCycles:
+                          result.promotion.productBillingCycles?.length
+                              ? result.promotion.productBillingCycles.map((c) => String(c))
+                              : undefined,
+                  }
+                : result.source === 'affiliate'
+                  ? { kind: 'affiliate' as const }
+                  : undefined;
+
         return ApiResponse.success(res, 200, 'Coupon applied', {
             valid: true,
             promotionId: result.promotion?._id,
@@ -124,6 +138,7 @@ class PromotionController {
             discountAmount: result.discountAmount,
             name: result.name || result.promotion?.name,
             source: result.source,
+            discountMeta,
         });
     });
 }

@@ -517,10 +517,14 @@ class AffiliateService {
             return null;
         }
 
-        const orderNetAmount = round2(Number(invoice.total) || Number(order.total) || 0);
-        if (orderNetAmount <= 0) {
+        const paidTotal = round2(Number(invoice.total) || Number(order.total) || 0);
+        if (paidTotal <= 0) {
             return null;
         }
+
+        // Commission is calculated on pre-discount order subtotal so referral buyer discounts do not reduce affiliate earnings.
+        const commissionBase = round2(Number(order.subtotal) || 0);
+        const orderAmountForCommission = commissionBase > 0 ? commissionBase : paidTotal;
 
         const qualifiedAt = new Date();
         const commission = await AffiliateCommission.create({
@@ -536,9 +540,11 @@ class AffiliateService {
             currency: invoice.currency || profile.preferredCurrency || 'BDT',
             commissionRate: profile.commissionRate ?? DEFAULT_COMMISSION_RATE,
             referralDiscountRate: profile.referralDiscountRate ?? 0,
-            orderNetAmount,
+            orderNetAmount: orderAmountForCommission,
             discountAmount: round2(Number(order.discountTotal) || 0),
-            commissionAmount: round2(orderNetAmount * ((profile.commissionRate ?? DEFAULT_COMMISSION_RATE) / 100)),
+            commissionAmount: round2(
+                orderAmountForCommission * ((profile.commissionRate ?? DEFAULT_COMMISSION_RATE) / 100)
+            ),
             refundWindowDays: DEFAULT_REFUND_WINDOW_DAYS,
             qualifiedAt,
             availableAt: addDays(qualifiedAt, DEFAULT_REFUND_WINDOW_DAYS),
