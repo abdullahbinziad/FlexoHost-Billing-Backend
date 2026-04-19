@@ -47,17 +47,22 @@ class PaymentController {
     });
 
     handleSuccess = catchAsync(async (req: Request, res: Response) => {
-        const validationData = req.body || {};
+        const validationData = { ...(req.query || {}), ...(req.body || {}) };
         const frontendUrl = config.frontendUrl;
+        const { default: logger } = await import('../../utils/logger');
 
         try {
+            logger.info(
+                `[Payment] Success callback received hasValId=${Boolean(validationData?.val_id)} hasTranId=${Boolean(
+                    validationData?.tran_id
+                )} hasInvoiceHint=${Boolean(validationData?.value_a)} status=${String(validationData?.status || '')}`
+            );
             const result = await paymentService.handlePaymentSuccess(validationData);
             res.redirect(`${frontendUrl}/invoices/${result.invoiceId}?payment=success&tran_id=${result.tran_id}`);
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'Payment validation or processing failed';
-            const { default: logger } = await import('../../utils/logger');
-            logger.warn('[Payment] Success callback failed:', msg);
-            const invoiceId = validationData.value_a || req.query?.value_a;
+            logger.warn(`[Payment] Success callback failed: ${msg}`);
+            const invoiceId = validationData.value_a;
             const { auditLogSafe } = await import('../activity-log/activity-log.service');
             auditLogSafe({
                 message: `Payment success callback failed for invoice ${invoiceId || 'unknown'}`,

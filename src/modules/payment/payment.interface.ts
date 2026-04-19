@@ -13,6 +13,9 @@ export enum PaymentInitStatus {
 export enum PaymentValidationStatus {
     VALID = 'VALID',
     VALIDATED = 'VALIDATED',
+    /** Some SSLCommerz responses use these */
+    SUCCESS = 'SUCCESS',
+    VALID_TRANSACTION = 'VALID_TRANSACTION',
 }
 
 export interface IPaymentInitData {
