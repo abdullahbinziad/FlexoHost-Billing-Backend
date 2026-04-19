@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import domainController from './domain.controller';
 import { protect, restrictTo } from '../../middlewares/auth';
+import { requirePermission } from '../../middlewares/requirePermission';
 import { validate } from '../../middlewares/validate';
 import {
     registerDomainValidation,
@@ -24,6 +25,18 @@ router.post('/search-bulk', validate(searchDomainsBulkValidation), domainControl
 router.use(protect);
 
 router.get('/', domainController.listMyDomains);
+router.get(
+    '/admin/system-defaults',
+    restrictTo('admin', 'staff', 'superadmin'),
+    requirePermission('domain_settings:defaults_read'),
+    domainController.getDomainSystemDefaultsAdmin
+);
+router.put(
+    '/admin/system-defaults',
+    restrictTo('admin', 'staff', 'superadmin'),
+    requirePermission('domain_settings:defaults_update'),
+    domainController.updateDomainSystemDefaultsAdmin
+);
 router.get('/admin/inventory', restrictTo('admin', 'staff', 'superadmin'), domainController.listAllDomainsAdmin);
 router.get('/admin/client/:clientId', restrictTo('admin', 'staff', 'superadmin'), domainController.listDomainsByClientAdmin);
 router.get('/admin/registrars', restrictTo('admin', 'staff', 'superadmin'), domainController.getRegistrarConfigs);

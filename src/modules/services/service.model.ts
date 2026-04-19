@@ -42,6 +42,7 @@ const serviceSchema = new Schema<IService>(
         graceUntil: { type: Date },
         suspendedAt: { type: Date },
         terminatedAt: { type: Date },
+        cancelledAt: { type: Date },
         provisioning: { type: provisioningMetaSchema },
         lastInvoicedDueDate: { type: Date },
         meta: { type: Schema.Types.Mixed },

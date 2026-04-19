@@ -2,6 +2,7 @@ import config from '../../../config';
 
 export type AutomationTaskKey =
     | 'renewals'
+    | 'billable-items-recurring'
     | 'overdue-suspensions'
     | 'invoice-reminders'
     | 'terminations'
@@ -28,6 +29,14 @@ export function getAutomationTaskRegistry(): AutomationTaskRegistryItem[] {
             category: 'invoice',
             description: 'Generate renewal invoices for due recurring services.',
             intervalMs: config.cron.renewalsIntervalMs,
+            runOnStart: config.cron.runOnStart,
+        },
+        {
+            key: 'billable-items-recurring',
+            label: 'Billable Items Recurring',
+            category: 'invoice',
+            description: 'Generate invoices from due recurring billable items.',
+            intervalMs: config.cron.billableItemsRecurringIntervalMs,
             runOnStart: config.cron.runOnStart,
         },
         {

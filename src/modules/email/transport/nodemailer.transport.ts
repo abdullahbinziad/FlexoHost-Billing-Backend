@@ -3,6 +3,7 @@
  */
 
 import nodemailer from 'nodemailer';
+import config from '../../../config';
 import logger from '../../../utils/logger';
 import type { SendResult } from '../templates/types';
 import {
@@ -31,11 +32,7 @@ function transportKey(resolved: ResolvedEmailTransportConfig): string {
 
 function buildTransportOptions(resolved: ResolvedEmailTransportConfig) {
     const { host, port, user, password, secure, requireTls, tlsRejectUnauthorized } = resolved.smtp;
-    /** Many VPS/Docker hosts have broken IPv6; forcing IPv4 fixes ETIMEDOUT to SMTP. */
-    const forceIpv4 =
-        process.env.SMTP_FORCE_IPV4 === 'true' ||
-        process.env.SMTP_FORCE_IPV4 === '1' ||
-        process.env.SMTP_FAMILY === '4';
+    const { forceIpv4, connectionTimeoutMs, greetingTimeoutMs, socketTimeoutMs } = config.email.transport;
 
     return {
         host,
@@ -48,9 +45,9 @@ function buildTransportOptions(resolved: ResolvedEmailTransportConfig) {
             rejectUnauthorized: tlsRejectUnauthorized,
         },
         ...(forceIpv4 ? { family: 4 as const } : {}),
-        connectionTimeout: parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '25000', 10),
-        greetingTimeout: parseInt(process.env.SMTP_GREETING_TIMEOUT_MS || '25000', 10),
-        socketTimeout: parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS || '60000', 10),
+        connectionTimeout: connectionTimeoutMs,
+        greetingTimeout: greetingTimeoutMs,
+        socketTimeout: socketTimeoutMs,
     };
 }
 
@@ -61,7 +58,7 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
         transporter = nodemailer.createTransport(buildTransportOptions(resolved));
         transporterCacheKey = key;
 
-        if (process.env.NODE_ENV !== 'test') {
+        if (config.env !== 'test') {
             transporter
                 .verify()
                 .then(() =>

@@ -5,6 +5,7 @@ import Client from '../../client/client.model';
 import ServiceActionJob from '../models/service-action-job.model';
 import RenewalLedger from '../models/renewal-ledger.model';
 import ServiceAuditLog from '../models/service-audit-log.model';
+import HostingServiceDetails from '../models/hosting-details.model';
 import { BillingCycle, ServiceStatus, ServiceActionType, ProvisioningJobStatus } from '../types/enums';
 import { InvoiceStatus, InvoiceItemType } from '../../invoice/invoice.interface';
 import { getNextSequence, formatSequenceId } from '../../../models/counter.model';
@@ -60,13 +61,27 @@ export class ServiceRenewalScheduler {
 
         for (const [clientId, services] of clientServiceMap.entries()) {
             const client = services[0].clientId as any; // Populated doc
+            const hostingServiceIds = services
+                .filter((svc) => svc.type === 'HOSTING')
+                .map((svc) => svc._id);
+            const hostingDetails = hostingServiceIds.length > 0
+                ? await HostingServiceDetails.find({ serviceId: { $in: hostingServiceIds } })
+                    .select('serviceId primaryDomain')
+                    .lean()
+                : [];
+            const primaryDomainByServiceId = new Map(
+                hostingDetails.map((detail: any) => [detail.serviceId?.toString(), detail.primaryDomain])
+            );
 
             const invoiceItems = services.map(svc => {
                 const itemType = svc.type === 'DOMAIN' ? InvoiceItemType.DOMAIN : InvoiceItemType.HOSTING;
+                const primaryDomain = svc.type === 'HOSTING'
+                    ? (primaryDomainByServiceId.get(svc._id.toString()) || '').trim()
+                    : '';
                 itemsCreated++;
                 return {
                     type: itemType,
-                    description: `${svc.type} Renewal - ${(svc as any).productName || svc._id} (${svc.billingCycle})`,
+                    description: `${svc.type} Renewal - ${(svc as any).productName || svc._id} (${svc.billingCycle})${primaryDomain ? ` (${primaryDomain})` : ''}`,
                     amount: svc.priceSnapshot.recurring,
                     meta: {
                         serviceId: svc._id,
@@ -223,6 +238,7 @@ export class ServiceRenewalScheduler {
 
                 // Create Native Audit Logs
                 const auditLogs = servicesToSuspendNow.map(svc => ({
+                    actorUserId: svc.clientId,
                     clientId: svc.clientId,
                     serviceId: svc._id,
                     action: 'SUSPEND',
@@ -274,6 +290,7 @@ export class ServiceRenewalScheduler {
             await svc.save();
 
             await ServiceAuditLog.create({
+                actorUserId: svc.clientId,
                 clientId: svc.clientId,
                 serviceId: svc._id,
                 action: 'SUSPEND',

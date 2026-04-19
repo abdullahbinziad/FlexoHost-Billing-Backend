@@ -13,7 +13,7 @@ const STATUS_MAP: Record<string, string> = {
     Active: ServiceStatus.ACTIVE,
     Suspended: ServiceStatus.SUSPENDED,
     Terminated: ServiceStatus.TERMINATED,
-    Cancelled: ServiceStatus.TERMINATED,
+    Cancelled: ServiceStatus.CANCELLED,
     Fraud: ServiceStatus.TERMINATED,
 };
 

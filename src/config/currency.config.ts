@@ -1,7 +1,10 @@
 /**
  * Central currency configuration - single source of truth for supported currencies.
  * To add a new currency: add to SUPPORTED_CURRENCIES; validations and models pick it up automatically.
+ * Reporting base currency and FX rates come from global `config` (env BASE_REPORTING_CURRENCY, EXCHANGE_RATE_BDT).
  */
+
+import config from './index';
 
 export const SUPPORTED_CURRENCIES = ['BDT', 'USD'] as const;
 export type CurrencyCode = typeof SUPPORTED_CURRENCIES[number];
@@ -11,19 +14,17 @@ export const isValidCurrency = (c: string): c is CurrencyCode =>
 
 /**
  * Base currency used for reporting and sales dashboards (all amounts converted to this for totals).
- * Use env BASE_REPORTING_CURRENCY to override (e.g. USD, BDT).
  */
 export const BASE_REPORTING_CURRENCY: string =
-  (process.env.BASE_REPORTING_CURRENCY as CurrencyCode) || 'USD';
+  (config.reporting.baseCurrency as CurrencyCode) || 'USD';
 
 /**
  * Exchange rates: 1 unit of key currency = value in BASE_REPORTING_CURRENCY.
  * Example: { BDT: 0.009 } means 1 BDT = 0.009 USD when base is USD.
- * Set via env e.g. EXCHANGE_RATE_BDT=0.009 or extend this object.
  */
 export const EXCHANGE_RATES_TO_BASE: Record<string, number> = {
   USD: 1,
-  BDT: parseFloat(process.env.EXCHANGE_RATE_BDT || '0.009'),
+  BDT: config.reporting.exchangeRateBdt,
 };
 
 /**

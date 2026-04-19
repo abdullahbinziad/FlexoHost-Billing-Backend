@@ -1,9 +1,10 @@
 import { TLDModel } from './tld.model';
 import { ITLD } from './tld.interface';
 import ApiError from '../../../utils/apiError';
+import config from '../../../config';
 
 /** In-memory TTL cache (plan scalability option 1): reduces Mongo reads on hot search paths. Set TLD_EXTENSION_CACHE_TTL_MS=0 to disable. */
-const TLD_EXTENSION_CACHE_TTL_MS = Math.max(0, Number(process.env.TLD_EXTENSION_CACHE_TTL_MS ?? 120_000));
+const TLD_EXTENSION_CACHE_TTL_MS = config.domain.tldExtensionCacheTtlMs;
 
 class TLDService {
     private readonly tldByExtensionCache = new Map<string, { payload: Record<string, unknown>; expires: number }>();

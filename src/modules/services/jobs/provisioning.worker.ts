@@ -19,13 +19,29 @@ import { computeInitialNextDueDate } from '../utils/billing-cycle.util';
 import logger from '../../../utils/logger';
 import Invoice from '../../invoice/invoice.model';
 import { InvoiceStatus } from '../../invoice/invoice.interface';
+import config from '../../../config';
 
 let providersRegistered = false;
+const PROVISIONING_STEP_TIMEOUT_MS = config.provisioning.stepTimeoutMs;
 
 function ensureProvidersRegistered(): void {
     if (!providersRegistered) {
         registerProvisioningProviders();
         providersRegistered = true;
+    }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+        return await Promise.race<T>([
+            promise,
+            new Promise<T>((_, reject) => {
+                timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timer) clearTimeout(timer);
     }
 }
 
@@ -86,7 +102,8 @@ export class ProvisioningWorker {
         // 1. Idempotency: if Service exists and is not awaiting reprovision, mark job SUCCESS
         let service = await serviceRepository.findByOrderItemId(orderItemId);
         const isReprovision = !!service && service.status === ServiceStatus.PROVISIONING;
-        if (service && !isReprovision) {
+        const shouldSkipProvision = !!service && ![ServiceStatus.PENDING, ServiceStatus.PROVISIONING, ServiceStatus.FAILED].includes(service.status);
+        if (shouldSkipProvision) {
             await provisioningJobRepository.updateStatus(job._id as string, ProvisioningJobStatus.SUCCESS);
             return;
         }
@@ -146,6 +163,13 @@ export class ProvisioningWorker {
                 invoiceId: (job.invoiceId as any)?.toString(),
                 meta: { serviceType },
             });
+        } else if (service.status !== ServiceStatus.PROVISIONING) {
+            await serviceRepository.updateStatus((service._id as unknown) as string, ServiceStatus.PROVISIONING);
+            service = await serviceRepository.findByOrderItemId(orderItemId);
+        }
+
+        if (!service) {
+            throw new Error(`Service not found for order item ${orderItemId} after provisioning setup`);
         }
 
         const serviceId = (service._id as unknown) as string;
@@ -160,7 +184,11 @@ export class ProvisioningWorker {
                 reprovision: isReprovision,
             };
 
-            const result = await provider.provision(ctx);
+            const result = await withTimeout(
+                provider.provision(ctx),
+                PROVISIONING_STEP_TIMEOUT_MS,
+                `Provisioning timed out after ${Math.floor(PROVISIONING_STEP_TIMEOUT_MS / 1000)}s`
+            );
 
             if (!result.success) {
                 throw new Error(result.error || 'Provisioning failed');
@@ -176,6 +204,7 @@ export class ProvisioningWorker {
             await serviceRepository.updateStatus(serviceId, ServiceStatus.ACTIVE, {
                 suspendedAt: null as any,
                 terminatedAt: null as any,
+                cancelledAt: null as any,
                 provisioning: {
                     provider: result.providerName || 'StubProvider',
                     remoteId: result.remoteId ?? undefined,

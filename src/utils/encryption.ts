@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import config from '../config';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -6,8 +7,11 @@ const AUTH_TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
 
 function getEncryptionKey(): Buffer {
-    const secret = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'fallback-do-not-use-in-production';
-    if (secret === 'fallback-do-not-use-in-production' && process.env.NODE_ENV === 'production') {
+    const secret =
+        (config.security.encryptionKey && config.security.encryptionKey.trim()) ||
+        config.jwt.secret ||
+        'fallback-do-not-use-in-production';
+    if (secret === 'fallback-do-not-use-in-production' && config.env === 'production') {
         throw new Error('ENCRYPTION_KEY or JWT_SECRET must be set in production');
     }
     if (secret === 'fallback-do-not-use-in-production') {

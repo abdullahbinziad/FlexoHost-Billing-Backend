@@ -100,6 +100,17 @@ export class ProvisioningJobRepository {
         }
         await ProvisioningJob.findByIdAndUpdate(id, update as any).exec();
     }
+
+    /** Force requeue an existing job immediately (used on manual/paid retrigger). */
+    async forceRequeueNow(id: string, attempts: number = 0): Promise<void> {
+        await ProvisioningJob.findByIdAndUpdate(
+            id,
+            {
+                $set: { status: ProvisioningJobStatus.QUEUED, attempts, lastError: undefined },
+                $unset: { lockedAt: 1, lockOwner: 1 },
+            } as any
+        ).exec();
+    }
 }
 
 export default new ProvisioningJobRepository();

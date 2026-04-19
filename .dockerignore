@@ -1,5 +1,14 @@
 node_modules
+dist
+logs
+uploads
 .git
+.cursor
+.env
+.env.*
 npm-debug.log
+yarn-debug.log
+yarn-error.log
 Dockerfile
+docker-compose.yml
 .dockerignore

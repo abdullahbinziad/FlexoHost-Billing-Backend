@@ -1,6 +1,7 @@
 import app from './app';
 import config from './config';
 import connectDB from './config/database';
+import { refreshDomainSystemSettingsCache } from './modules/domain/domain-system-settings.service';
 import { automationScheduler } from './modules/services/jobs/automation.scheduler';
 import logger from './utils/logger';
 
@@ -8,8 +9,8 @@ const UNSAFE_SECRETS = ['your-super-secret', 'change-this-in-production', 'chang
 
 function validateSecrets(): void {
     if (config.env !== 'production') return;
-    const jwtSecret = process.env.JWT_SECRET || '';
-    const refreshSecret = process.env.JWT_REFRESH_SECRET || '';
+    const jwtSecret = config.jwt.secret;
+    const refreshSecret = config.jwt.refreshSecret;
     const weak = (s: string) => s.length < 32 || UNSAFE_SECRETS.some((u) => s.toLowerCase().includes(u));
     if (weak(jwtSecret) || weak(refreshSecret)) {
         logger.warn('SECURITY: JWT_SECRET or JWT_REFRESH_SECRET appears weak or default. Set strong, unique values in production.');
@@ -20,6 +21,7 @@ const startServer = async () => {
     try {
         validateSecrets();
         await connectDB();
+        await refreshDomainSystemSettingsCache();
         automationScheduler.start();
 
         // Start server

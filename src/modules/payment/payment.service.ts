@@ -27,16 +27,13 @@ class PaymentService {
     private defaultGateway: string = 'sslcommerz';
 
     constructor() {
-        // Initialize gateways with credentials from env
-        const sslStoreId = process.env.SSLCOMMERZ_STORE_ID || (config.env === 'production' ? '' : 'testbox');
-        const sslStorePassword = process.env.SSLCOMMERZ_STORE_PASSWORD || (config.env === 'production' ? '' : 'qwerty');
-        const sslIsLive = process.env.SSLCOMMERZ_IS_LIVE === 'true';
+        const { storeId, storePassword, isLive } = config.payment.sslcommerz;
 
-        if (config.env === 'production' && (!sslStoreId || !sslStorePassword)) {
+        if (config.env === 'production' && (!storeId || !storePassword)) {
             throw new Error('SSLCOMMERZ_STORE_ID and SSLCOMMERZ_STORE_PASSWORD are required in production');
         }
 
-        const sslCommerz = new SslCommerzPayment(sslStoreId, sslStorePassword, sslIsLive);
+        const sslCommerz = new SslCommerzPayment(storeId, storePassword, isLive);
         this.gateways.set(sslCommerz.name, sslCommerz);
     }
 
@@ -58,6 +55,52 @@ class PaymentService {
     async validatePayment(data: any, gatewayName?: string): Promise<any> {
         const gateway = this.getGateway(gatewayName);
         return gateway.validate(data);
+    }
+
+    private normalizeGatewayPayload(payload: any): any {
+        if (!payload || typeof payload !== 'object') return payload;
+
+        const element =
+            Array.isArray(payload.element) && payload.element.length > 0
+                ? payload.element[0]
+                : Array.isArray(payload.element_data) && payload.element_data.length > 0
+                    ? payload.element_data[0]
+                    : null;
+
+        if (!element || typeof element !== 'object') return payload;
+
+        return {
+            ...payload,
+            ...element,
+            status: element.status || payload.status,
+            tran_id: element.tran_id || payload.tran_id,
+            value_a: element.value_a || payload.value_a,
+            amount: element.amount || payload.amount,
+            currency: element.currency || payload.currency || payload.currency_type,
+        };
+    }
+
+    private isGatewaySuccessStatus(status: unknown): boolean {
+        if (typeof status !== 'string') return false;
+        const normalized = status.trim().toUpperCase();
+        return ['VALID', 'VALIDATED', 'SUCCESS', 'VALID_TRANSACTION'].includes(normalized);
+    }
+
+    private selectBestPaidAmount(expectedAmount: number, rawCandidates: Array<unknown>): number | null {
+        const candidates = rawCandidates
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0);
+
+        if (!candidates.length) return null;
+        if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) return Number(candidates[0].toFixed(2));
+
+        const best = candidates.reduce((prev, curr) => {
+            const prevDiff = Math.abs(prev - expectedAmount);
+            const currDiff = Math.abs(curr - expectedAmount);
+            return currDiff < prevDiff ? curr : prev;
+        });
+
+        return Number(best.toFixed(2));
     }
 
     async payInvoice(invoiceId: string, gatewayName?: string, requesterClientId?: string): Promise<any> {
@@ -108,19 +151,50 @@ class PaymentService {
     }
 
     async handlePaymentSuccess(validationData: any, gatewayName?: string): Promise<any> {
-        // Validation data from SSL usually includes `val_id` on the success callback
         const gateway = this.getGateway(gatewayName);
-        const result = await gateway.validate(validationData);
+        const hasValId = typeof validationData?.val_id === 'string' && validationData.val_id.trim().length > 0;
+        let result: any;
+        try {
+            if (hasValId) {
+                result = await gateway.validate(validationData);
+            } else {
+                const tranId =
+                    typeof validationData?.tran_id === 'string' ? validationData.tran_id.trim() : '';
+                const gatewayWithQuery = gateway as any;
+                if (tranId && typeof gatewayWithQuery.transactionQueryByTransactionId === 'function') {
+                    result = await gatewayWithQuery.transactionQueryByTransactionId({ tran_id: tranId });
+                } else {
+                    result = validationData;
+                }
+            }
+        } catch {
+            result = validationData;
+        }
+        result = this.normalizeGatewayPayload(result);
 
-        if (result.status === 'VALID' || result.status === 'VALIDATED') {
-            const invoiceId = result.value_a;
+        const normalizedStatus = typeof result?.status === 'string' ? result.status.toUpperCase() : '';
+        const fallbackCallbackStatus = validationData?.status;
+        if (this.isGatewaySuccessStatus(normalizedStatus) || this.isGatewaySuccessStatus(fallbackCallbackStatus)) {
+            const resultInvoiceId = typeof result?.value_a === 'string' ? result.value_a : '';
+            const callbackInvoiceId = typeof validationData?.value_a === 'string' ? validationData.value_a : '';
+            const tranIdForInvoiceRaw =
+                typeof result?.tran_id === 'string'
+                    ? result.tran_id
+                    : typeof validationData?.tran_id === 'string'
+                        ? validationData.tran_id
+                        : '';
+            const tranIdForInvoice = tranIdForInvoiceRaw.trim();
+            const parsedInvoiceId = tranIdForInvoice.startsWith('TRX_')
+                ? tranIdForInvoice.split('_')[1] || ''
+                : '';
+            const invoiceId = resultInvoiceId || callbackInvoiceId || parsedInvoiceId;
             if (!invoiceId) throw new ApiError(400, 'Invoice ID not found in transaction data');
 
             const invoice = await Invoice.findById(invoiceId);
             if (!invoice) throw new ApiError(404, 'Invoice not found');
 
             const gatewayId = gatewayName || this.defaultGateway;
-            const transactionId = typeof result.tran_id === 'string' ? result.tran_id.trim() : '';
+            const transactionId = tranIdForInvoice;
             if (!transactionId) {
                 throw new ApiError(400, 'Gateway transaction ID is missing');
             }
@@ -138,12 +212,78 @@ class PaymentService {
                 return { message: 'Already processed', invoiceId: invoice._id, tran_id: transactionId };
             }
 
-            const { amount, currency } = assertPaymentMatchesInvoice({
-                invoiceBalanceDue: invoice.balanceDue,
-                invoiceCurrency: invoice.currency,
-                paidAmount: result.amount,
-                paidCurrency: typeof result.currency === 'string' ? result.currency : result.currency_type,
-            });
+            const paidCurrency =
+                result?.currency ??
+                result?.currency_type ??
+                validationData?.currency;
+
+            const normalizedPaidCurrency =
+                typeof paidCurrency === 'string' ? paidCurrency.trim().toUpperCase() : '';
+            const normalizedInvoiceCurrency = (invoice.currency || '').trim().toUpperCase();
+
+            let amount: number;
+            let currency: string;
+
+            if (
+                normalizedPaidCurrency &&
+                normalizedInvoiceCurrency &&
+                normalizedPaidCurrency !== normalizedInvoiceCurrency
+            ) {
+                const invoiceCurrencyCandidates = [
+                    result?.currency_amount,
+                    result?.amount_a,
+                    validationData?.currency_amount,
+                    validationData?.amount_a,
+                ];
+                const selectedInvoiceCurrencyAmount = this.selectBestPaidAmount(
+                    invoice.balanceDue,
+                    invoiceCurrencyCandidates
+                );
+
+                logger.info(
+                    `[Payment] Amount reconciliation cross-currency invoiceExpected=${invoice.balanceDue} invoiceCurrency=${invoice.currency} paidCurrency=${String(
+                        paidCurrency || ''
+                    )} selectedInvoiceAmount=${String(
+                        selectedInvoiceCurrencyAmount || ''
+                    )} invoiceCandidates=${JSON.stringify(invoiceCurrencyCandidates)}`
+                );
+
+                const reconciled = assertPaymentMatchesInvoice({
+                    invoiceBalanceDue: invoice.balanceDue,
+                    invoiceCurrency: invoice.currency,
+                    paidAmount: selectedInvoiceCurrencyAmount ?? result?.currency_amount ?? validationData?.currency_amount,
+                    paidCurrency: invoice.currency,
+                });
+                amount = reconciled.amount;
+                currency = reconciled.currency;
+            } else {
+                const paidAmountCandidates = [
+                    result?.store_amount,
+                    result?.amount,
+                    result?.amount_a,
+                    result?.currency_amount,
+                    validationData?.store_amount,
+                    validationData?.amount,
+                    validationData?.amount_a,
+                    validationData?.currency_amount,
+                ];
+                const selectedPaidAmount = this.selectBestPaidAmount(invoice.balanceDue, paidAmountCandidates);
+                const paidAmount = selectedPaidAmount ?? result?.amount ?? validationData?.amount;
+                logger.info(
+                    `[Payment] Amount reconciliation expected=${invoice.balanceDue} expectedCurrency=${invoice.currency} paidCurrency=${String(
+                        paidCurrency || ''
+                    )} selectedPaid=${String(paidAmount || '')} candidates=${JSON.stringify(paidAmountCandidates)}`
+                );
+
+                const reconciled = assertPaymentMatchesInvoice({
+                    invoiceBalanceDue: invoice.balanceDue,
+                    invoiceCurrency: invoice.currency,
+                    paidAmount,
+                    paidCurrency,
+                });
+                amount = reconciled.amount;
+                currency = reconciled.currency;
+            }
 
             if (invoice.status === InvoiceStatus.PAID) {
                 return { message: 'Already paid', invoiceId: invoice._id, tran_id: transactionId };

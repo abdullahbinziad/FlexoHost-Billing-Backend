@@ -64,7 +64,7 @@ export class ServiceClientService {
         if (!services.length) return [];
         const orderItemIds = services.map((s) => s.orderItemId);
         const orderItems = await OrderItem.find({ _id: { $in: orderItemIds } })
-            .select('_id nameSnapshot')
+            .select('_id nameSnapshot configSnapshot')
             .lean();
         const orderItemMap = Object.fromEntries(orderItems.map((o: any) => [o._id.toString(), o]));
 
@@ -97,7 +97,7 @@ export class ServiceClientService {
             svc.displayName = oi?.nameSnapshot || 'Hosting';
             if (s.type === ServiceType.HOSTING) {
                 const h = hostingMap[(s._id as any)?.toString?.() || s._id];
-                svc.identifier = h?.primaryDomain || '—';
+                svc.identifier = h?.primaryDomain || oi?.configSnapshot?.primaryDomain || oi?.configSnapshot?.domain || '—';
                 svc.serverLocation = h?.serverLocation || undefined;
             }
             return svc;

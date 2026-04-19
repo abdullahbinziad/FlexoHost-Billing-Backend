@@ -11,8 +11,27 @@ export enum ServiceStatus {
     PROVISIONING = 'PROVISIONING',
     ACTIVE = 'ACTIVE',
     SUSPENDED = 'SUSPENDED',
+    /** Ended on the server (WHM terminate, etc.) */
     TERMINATED = 'TERMINATED',
+    /** Cancelled before activation — no WHM terminate; distinct from terminated */
+    CANCELLED = 'CANCELLED',
     FAILED = 'FAILED',
+}
+
+const SERVICE_STATUS_VALUES = new Set<string>(Object.values(ServiceStatus));
+
+/**
+ * Normalize arbitrary status input to canonical ServiceStatus enum.
+ * Accepts common aliases and defaults safely to PENDING.
+ */
+export function normalizeServiceStatus(value: unknown): ServiceStatus {
+    const raw = String(value || '').trim().toUpperCase();
+    if (SERVICE_STATUS_VALUES.has(raw)) return raw as ServiceStatus;
+    if (raw === 'CANCELED') return ServiceStatus.CANCELLED;
+    if (raw === 'TERMINATE' || raw.includes('TERMINAT')) return ServiceStatus.TERMINATED;
+    if (raw.includes('SUSPEND')) return ServiceStatus.SUSPENDED;
+    if (raw.includes('CANCEL')) return ServiceStatus.CANCELLED;
+    return ServiceStatus.PENDING;
 }
 
 export enum BillingCycle {

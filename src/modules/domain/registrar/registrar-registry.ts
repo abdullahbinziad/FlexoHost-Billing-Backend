@@ -45,7 +45,7 @@ export function resolveRegistrarKeyForDomain(domainName: string, preferredRegist
         return mappedRegistrar;
     }
 
-    return registrarProviders.has('dynadot') ? 'dynadot' : Array.from(registrarProviders.keys())[0] || '';
+    return Array.from(registrarProviders.keys())[0] || '';
 }
 
 export function resolveRegistrarProviderForDomain(domainName: string, preferredRegistrar?: string | null): IRegistrarProvider {

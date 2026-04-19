@@ -16,6 +16,7 @@
         "seed:users:force": "ts-node src/seeders/user.seeder.ts --force",
         "seed:roles": "ts-node src/seeders/role.seeder.ts",
         "backfill:fx": "ts-node src/scripts/backfill-fx.ts",
+        "verify:renewal-flow": "ts-node src/scripts/verify-renewal-flow.ts",
         "migrate:whmcs": "ts-node src/scripts/whmcs-migration/run.ts",
         "migrate:whmcs:import": "ts-node src/scripts/whmcs-migration/import-sql.ts",
         "migrate:unset-legacy-smtp-fields": "ts-node src/scripts/migrate-unset-legacy-smtp-dashboard-fields.ts"

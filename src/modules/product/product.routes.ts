@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { productController } from './product.controller';
 import { protect, restrictTo } from '../../middlewares/auth';
+import { requirePermission } from '../../middlewares/requirePermission';
 import { validate } from '../../middlewares/validate';
 import {
     createProductValidation,
@@ -41,21 +42,36 @@ router.get('/group/:group', productController.getByGroup);
  */
 router
     .route('/')
-    .get(validate(getProductsQueryValidation), productController.getAll)
-    .post(validate(createProductValidation), productController.create);
+    .get(validate(getProductsQueryValidation), requirePermission('products:list'), productController.getAll)
+    .post(validate(createProductValidation), requirePermission('products:create'), productController.create);
 
 /**
  * Single product routes
  */
 router
     .route('/:id')
-    .get(validate(getProductValidation), productController.getOne)
-    .put(validate(updateProductValidation), productController.update)
-    .delete(validate(deleteProductValidation), productController.delete);
+    .get(validate(getProductValidation), requirePermission('products:read'), productController.getOne)
+    .put(validate(updateProductValidation), requirePermission('products:update'), productController.update)
+    .delete(validate(deleteProductValidation), requirePermission('products:delete'), productController.delete);
 
 /**
  * Toggle product visibility
  */
-router.patch('/:id/visibility', validate(toggleVisibilityValidation), productController.toggleVisibility);
+router.patch(
+    '/:id/visibility',
+    validate(toggleVisibilityValidation),
+    requirePermission('products:toggle_visibility'),
+    productController.toggleVisibility
+);
+
+/**
+ * Duplicate product
+ */
+router.post(
+    '/:id/duplicate',
+    validate(getProductValidation),
+    requirePermission('products:duplicate'),
+    productController.duplicate
+);
 
 export default router;

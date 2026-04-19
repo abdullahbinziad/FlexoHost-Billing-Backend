@@ -158,11 +158,12 @@ export class ServiceTerminationScheduler {
 
             // 1. Audit Logging Native Protection
             await ServiceAuditLog.create({
+                actorUserId: svc.clientId,
                 clientId: svc.clientId,
                 serviceId: svc._id,
                 action: 'TERMINATE',
                 beforeSnapshot: { status: beforeStatus, suspendedAt: svc.suspendedAt, autoTerminateAt: (svc.meta as any)?.autoTerminateAt },
-                afterSnapshot: { status: ServiceStatus.TERMINATED, terminatedAt: svc.terminatedAt },
+                afterSnapshot: { status: ServiceStatus.TERMINATED, suspendedAt: svc.suspendedAt, terminatedAt: svc.terminatedAt },
             });
 
             const { auditLogSafe } = await import('../../activity-log/activity-log.service');

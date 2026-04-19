@@ -17,8 +17,8 @@ async function getClamScan(): Promise<{ isInfected: (p: string) => Promise<{ fil
         const clamscan = await new NodeClam().init({
             clamdscan: {
                 socket: null,
-                host: process.env.CLAMAV_HOST || '127.0.0.1',
-                port: parseInt(process.env.CLAMAV_PORT || '3310', 10),
+                host: config.upload.clamavHost,
+                port: config.upload.clamavPort,
                 timeout: 60000,
                 localFallback: true,
             },

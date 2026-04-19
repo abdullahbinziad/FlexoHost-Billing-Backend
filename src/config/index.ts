@@ -25,10 +25,12 @@ interface Config {
     cookieOnlyAuth?: boolean;
     cookieDomain?: string;
     upload: {
-
         maxFileSize: number;
         uploadPath: string;
         enableClamavScan?: boolean;
+        /** ClamAV daemon (when enableClamavScan). Env: CLAMAV_HOST, CLAMAV_PORT */
+        clamavHost: string;
+        clamavPort: number;
     };
     rateLimit: {
         windowMs: number;
@@ -51,6 +53,13 @@ interface Config {
         logoUrl: string;
         /** When true, fetch EMAIL_LOGO_URL and embed as inline CID (better WebP/client support). */
         logoInline: boolean;
+        /** Nodemailer socket/timeouts; env SMTP_FORCE_IPV4, SMTP_CONNECTION_TIMEOUT_MS, etc. */
+        transport: {
+            forceIpv4: boolean;
+            connectionTimeoutMs: number;
+            greetingTimeoutMs: number;
+            socketTimeoutMs: number;
+        };
     };
     security: {
         bcryptSaltRounds: number;
@@ -60,6 +69,8 @@ interface Config {
         csrfTokenBytes: number;
         /** Key material for AES-256-GCM (e.g. SMTP password at rest). From SETTINGS_ENCRYPTION_KEY. */
         settingsEncryptionKey: string;
+        /** Optional; app token encryption uses this or jwt.secret. Env: ENCRYPTION_KEY */
+        encryptionKey: string;
     };
     whm: {
         host: string;
@@ -67,6 +78,15 @@ interface Config {
         apiToken: string;
         /** When true (default), verify SSL certificates. Set WHM_REJECT_UNAUTHORIZED=false only for self-signed WHM. */
         rejectUnauthorized: boolean;
+        /**
+         * Default HTTP timeout for WHM JSON-API calls (per-server client; override via WhmApiClientOptions.timeoutMs).
+         * Env: WHM_HTTP_TIMEOUT_MS (minimum 10000 when set; default 120000).
+         */
+        httpTimeoutMs: number;
+    };
+    /** Background provisioning job single-step timeout (e.g. WHM createacct). Env: PROVISIONING_STEP_TIMEOUT_MS (min 30000; default 120000). */
+    provisioning: {
+        stepTimeoutMs: number;
     };
     namely: {
         apiKey: string;
@@ -75,11 +95,32 @@ interface Config {
     google: {
         clientId: string;
         clientSecret: string;
+        /** Optional explicit OAuth redirect; env GOOGLE_REDIRECT_URI */
+        redirectUri: string;
+    };
+    /** Domain / TLD helpers */
+    domain: {
+        /** Env: TLD_EXTENSION_CACHE_TTL_MS (0 disables cache) */
+        tldExtensionCacheTtlMs: number;
+    };
+    /** Dashboard reporting currency & FX. Env: BASE_REPORTING_CURRENCY, EXCHANGE_RATE_BDT */
+    reporting: {
+        baseCurrency: string;
+        exchangeRateBdt: number;
+    };
+    /** Payment gateways */
+    payment: {
+        sslcommerz: {
+            storeId: string;
+            storePassword: string;
+            isLive: boolean;
+        };
     };
     cron: {
         enabled: boolean;
         runOnStart: boolean;
         renewalsIntervalMs: number;
+        billableItemsRecurringIntervalMs: number;
         overdueSuspensionsIntervalMs: number;
         invoiceRemindersIntervalMs: number;
         terminationsIntervalMs: number;
@@ -110,8 +151,17 @@ interface Config {
     websiteUrl: string;
     /** Control panel URL pattern (e.g. cPanel). Used to build https://hostname:2083. */
     controlPanel: { protocol: string; port: number };
-    /** App/brand for emails and UI. */
-    app: { companyName: string; supportEmail: string };
+    /** App/brand for emails, PDFs, and UI. */
+    app: {
+        companyName: string;
+        supportEmail: string;
+        /** Billing / PDF “pay to” email. Env: COMPANY_EMAIL */
+        companyEmail: string;
+        /** PDF letterhead address. Env: COMPANY_ADDRESS */
+        companyAddress: string;
+        /** PDF logo URL. Env: INVOICE_PDF_LOGO_URL */
+        invoicePdfLogoUrl: string;
+    };
     /** Successful login notification email (password + OAuth). */
     loginAlert: {
         successEnabled: boolean;
@@ -123,6 +173,14 @@ interface Config {
 /** Public site origin for links and default email assets; same value stored on config.websiteUrl */
 const websiteUrl =
     process.env.WEBSITE_URL || process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:3000';
+
+const whmHttpTimeoutMsParsed = parseInt(process.env.WHM_HTTP_TIMEOUT_MS || '', 10);
+const provisioningStepTimeoutMsParsed = parseInt(process.env.PROVISIONING_STEP_TIMEOUT_MS || '', 10);
+const nodeEnv = process.env.NODE_ENV || 'development';
+const smtpForceIpv4 =
+    process.env.SMTP_FORCE_IPV4 === 'true' ||
+    process.env.SMTP_FORCE_IPV4 === '1' ||
+    process.env.SMTP_FAMILY === '4';
 
 /** ImgBB and some docs use i.ibb.co; a common typo i.ibb.co.com breaks TLS / does not resolve. */
 function normalizeEmailLogoUrl(url: string): string {
@@ -157,6 +215,8 @@ const config: Config = {
         maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880', 10), // 5MB default
         uploadPath: process.env.UPLOAD_PATH || 'uploads',
         enableClamavScan: (process.env.ENABLE_CLAMAV_SCAN || '').toLowerCase() === 'true',
+        clamavHost: process.env.CLAMAV_HOST || '127.0.0.1',
+        clamavPort: parseInt(process.env.CLAMAV_PORT || '3310', 10),
     },
 
     rateLimit: {
@@ -192,6 +252,12 @@ const config: Config = {
                 : '') ||
             'https://res.cloudinary.com/dzmglrehf/image/upload/f_png/v1774867247/FlexoHostHorizontalforDark_kwcztr.webp',
         logoInline: process.env.EMAIL_LOGO_INLINE?.toLowerCase() !== 'false',
+        transport: {
+            forceIpv4: smtpForceIpv4,
+            connectionTimeoutMs: parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '25000', 10),
+            greetingTimeoutMs: parseInt(process.env.SMTP_GREETING_TIMEOUT_MS || '25000', 10),
+            socketTimeoutMs: parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS || '60000', 10),
+        },
     },
 
     security: {
@@ -199,12 +265,37 @@ const config: Config = {
         csrfEnabled: (process.env.ENABLE_CSRF || '').toLowerCase() !== 'false',
         csrfTokenBytes: 32,
         settingsEncryptionKey: process.env.SETTINGS_ENCRYPTION_KEY || '',
+        encryptionKey: process.env.ENCRYPTION_KEY || '',
     },
     whm: {
         host: process.env.WHM_HOST || '',
         username: process.env.WHM_USERNAME || '',
         apiToken: process.env.WHM_API_TOKEN || '',
         rejectUnauthorized: process.env.WHM_REJECT_UNAUTHORIZED !== 'false',
+        httpTimeoutMs:
+            Number.isFinite(whmHttpTimeoutMsParsed) && whmHttpTimeoutMsParsed >= 10000
+                ? whmHttpTimeoutMsParsed
+                : 120000,
+    },
+    provisioning: {
+        stepTimeoutMs:
+            Number.isFinite(provisioningStepTimeoutMsParsed) && provisioningStepTimeoutMsParsed >= 30000
+                ? provisioningStepTimeoutMsParsed
+                : 120000,
+    },
+    domain: {
+        tldExtensionCacheTtlMs: Math.max(0, parseInt(process.env.TLD_EXTENSION_CACHE_TTL_MS || '120000', 10)),
+    },
+    reporting: {
+        baseCurrency: (process.env.BASE_REPORTING_CURRENCY || 'USD').trim().toUpperCase() || 'USD',
+        exchangeRateBdt: parseFloat(process.env.EXCHANGE_RATE_BDT || '0.009'),
+    },
+    payment: {
+        sslcommerz: {
+            storeId: process.env.SSLCOMMERZ_STORE_ID || (nodeEnv === 'production' ? '' : 'testbox'),
+            storePassword: process.env.SSLCOMMERZ_STORE_PASSWORD || (nodeEnv === 'production' ? '' : 'qwerty'),
+            isLive: process.env.SSLCOMMERZ_IS_LIVE === 'true',
+        },
     },
     namely: {
         apiKey: process.env.NAMELY_API_KEY || '',
@@ -213,11 +304,13 @@ const config: Config = {
     google: {
         clientId: process.env.GOOGLE_CLIENT_ID || '',
         clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+        redirectUri: process.env.GOOGLE_REDIRECT_URI?.trim() || '',
     },
     cron: {
         enabled: (process.env.CRON_ENABLED || 'true').toLowerCase() !== 'false',
         runOnStart: (process.env.CRON_RUN_ON_START || 'false').toLowerCase() === 'true',
         renewalsIntervalMs: parseInt(process.env.CRON_RENEWALS_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
+        billableItemsRecurringIntervalMs: parseInt(process.env.CRON_BILLABLE_ITEMS_RECURRING_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
         overdueSuspensionsIntervalMs: parseInt(process.env.CRON_OVERDUE_SUSPENSIONS_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
         invoiceRemindersIntervalMs: parseInt(process.env.CRON_INVOICE_REMINDERS_INTERVAL_MS || `${6 * 60 * 60 * 1000}`, 10),
         terminationsIntervalMs: parseInt(process.env.CRON_TERMINATIONS_INTERVAL_MS || `${12 * 60 * 60 * 1000}`, 10),
@@ -260,6 +353,12 @@ const config: Config = {
     app: {
         companyName: process.env.COMPANY_NAME || process.env.APP_NAME || 'FlexoHost',
         supportEmail: process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || 'support@example.com',
+        companyEmail: process.env.COMPANY_EMAIL || 'billing@flexohost.com',
+        companyAddress:
+            process.env.COMPANY_ADDRESS || 'Ghunti, Mymensingh Sadar, Mymensingh, Bangladesh, Post-2200',
+        invoicePdfLogoUrl:
+            process.env.INVOICE_PDF_LOGO_URL?.trim() ||
+            'https://res.cloudinary.com/dzmglrehf/image/upload/v1774877112/FlexoHostHorizontalforLight_gszd0a.webp',
     },
     loginAlert: {
         successEnabled: (process.env.LOGIN_ALERT_SUCCESS_ENABLED || 'true').toLowerCase() !== 'false',

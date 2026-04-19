@@ -411,10 +411,6 @@ export class NamelyRegistrarProvider implements IRegistrarProvider {
         unsupported('getOrderStatus');
     }
 
-    async listDomains(): Promise<{ domain: string; [k: string]: unknown }[]> {
-        unsupported('listDomains');
-    }
-
     async isProcessing(): Promise<boolean> {
         return false;
     }
