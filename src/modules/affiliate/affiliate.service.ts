@@ -5,6 +5,7 @@ import Client from '../client/client.model';
 import Invoice from '../invoice/invoice.model';
 import Order from '../order/order.model';
 import PaymentTransaction from '../transaction/transaction.model';
+import { getRateForDate } from '../exchange-rate/fx.service';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 import {
     AffiliateCommission,
@@ -26,6 +27,7 @@ const DEFAULT_COMMISSION_RATE = 20;
 const DEFAULT_REFERRAL_DISCOUNT_RATE = 5;
 const DEFAULT_PAYOUT_THRESHOLD = 1000;
 const DEFAULT_REFUND_WINDOW_DAYS = 7;
+const AFFILIATE_COMMISSION_CURRENCY = 'BDT';
 
 function round2(value: number): number {
     return Math.round((Number(value) || 0) * 100) / 100;
@@ -37,6 +39,28 @@ function normalizeCode(value: unknown): string {
 
 function addDays(date: Date, days: number): Date {
     return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+async function convertCurrencyAmountAtDate(
+    amount: number,
+    fromCurrency: string,
+    toCurrency: string,
+    date: Date
+): Promise<number> {
+    const source = normalizeCode(fromCurrency) || 'BDT';
+    const target = normalizeCode(toCurrency) || 'BDT';
+    const numericAmount = Number(amount) || 0;
+    if (!numericAmount || source === target) {
+        return round2(numericAmount);
+    }
+
+    const [sourceToBase, targetToBase] = await Promise.all([getRateForDate(source, date), getRateForDate(target, date)]);
+    if (!sourceToBase.rate || !targetToBase.rate) {
+        return round2(numericAmount);
+    }
+
+    const amountInBase = numericAmount * sourceToBase.rate;
+    return round2(amountInBase / targetToBase.rate);
 }
 
 class AffiliateService {
@@ -154,10 +178,9 @@ class AffiliateService {
         }).exec();
     }
 
-    private async determineDashboardCurrency(profileId: mongoose.Types.ObjectId, preferredCurrency?: string): Promise<string> {
-        if (preferredCurrency) return preferredCurrency;
+    private async determineDashboardCurrency(profileId: mongoose.Types.ObjectId, _preferredCurrency?: string): Promise<string> {
         const latest = await AffiliateCommission.findOne({ affiliateProfileId: profileId }).sort({ createdAt: -1 }).select('currency').lean();
-        return latest?.currency || 'BDT';
+        return latest?.currency || AFFILIATE_COMMISSION_CURRENCY;
     }
 
     private buildCurrencyTotals(commissions: any[]): Record<string, AffiliateCurrencyTotals> {
@@ -319,7 +342,7 @@ class AffiliateService {
                 commissionRate: defaultCommissionRate,
                 referralDiscountRate: defaultReferralDiscountRate,
                 payoutThreshold: defaultPayoutThreshold,
-                preferredCurrency: client.accountCreditCurrency || 'BDT',
+                preferredCurrency: AFFILIATE_COMMISSION_CURRENCY,
             });
 
             auditLogSafe({
@@ -527,6 +550,23 @@ class AffiliateService {
         const orderAmountForCommission = commissionBase > 0 ? commissionBase : paidTotal;
 
         const qualifiedAt = new Date();
+        const conversionDate = invoice.invoiceDate || invoice.createdAt || qualifiedAt;
+        const sourceCurrency = invoice.currency || profile.preferredCurrency || 'BDT';
+        const [
+            normalizedOrderAmountForCommission,
+            normalizedDiscountAmount,
+            normalizedCommissionAmount,
+        ] = await Promise.all([
+            convertCurrencyAmountAtDate(orderAmountForCommission, sourceCurrency, AFFILIATE_COMMISSION_CURRENCY, conversionDate),
+            convertCurrencyAmountAtDate(Number(order.discountTotal) || 0, sourceCurrency, AFFILIATE_COMMISSION_CURRENCY, conversionDate),
+            convertCurrencyAmountAtDate(
+                orderAmountForCommission * ((profile.commissionRate ?? DEFAULT_COMMISSION_RATE) / 100),
+                sourceCurrency,
+                AFFILIATE_COMMISSION_CURRENCY,
+                conversionDate
+            ),
+        ]);
+
         const commission = await AffiliateCommission.create({
             affiliateProfileId: profile._id,
             referralId: referral._id,
@@ -537,14 +577,12 @@ class AffiliateService {
             paymentTransactionId: paymentTransactionId ? new mongoose.Types.ObjectId(paymentTransactionId) : undefined,
             referralCode: profile.referralCode,
             status: AffiliateCommissionStatus.QUALIFIED,
-            currency: invoice.currency || profile.preferredCurrency || 'BDT',
+            currency: AFFILIATE_COMMISSION_CURRENCY,
             commissionRate: profile.commissionRate ?? DEFAULT_COMMISSION_RATE,
             referralDiscountRate: profile.referralDiscountRate ?? 0,
-            orderNetAmount: orderAmountForCommission,
-            discountAmount: round2(Number(order.discountTotal) || 0),
-            commissionAmount: round2(
-                orderAmountForCommission * ((profile.commissionRate ?? DEFAULT_COMMISSION_RATE) / 100)
-            ),
+            orderNetAmount: normalizedOrderAmountForCommission,
+            discountAmount: normalizedDiscountAmount,
+            commissionAmount: normalizedCommissionAmount,
             refundWindowDays: DEFAULT_REFUND_WINDOW_DAYS,
             qualifiedAt,
             availableAt: addDays(qualifiedAt, DEFAULT_REFUND_WINDOW_DAYS),
