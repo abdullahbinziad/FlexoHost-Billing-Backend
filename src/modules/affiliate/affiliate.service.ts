@@ -700,7 +700,10 @@ class AffiliateService {
                 referralLink: this.buildReferralLink(profileData.referralCode),
             },
             summaryByCurrency: this.buildCurrencyTotals(commissions),
-            referrals,
+            referrals: referrals.map((referral: any) => ({
+                ...referral,
+                referredClientObjectId: referral.referredClientId?._id?.toString?.() || undefined,
+            })),
             commissions,
             payoutRequests,
             clientCreditBalance: client.accountCreditBalance || 0,
@@ -757,7 +760,10 @@ class AffiliateService {
                 referralLink: this.buildReferralLink(profile.referralCode),
             },
             summaryByCurrency: this.buildCurrencyTotals(commissions),
-            referrals,
+            referrals: referrals.map((referral: any) => ({
+                ...referral,
+                referredClientObjectId: referral.referredClientId?._id?.toString?.() || undefined,
+            })),
             commissions,
             payoutRequests,
             clientCreditBalance: client.accountCreditBalance || 0,
