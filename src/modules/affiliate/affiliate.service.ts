@@ -4,6 +4,7 @@ import config from '../../config';
 import Client from '../client/client.model';
 import Invoice from '../invoice/invoice.model';
 import Order from '../order/order.model';
+import OrderItem from '../order/order-item.model';
 import PaymentTransaction from '../transaction/transaction.model';
 import { getRateForDate } from '../exchange-rate/fx.service';
 import { auditLogSafe } from '../activity-log/activity-log.service';
@@ -71,6 +72,7 @@ class AffiliateService {
                 defaultCommissionRate: DEFAULT_COMMISSION_RATE,
                 defaultReferralDiscountRate: DEFAULT_REFERRAL_DISCOUNT_RATE,
                 defaultPayoutThreshold: DEFAULT_PAYOUT_THRESHOLD,
+                commissionApprovalDelayDays: DEFAULT_REFUND_WINDOW_DAYS,
             });
         }
         return settings;
@@ -89,6 +91,15 @@ class AffiliateService {
     private async getDefaultPayoutThreshold() {
         const settings = await this.getAffiliateSettings();
         return settings.defaultPayoutThreshold ?? DEFAULT_PAYOUT_THRESHOLD;
+    }
+
+    private async getCommissionApprovalDelayDays() {
+        const settings = await this.getAffiliateSettings();
+        const days = Number(settings.commissionApprovalDelayDays);
+        if (Number.isFinite(days) && days >= 0) {
+            return Math.floor(days);
+        }
+        return DEFAULT_REFUND_WINDOW_DAYS;
     }
 
     private buildReferralLink(referralCode: string): string {
@@ -178,7 +189,7 @@ class AffiliateService {
         }).exec();
     }
 
-    private async determineDashboardCurrency(profileId: mongoose.Types.ObjectId, _preferredCurrency?: string): Promise<string> {
+    private async determineDashboardCurrency(profileId: mongoose.Types.ObjectId): Promise<string> {
         const latest = await AffiliateCommission.findOne({ affiliateProfileId: profileId }).sort({ createdAt: -1 }).select('currency').lean();
         return latest?.currency || AFFILIATE_COMMISSION_CURRENCY;
     }
@@ -567,6 +578,7 @@ class AffiliateService {
             ),
         ]);
 
+        const commissionApprovalDelayDays = await this.getCommissionApprovalDelayDays();
         const commission = await AffiliateCommission.create({
             affiliateProfileId: profile._id,
             referralId: referral._id,
@@ -583,9 +595,9 @@ class AffiliateService {
             orderNetAmount: normalizedOrderAmountForCommission,
             discountAmount: normalizedDiscountAmount,
             commissionAmount: normalizedCommissionAmount,
-            refundWindowDays: DEFAULT_REFUND_WINDOW_DAYS,
+            refundWindowDays: commissionApprovalDelayDays,
             qualifiedAt,
-            availableAt: addDays(qualifiedAt, DEFAULT_REFUND_WINDOW_DAYS),
+            availableAt: addDays(qualifiedAt, commissionApprovalDelayDays),
         });
 
         referral.status = AffiliateReferralStatus.QUALIFIED;
@@ -691,7 +703,29 @@ class AffiliateService {
                 .lean(),
         ]);
 
-        const preferredCurrency = await this.determineDashboardCurrency(profile._id as any, profile.preferredCurrency);
+        const preferredCurrency = await this.determineDashboardCurrency(profile._id as any);
+        const referralIds = referrals.map((referral: any) => String(referral._id));
+        const orderIds = referrals
+            .map((referral: any) => referral.firstOrderId?.toString?.())
+            .filter((id: string | undefined): id is string => Boolean(id));
+        const [linkedCommissions, orderItems] = await Promise.all([
+            referralIds.length
+                ? AffiliateCommission.find({ affiliateProfileId: profile._id, referralId: { $in: referralIds } })
+                      .select('referralId status availableAt commissionAmount currency')
+                      .lean()
+                : Promise.resolve([]),
+            orderIds.length
+                ? OrderItem.find({ orderId: { $in: orderIds } }).select('orderId nameSnapshot').lean()
+                : Promise.resolve([]),
+        ]);
+        const commissionByReferralId = new Map(linkedCommissions.map((item: any) => [item.referralId?.toString?.(), item]));
+        const purchasedItemsByOrderId = orderItems.reduce<Map<string, string[]>>((acc, item: any) => {
+            const key = item.orderId?.toString?.();
+            if (!key) return acc;
+            if (!acc.has(key)) acc.set(key, []);
+            if (item.nameSnapshot) acc.get(key)!.push(item.nameSnapshot);
+            return acc;
+        }, new Map<string, string[]>());
         return {
             enrolled: true,
             profile: {
@@ -703,6 +737,11 @@ class AffiliateService {
             referrals: referrals.map((referral: any) => ({
                 ...referral,
                 referredClientObjectId: referral.referredClientId?._id?.toString?.() || undefined,
+                commissionStatus: commissionByReferralId.get(referral._id?.toString?.())?.status,
+                expectedApprovalAt: commissionByReferralId.get(referral._id?.toString?.())?.availableAt,
+                commissionAmount: commissionByReferralId.get(referral._id?.toString?.())?.commissionAmount,
+                commissionCurrency: commissionByReferralId.get(referral._id?.toString?.())?.currency,
+                purchaseItems: purchasedItemsByOrderId.get(referral.firstOrderId?.toString?.()) || [],
             })),
             commissions,
             payoutRequests,
@@ -749,7 +788,29 @@ class AffiliateService {
                 .lean(),
         ]);
 
-        const preferredCurrency = await this.determineDashboardCurrency(profile._id as any, profile.preferredCurrency);
+        const preferredCurrency = await this.determineDashboardCurrency(profile._id as any);
+        const referralIds = referrals.map((referral: any) => String(referral._id));
+        const orderIds = referrals
+            .map((referral: any) => referral.firstOrderId?.toString?.())
+            .filter((id: string | undefined): id is string => Boolean(id));
+        const [linkedCommissions, orderItems] = await Promise.all([
+            referralIds.length
+                ? AffiliateCommission.find({ affiliateProfileId: profile._id, referralId: { $in: referralIds } })
+                      .select('referralId status availableAt commissionAmount currency')
+                      .lean()
+                : Promise.resolve([]),
+            orderIds.length
+                ? OrderItem.find({ orderId: { $in: orderIds } }).select('orderId nameSnapshot').lean()
+                : Promise.resolve([]),
+        ]);
+        const commissionByReferralId = new Map(linkedCommissions.map((item: any) => [item.referralId?.toString?.(), item]));
+        const purchasedItemsByOrderId = orderItems.reduce<Map<string, string[]>>((acc, item: any) => {
+            const key = item.orderId?.toString?.();
+            if (!key) return acc;
+            if (!acc.has(key)) acc.set(key, []);
+            if (item.nameSnapshot) acc.get(key)!.push(item.nameSnapshot);
+            return acc;
+        }, new Map<string, string[]>());
 
         return {
             enrolled: true,
@@ -763,6 +824,11 @@ class AffiliateService {
             referrals: referrals.map((referral: any) => ({
                 ...referral,
                 referredClientObjectId: referral.referredClientId?._id?.toString?.() || undefined,
+                commissionStatus: commissionByReferralId.get(referral._id?.toString?.())?.status,
+                expectedApprovalAt: commissionByReferralId.get(referral._id?.toString?.())?.availableAt,
+                commissionAmount: commissionByReferralId.get(referral._id?.toString?.())?.commissionAmount,
+                commissionCurrency: commissionByReferralId.get(referral._id?.toString?.())?.currency,
+                purchaseItems: purchasedItemsByOrderId.get(referral.firstOrderId?.toString?.()) || [],
             })),
             commissions,
             payoutRequests,
@@ -1081,7 +1147,7 @@ class AffiliateService {
     async getAdminDashboard() {
         await this.approveEligibleCommissions();
 
-        const [payoutRequests, transactionMap, settings] = await Promise.all([
+        const [payoutRequests, transactionMap, settings, referrals] = await Promise.all([
             AffiliatePayoutRequest.find({})
                 .populate('affiliateClientId', 'clientId firstName lastName contactEmail')
                 .populate('affiliateProfileId', 'referralCode')
@@ -1094,7 +1160,36 @@ class AffiliateService {
                 .limit(200)
                 .lean(),
             this.getAffiliateSettings().then((item) => item.toObject()),
+            AffiliateReferral.find({})
+                .populate('referredClientId', 'clientId firstName lastName contactEmail')
+                .populate('affiliateClientId', 'clientId firstName lastName contactEmail')
+                .sort({ createdAt: -1 })
+                .limit(300)
+                .lean(),
         ]);
+
+        const referralIds = referrals.map((item: any) => item._id);
+        const orderIds = referrals
+            .map((item: any) => item.firstOrderId?.toString?.())
+            .filter((id: string | undefined): id is string => Boolean(id));
+        const [linkedCommissions, orderItems] = await Promise.all([
+            referralIds.length
+                ? AffiliateCommission.find({ referralId: { $in: referralIds } })
+                      .select('referralId status availableAt commissionAmount currency')
+                      .lean()
+                : Promise.resolve([]),
+            orderIds.length
+                ? OrderItem.find({ orderId: { $in: orderIds } }).select('orderId nameSnapshot').lean()
+                : Promise.resolve([]),
+        ]);
+        const commissionByReferralId = new Map(linkedCommissions.map((item: any) => [item.referralId?.toString?.(), item]));
+        const purchasedItemsByOrderId = orderItems.reduce<Map<string, string[]>>((acc, item: any) => {
+            const key = item.orderId?.toString?.();
+            if (!key) return acc;
+            if (!acc.has(key)) acc.set(key, []);
+            if (item.nameSnapshot) acc.get(key)!.push(item.nameSnapshot);
+            return acc;
+        }, new Map<string, string[]>());
 
         const recentTransactionsByInvoice = new Map<string, string>();
         for (const tx of transactionMap) {
@@ -1106,17 +1201,31 @@ class AffiliateService {
         return {
             settings,
             payoutRequests,
+            referrals: referrals.map((referral: any) => ({
+                ...referral,
+                commissionStatus: commissionByReferralId.get(referral._id?.toString?.())?.status,
+                expectedApprovalAt: commissionByReferralId.get(referral._id?.toString?.())?.availableAt,
+                commissionAmount: commissionByReferralId.get(referral._id?.toString?.())?.commissionAmount,
+                commissionCurrency: commissionByReferralId.get(referral._id?.toString?.())?.currency,
+                purchaseItems: purchasedItemsByOrderId.get(referral.firstOrderId?.toString?.()) || [],
+            })),
             recentTransactionsByInvoice: Object.fromEntries(recentTransactionsByInvoice),
         };
     }
 
     async updateDefaultSettings(
-        payload: { defaultCommissionRate: number; defaultReferralDiscountRate: number; defaultPayoutThreshold: number },
+        payload: {
+            defaultCommissionRate: number;
+            defaultReferralDiscountRate: number;
+            defaultPayoutThreshold: number;
+            commissionApprovalDelayDays: number;
+        },
         actorUserId: string
     ) {
         const defaultCommissionRate = round2(Number(payload.defaultCommissionRate));
         const defaultReferralDiscountRate = round2(Number(payload.defaultReferralDiscountRate));
         const defaultPayoutThreshold = round2(Number(payload.defaultPayoutThreshold));
+        const commissionApprovalDelayDays = Math.floor(Number(payload.commissionApprovalDelayDays));
         if (Number.isNaN(defaultCommissionRate) || defaultCommissionRate < 0 || defaultCommissionRate > 100) {
             throw new ApiError(400, 'Default commission rate must be between 0 and 100');
         }
@@ -1130,11 +1239,19 @@ class AffiliateService {
         if (Number.isNaN(defaultPayoutThreshold) || defaultPayoutThreshold < 0) {
             throw new ApiError(400, 'Default payout threshold must be zero or more');
         }
+        if (
+            Number.isNaN(commissionApprovalDelayDays) ||
+            commissionApprovalDelayDays < 0 ||
+            commissionApprovalDelayDays > 365
+        ) {
+            throw new ApiError(400, 'Commission approval delay must be between 0 and 365 days');
+        }
 
         const settings = await this.getAffiliateSettings();
         settings.defaultCommissionRate = defaultCommissionRate;
         settings.defaultReferralDiscountRate = defaultReferralDiscountRate;
         settings.defaultPayoutThreshold = defaultPayoutThreshold;
+        settings.commissionApprovalDelayDays = commissionApprovalDelayDays;
         await settings.save();
 
         auditLogSafe({
@@ -1145,7 +1262,12 @@ class AffiliateService {
             actorId: actorUserId as any,
             source: 'manual',
             status: 'success',
-            meta: { defaultCommissionRate, defaultReferralDiscountRate, defaultPayoutThreshold } as Record<string, unknown>,
+            meta: {
+                defaultCommissionRate,
+                defaultReferralDiscountRate,
+                defaultPayoutThreshold,
+                commissionApprovalDelayDays,
+            } as Record<string, unknown>,
         });
 
         return settings.toObject();
