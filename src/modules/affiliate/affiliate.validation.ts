@@ -31,6 +31,9 @@ export const updateAffiliateDefaultSettingsValidation = [
     body('defaultPayoutThreshold')
         .isFloat({ min: 0 })
         .withMessage('Default payout threshold must be zero or more'),
+    body('commissionApprovalDelayDays')
+        .isInt({ min: 0, max: 365 })
+        .withMessage('Commission approval delay must be between 0 and 365 days'),
 ];
 
 export const updateAffiliateClientSettingsValidation = [

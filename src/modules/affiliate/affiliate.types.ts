@@ -70,6 +70,7 @@ export interface IAffiliateSettings {
     defaultReferralDiscountRate: number;
     defaultPayoutThreshold?: number;
     defaultPayoutThresholds: Record<string, number>;
+    commissionApprovalDelayDays: number;
     createdAt: Date;
     updatedAt: Date;
 }
