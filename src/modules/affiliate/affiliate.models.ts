@@ -29,6 +29,7 @@ const affiliateSettingsSchema = new Schema<IAffiliateSettingsDocument>(
         defaultCommissionRate: { type: Number, required: true, min: 0, max: 100, default: 20 },
         defaultReferralDiscountRate: { type: Number, required: true, min: 0, max: 100, default: 5 },
         defaultPayoutThreshold: { type: Number, required: true, min: 0, default: 1000 },
+        commissionApprovalDelayDays: { type: Number, required: true, min: 0, default: 7 },
         defaultPayoutThresholds: {
             type: Map,
             of: Number,
