@@ -1208,8 +1208,16 @@ class AffiliateService {
                 .lean(),
             this.getAffiliateSettings().then((item) => item.toObject()),
             AffiliateReferral.find({})
-                .populate('referredClientId', 'clientId firstName lastName contactEmail')
-                .populate('affiliateClientId', 'clientId firstName lastName contactEmail')
+                .populate({
+                    path: 'referredClientId',
+                    select: 'clientId firstName lastName contactEmail user',
+                    populate: { path: 'user', select: 'email' },
+                })
+                .populate({
+                    path: 'affiliateClientId',
+                    select: 'clientId firstName lastName contactEmail user',
+                    populate: { path: 'user', select: 'email' },
+                })
                 .sort({ createdAt: -1 })
                 .limit(300)
                 .lean(),
@@ -1250,6 +1258,18 @@ class AffiliateService {
             payoutRequests,
             referrals: referrals.map((referral: any) => ({
                 ...referral,
+                referredClientId: referral.referredClientId
+                    ? {
+                          ...referral.referredClientId,
+                          email: referral.referredClientId.contactEmail || referral.referredClientId.user?.email,
+                      }
+                    : referral.referredClientId,
+                affiliateClientId: referral.affiliateClientId
+                    ? {
+                          ...referral.affiliateClientId,
+                          email: referral.affiliateClientId.contactEmail || referral.affiliateClientId.user?.email,
+                      }
+                    : referral.affiliateClientId,
                 commissionStatus: commissionByReferralId.get(referral._id?.toString?.())?.status,
                 expectedApprovalAt: commissionByReferralId.get(referral._id?.toString?.())?.availableAt,
                 commissionAmount: commissionByReferralId.get(referral._id?.toString?.())?.commissionAmount,
