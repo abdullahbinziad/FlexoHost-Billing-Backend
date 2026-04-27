@@ -4,6 +4,7 @@ import ApiResponse from '../../utils/apiResponse';
 import { getBillingSettings, updateBillingSettings } from './billing-settings.service';
 import { AuthRequest } from '../../middlewares/auth';
 import { auditLogSafe } from '../activity-log/activity-log.service';
+import { setRuntimeBdtRateToBase } from '../exchange-rate/runtime-fx-rate.service';
 
 export const getSettings = catchAsync(async (_req: Request, res: Response) => {
     const billing = await getBillingSettings();
@@ -16,6 +17,7 @@ export const updateBillingSettingsHandler = catchAsync(async (req: Request, res:
 
     const allowed = [
         'defaultStaffRoleId',
+        'exchangeRateBdt',
         'renewalLeadDays',
         'daysBeforeSuspend',
         'daysBeforeTermination',
@@ -40,6 +42,7 @@ export const updateBillingSettingsHandler = catchAsync(async (req: Request, res:
     }
 
     const billing = await updateBillingSettings(filtered as any, user._id?.toString());
+    setRuntimeBdtRateToBase(billing.exchangeRateBdt);
 
     auditLogSafe({
         message: 'Billing settings updated',

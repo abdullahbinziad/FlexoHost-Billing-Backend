@@ -7,6 +7,7 @@ import { AuthRequest } from '../../middlewares/auth';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 import Role from '../role/role.model';
 import { hasPermission } from '../role/permission.const';
+import { setRuntimeBdtRateToBase } from '../exchange-rate/runtime-fx-rate.service';
 
 async function assertStaffCanPatchSettings(user: AuthRequest['user'], filtered: Record<string, unknown>): Promise<void> {
     const r = user?.role;
@@ -47,6 +48,7 @@ export const updateBillingSettingsHandler = catchAsync(async (req: Request, res:
 
     const allowed = [
         'defaultStaffRoleId',
+        'exchangeRateBdt',
         'renewalLeadDays',
         'daysBeforeSuspend',
         'daysBeforeTermination',
@@ -73,6 +75,7 @@ export const updateBillingSettingsHandler = catchAsync(async (req: Request, res:
     await assertStaffCanPatchSettings(user, filtered);
 
     const billing = await updateBillingSettings(filtered as any, user._id?.toString());
+    setRuntimeBdtRateToBase(billing.exchangeRateBdt);
 
     auditLogSafe({
         message: 'Billing settings updated',

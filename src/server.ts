@@ -3,6 +3,8 @@ import config from './config';
 import connectDB from './config/database';
 import { refreshDomainSystemSettingsCache } from './modules/domain/domain-system-settings.service';
 import { automationScheduler } from './modules/services/jobs/automation.scheduler';
+import { getBillingSettings } from './modules/billing-settings/billing-settings.service';
+import { setRuntimeBdtRateToBase } from './modules/exchange-rate/runtime-fx-rate.service';
 import logger from './utils/logger';
 
 const UNSAFE_SECRETS = ['your-super-secret', 'change-this-in-production', 'change-in-production', 'dev-secret', 'secret'];
@@ -21,6 +23,8 @@ const startServer = async () => {
     try {
         validateSecrets();
         await connectDB();
+        const billingSettings = await getBillingSettings();
+        setRuntimeBdtRateToBase(billingSettings.exchangeRateBdt);
         await refreshDomainSystemSettingsCache();
         automationScheduler.start();
 

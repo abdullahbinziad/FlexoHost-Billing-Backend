@@ -111,6 +111,9 @@ export interface IAffiliateCommission {
     orderNetAmount: number;
     discountAmount: number;
     commissionAmount: number;
+    orderNetAmounts?: Record<string, number>;
+    discountAmounts?: Record<string, number>;
+    commissionAmounts?: Record<string, number>;
     refundWindowDays: number;
     qualifiedAt: Date;
     availableAt: Date;
