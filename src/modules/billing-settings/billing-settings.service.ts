@@ -2,6 +2,7 @@ import BillingSettings, { DEFAULT_BILLING_SETTINGS } from './billing-settings.mo
 
 export interface BillingSettingsDto {
     defaultStaffRoleId?: string | null;
+    exchangeRateBdt: number;
     renewalLeadDays: number;
     daysBeforeSuspend: number;
     daysBeforeTermination: number;
@@ -46,6 +47,7 @@ export async function getBillingSettings(): Promise<BillingSettingsDto> {
     const defaultStaffRoleId = raw ? String(raw) : null;
     return {
         defaultStaffRoleId,
+        exchangeRateBdt: (doc.exchangeRateBdt as number | undefined) ?? DEFAULT_BILLING_SETTINGS.exchangeRateBdt,
         renewalLeadDays: (doc.renewalLeadDays as number | undefined) ?? DEFAULT_BILLING_SETTINGS.renewalLeadDays,
         daysBeforeSuspend: (doc.daysBeforeSuspend as number | undefined) ?? DEFAULT_BILLING_SETTINGS.daysBeforeSuspend,
         daysBeforeTermination: (doc.daysBeforeTermination as number | undefined) ?? DEFAULT_BILLING_SETTINGS.daysBeforeTermination,

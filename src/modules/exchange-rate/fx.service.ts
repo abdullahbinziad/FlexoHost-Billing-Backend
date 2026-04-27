@@ -1,5 +1,5 @@
 import ExchangeRate from './exchange-rate.model';
-import { BASE_REPORTING_CURRENCY, EXCHANGE_RATES_TO_BASE } from '../../config/currency.config';
+import { BASE_REPORTING_CURRENCY, getExchangeRatesToBase } from '../../config/currency.config';
 import type { IInvoiceFxSnapshot, IPaymentFxSnapshot } from './exchange-rate.interface';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -29,7 +29,8 @@ export async function getRateForDate(currency: string, date: Date): Promise<{ ra
     if (stored?.rateToBase != null) {
         return { rate: stored.rateToBase, isFallback: false };
     }
-    const fallback = EXCHANGE_RATES_TO_BASE[code] ?? EXCHANGE_RATES_TO_BASE[BASE_REPORTING_CURRENCY] ?? 1;
+    const rates = getExchangeRatesToBase();
+    const fallback = rates[code] ?? rates[BASE_REPORTING_CURRENCY] ?? 1;
     return { rate: fallback, isFallback: true };
 }
 
@@ -101,7 +102,7 @@ export function getRateFromBaseToDisplay(displayCurrency: string): number {
     const base = BASE_REPORTING_CURRENCY;
     const code = (displayCurrency || '').trim().toUpperCase() || base;
     if (code === base) return 1;
-    const toBase = EXCHANGE_RATES_TO_BASE[code];
+    const toBase = getExchangeRatesToBase()[code];
     if (toBase == null || toBase === 0) return 1;
     return round2(1 / toBase);
 }
@@ -112,7 +113,8 @@ export function getRateFromBaseToDisplay(displayCurrency: string): number {
 export function fallbackToBase(amount: number, currency: string): number {
     if (amount == null || Number.isNaN(amount)) return 0;
     const code = (currency || '').trim().toUpperCase() || BASE_REPORTING_CURRENCY;
-    const rate = EXCHANGE_RATES_TO_BASE[code] ?? EXCHANGE_RATES_TO_BASE[BASE_REPORTING_CURRENCY] ?? 1;
+    const rates = getExchangeRatesToBase();
+    const rate = rates[code] ?? rates[BASE_REPORTING_CURRENCY] ?? 1;
     return round2(amount * rate);
 }
 
