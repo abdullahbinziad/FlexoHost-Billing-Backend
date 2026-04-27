@@ -29,6 +29,7 @@ const DEFAULT_REFERRAL_DISCOUNT_RATE = 5;
 const DEFAULT_PAYOUT_THRESHOLD = 1000;
 const DEFAULT_REFUND_WINDOW_DAYS = 7;
 const AFFILIATE_COMMISSION_CURRENCY = 'BDT';
+const AFFILIATE_SECONDARY_CURRENCY = 'USD';
 
 function round2(value: number): number {
     return Math.round((Number(value) || 0) * 100) / 100;
@@ -62,6 +63,34 @@ async function convertCurrencyAmountAtDate(
 
     const amountInBase = numericAmount * sourceToBase.rate;
     return round2(amountInBase / targetToBase.rate);
+}
+
+async function buildDualCurrencyAmountsAtDate(
+    amount: number,
+    sourceCurrency: string,
+    date: Date
+): Promise<Record<string, number>> {
+    const [bdt, usd] = await Promise.all([
+        convertCurrencyAmountAtDate(amount, sourceCurrency, AFFILIATE_COMMISSION_CURRENCY, date),
+        convertCurrencyAmountAtDate(amount, sourceCurrency, AFFILIATE_SECONDARY_CURRENCY, date),
+    ]);
+    return {
+        [AFFILIATE_COMMISSION_CURRENCY]: bdt,
+        [AFFILIATE_SECONDARY_CURRENCY]: usd,
+    };
+}
+
+function toNumberMap(value: unknown): Record<string, number> {
+    if (!value) return {};
+    if (value instanceof Map) {
+        return Object.fromEntries(Array.from(value.entries()).map(([currency, amount]) => [currency, Number(amount) || 0]));
+    }
+    if (typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>).map(([currency, amount]) => [currency, Number(amount) || 0])
+        );
+    }
+    return {};
 }
 
 class AffiliateService {
@@ -196,39 +225,45 @@ class AffiliateService {
 
     private buildCurrencyTotals(commissions: any[]): Record<string, AffiliateCurrencyTotals> {
         return commissions.reduce<Record<string, AffiliateCurrencyTotals>>((acc, commission) => {
-            const currency = commission.currency || 'BDT';
-            acc[currency] = acc[currency] || {
-                qualified: 0,
-                approved: 0,
-                payoutRequested: 0,
-                credited: 0,
-                paidOut: 0,
-                reversed: 0,
-                totalEarned: 0,
-            };
-            const amount = Number(commission.commissionAmount) || 0;
-            acc[currency].totalEarned = round2(acc[currency].totalEarned + amount);
-            switch (commission.status) {
-                case AffiliateCommissionStatus.QUALIFIED:
-                    acc[currency].qualified = round2(acc[currency].qualified + amount);
-                    break;
-                case AffiliateCommissionStatus.APPROVED:
-                    acc[currency].approved = round2(acc[currency].approved + amount);
-                    break;
-                case AffiliateCommissionStatus.PAYOUT_REQUESTED:
-                    acc[currency].payoutRequested = round2(acc[currency].payoutRequested + amount);
-                    break;
-                case AffiliateCommissionStatus.CREDITED:
-                    acc[currency].credited = round2(acc[currency].credited + amount);
-                    break;
-                case AffiliateCommissionStatus.PAID_OUT:
-                    acc[currency].paidOut = round2(acc[currency].paidOut + amount);
-                    break;
-                case AffiliateCommissionStatus.REVERSED:
-                    acc[currency].reversed = round2(acc[currency].reversed + amount);
-                    break;
-                default:
-                    break;
+            const mappedCommissionAmounts = toNumberMap(commission.commissionAmounts);
+            const commissionAmounts = Object.keys(mappedCommissionAmounts).length
+                ? mappedCommissionAmounts
+                : {
+                      [commission.currency || AFFILIATE_COMMISSION_CURRENCY]: Number(commission.commissionAmount) || 0,
+                  };
+            for (const [currency, amount] of Object.entries(commissionAmounts)) {
+                acc[currency] = acc[currency] || {
+                    qualified: 0,
+                    approved: 0,
+                    payoutRequested: 0,
+                    credited: 0,
+                    paidOut: 0,
+                    reversed: 0,
+                    totalEarned: 0,
+                };
+                acc[currency].totalEarned = round2(acc[currency].totalEarned + amount);
+                switch (commission.status) {
+                    case AffiliateCommissionStatus.QUALIFIED:
+                        acc[currency].qualified = round2(acc[currency].qualified + amount);
+                        break;
+                    case AffiliateCommissionStatus.APPROVED:
+                        acc[currency].approved = round2(acc[currency].approved + amount);
+                        break;
+                    case AffiliateCommissionStatus.PAYOUT_REQUESTED:
+                        acc[currency].payoutRequested = round2(acc[currency].payoutRequested + amount);
+                        break;
+                    case AffiliateCommissionStatus.CREDITED:
+                        acc[currency].credited = round2(acc[currency].credited + amount);
+                        break;
+                    case AffiliateCommissionStatus.PAID_OUT:
+                        acc[currency].paidOut = round2(acc[currency].paidOut + amount);
+                        break;
+                    case AffiliateCommissionStatus.REVERSED:
+                        acc[currency].reversed = round2(acc[currency].reversed + amount);
+                        break;
+                    default:
+                        break;
+                }
             }
             return acc;
         }, {});
@@ -563,17 +598,12 @@ class AffiliateService {
         const qualifiedAt = new Date();
         const conversionDate = invoice.invoiceDate || invoice.createdAt || qualifiedAt;
         const sourceCurrency = invoice.currency || profile.preferredCurrency || 'BDT';
-        const [
-            normalizedOrderAmountForCommission,
-            normalizedDiscountAmount,
-            normalizedCommissionAmount,
-        ] = await Promise.all([
-            convertCurrencyAmountAtDate(orderAmountForCommission, sourceCurrency, AFFILIATE_COMMISSION_CURRENCY, conversionDate),
-            convertCurrencyAmountAtDate(Number(order.discountTotal) || 0, sourceCurrency, AFFILIATE_COMMISSION_CURRENCY, conversionDate),
-            convertCurrencyAmountAtDate(
+        const [orderNetAmounts, discountAmounts, commissionAmounts] = await Promise.all([
+            buildDualCurrencyAmountsAtDate(orderAmountForCommission, sourceCurrency, conversionDate),
+            buildDualCurrencyAmountsAtDate(Number(order.discountTotal) || 0, sourceCurrency, conversionDate),
+            buildDualCurrencyAmountsAtDate(
                 orderAmountForCommission * ((profile.commissionRate ?? DEFAULT_COMMISSION_RATE) / 100),
                 sourceCurrency,
-                AFFILIATE_COMMISSION_CURRENCY,
                 conversionDate
             ),
         ]);
@@ -592,9 +622,12 @@ class AffiliateService {
             currency: AFFILIATE_COMMISSION_CURRENCY,
             commissionRate: profile.commissionRate ?? DEFAULT_COMMISSION_RATE,
             referralDiscountRate: profile.referralDiscountRate ?? 0,
-            orderNetAmount: normalizedOrderAmountForCommission,
-            discountAmount: normalizedDiscountAmount,
-            commissionAmount: normalizedCommissionAmount,
+            orderNetAmount: orderNetAmounts[AFFILIATE_COMMISSION_CURRENCY],
+            discountAmount: discountAmounts[AFFILIATE_COMMISSION_CURRENCY],
+            commissionAmount: commissionAmounts[AFFILIATE_COMMISSION_CURRENCY],
+            orderNetAmounts,
+            discountAmounts,
+            commissionAmounts,
             refundWindowDays: commissionApprovalDelayDays,
             qualifiedAt,
             availableAt: addDays(qualifiedAt, commissionApprovalDelayDays),
@@ -711,7 +744,7 @@ class AffiliateService {
         const [linkedCommissions, orderItems] = await Promise.all([
             referralIds.length
                 ? AffiliateCommission.find({ affiliateProfileId: profile._id, referralId: { $in: referralIds } })
-                      .select('referralId status availableAt commissionAmount currency')
+                      .select('referralId status availableAt commissionAmount commissionAmounts currency')
                       .lean()
                 : Promise.resolve([]),
             orderIds.length
@@ -719,6 +752,12 @@ class AffiliateService {
                 : Promise.resolve([]),
         ]);
         const commissionByReferralId = new Map(linkedCommissions.map((item: any) => [item.referralId?.toString?.(), item]));
+        const normalizedCommissions = commissions.map((commission: any) => ({
+            ...commission,
+            orderNetAmounts: toNumberMap(commission.orderNetAmounts),
+            discountAmounts: toNumberMap(commission.discountAmounts),
+            commissionAmounts: toNumberMap(commission.commissionAmounts),
+        }));
         const purchasedItemsByOrderId = orderItems.reduce<Map<string, string[]>>((acc, item: any) => {
             const key = item.orderId?.toString?.();
             if (!key) return acc;
@@ -740,10 +779,11 @@ class AffiliateService {
                 commissionStatus: commissionByReferralId.get(referral._id?.toString?.())?.status,
                 expectedApprovalAt: commissionByReferralId.get(referral._id?.toString?.())?.availableAt,
                 commissionAmount: commissionByReferralId.get(referral._id?.toString?.())?.commissionAmount,
+                commissionAmounts: toNumberMap(commissionByReferralId.get(referral._id?.toString?.())?.commissionAmounts),
                 commissionCurrency: commissionByReferralId.get(referral._id?.toString?.())?.currency,
                 purchaseItems: purchasedItemsByOrderId.get(referral.firstOrderId?.toString?.()) || [],
             })),
-            commissions,
+            commissions: normalizedCommissions,
             payoutRequests,
             clientCreditBalance: client.accountCreditBalance || 0,
             clientCreditCurrency: client.accountCreditCurrency || preferredCurrency || 'BDT',
@@ -796,7 +836,7 @@ class AffiliateService {
         const [linkedCommissions, orderItems] = await Promise.all([
             referralIds.length
                 ? AffiliateCommission.find({ affiliateProfileId: profile._id, referralId: { $in: referralIds } })
-                      .select('referralId status availableAt commissionAmount currency')
+                      .select('referralId status availableAt commissionAmount commissionAmounts currency')
                       .lean()
                 : Promise.resolve([]),
             orderIds.length
@@ -804,6 +844,12 @@ class AffiliateService {
                 : Promise.resolve([]),
         ]);
         const commissionByReferralId = new Map(linkedCommissions.map((item: any) => [item.referralId?.toString?.(), item]));
+        const normalizedCommissions = commissions.map((commission: any) => ({
+            ...commission,
+            orderNetAmounts: toNumberMap(commission.orderNetAmounts),
+            discountAmounts: toNumberMap(commission.discountAmounts),
+            commissionAmounts: toNumberMap(commission.commissionAmounts),
+        }));
         const purchasedItemsByOrderId = orderItems.reduce<Map<string, string[]>>((acc, item: any) => {
             const key = item.orderId?.toString?.();
             if (!key) return acc;
@@ -827,10 +873,11 @@ class AffiliateService {
                 commissionStatus: commissionByReferralId.get(referral._id?.toString?.())?.status,
                 expectedApprovalAt: commissionByReferralId.get(referral._id?.toString?.())?.availableAt,
                 commissionAmount: commissionByReferralId.get(referral._id?.toString?.())?.commissionAmount,
+                commissionAmounts: toNumberMap(commissionByReferralId.get(referral._id?.toString?.())?.commissionAmounts),
                 commissionCurrency: commissionByReferralId.get(referral._id?.toString?.())?.currency,
                 purchaseItems: purchasedItemsByOrderId.get(referral.firstOrderId?.toString?.()) || [],
             })),
-            commissions,
+            commissions: normalizedCommissions,
             payoutRequests,
             clientCreditBalance: client.accountCreditBalance || 0,
             clientCreditCurrency: client.accountCreditCurrency || preferredCurrency || 'BDT',
@@ -1175,7 +1222,7 @@ class AffiliateService {
         const [linkedCommissions, orderItems] = await Promise.all([
             referralIds.length
                 ? AffiliateCommission.find({ referralId: { $in: referralIds } })
-                      .select('referralId status availableAt commissionAmount currency')
+                      .select('referralId status availableAt commissionAmount commissionAmounts currency')
                       .lean()
                 : Promise.resolve([]),
             orderIds.length
@@ -1206,6 +1253,7 @@ class AffiliateService {
                 commissionStatus: commissionByReferralId.get(referral._id?.toString?.())?.status,
                 expectedApprovalAt: commissionByReferralId.get(referral._id?.toString?.())?.availableAt,
                 commissionAmount: commissionByReferralId.get(referral._id?.toString?.())?.commissionAmount,
+                commissionAmounts: toNumberMap(commissionByReferralId.get(referral._id?.toString?.())?.commissionAmounts),
                 commissionCurrency: commissionByReferralId.get(referral._id?.toString?.())?.currency,
                 purchaseItems: purchasedItemsByOrderId.get(referral.firstOrderId?.toString?.()) || [],
             })),

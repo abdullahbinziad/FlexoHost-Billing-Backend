@@ -38,6 +38,8 @@ export interface IBillingSettings extends Document {
     reminderDueTodayEnabled: boolean;
     /** Default role for new staff users (ObjectId ref Role). When creating/assigning staff, auto-assign if no role selected. */
     defaultStaffRoleId?: mongoose.Types.ObjectId;
+    /** 1 BDT = exchangeRateBdt in base reporting currency (default base: USD). */
+    exchangeRateBdt: number;
     updatedAt: Date;
     updatedBy?: mongoose.Types.ObjectId;
 }
@@ -63,6 +65,7 @@ const billingSettingsSchema = new Schema<IBillingSettings>(
         domainExpiryReminderDays: { type: [Number], default: [90, 60, 30, 14, 7] },
         reminderDueTodayEnabled: { type: Boolean, default: true },
         defaultStaffRoleId: { type: Schema.Types.ObjectId, ref: 'Role', default: null },
+        exchangeRateBdt: { type: Number, default: 0.009, min: 0.000001 },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     },
     { timestamps: true }
@@ -86,6 +89,7 @@ export const DEFAULT_BILLING_SETTINGS = {
     terminationWarningDays: [7, 3, 1],
     domainExpiryReminderDays: [90, 60, 30, 14, 7],
     reminderDueTodayEnabled: true,
+    exchangeRateBdt: 0.009,
 };
 
 export default mongoose.model<IBillingSettings>('BillingSettings', billingSettingsSchema);
