@@ -574,10 +574,7 @@ export class DynadotRegistrarProvider implements IRegistrarProvider {
 
     async listDomains(): Promise<{ domain: string;[k: string]: unknown }[]> {
         const data = await callDynadot('list_domain', {});
-        const list = (data.ListDomainResponse as Record<string, unknown>)?.DomainList as any[] | undefined
-            ?? (data.ListDomainInfoResponse as Record<string, unknown>)?.DomainList as any[] | undefined;
-        if (!Array.isArray(list)) return [];
-        return list.map((d) => ({ domain: d.Domain ?? d.Name ?? d.domain ?? '', ...d }));
+        return extractDynadotDomainList(data);
     }
 
     async isProcessing(): Promise<boolean> {
@@ -589,6 +586,51 @@ export class DynadotRegistrarProvider implements IRegistrarProvider {
             return false;
         }
     }
+}
+
+function extractDynadotDomainList(data: Record<string, unknown>): { domain: string;[k: string]: unknown }[] {
+    const found = new Map<string, { domain: string;[k: string]: unknown }>();
+    const domainPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+    const domainKeys = new Set([
+        'domain',
+        'domainname',
+        'domain_name',
+        'name',
+        'domainid',
+    ]);
+
+    const add = (domainValue: unknown, raw?: Record<string, unknown>) => {
+        const domain = String(domainValue || '').trim().toLowerCase();
+        if (!domain || !domainPattern.test(domain)) return;
+        if (!found.has(domain)) {
+            found.set(domain, { domain, ...(raw || {}) });
+        }
+    };
+
+    const visit = (value: unknown): void => {
+        if (Array.isArray(value)) {
+            for (const item of value) visit(item);
+            return;
+        }
+        if (!value || typeof value !== 'object') {
+            if (typeof value === 'string') add(value);
+            return;
+        }
+
+        const obj = value as Record<string, unknown>;
+        for (const [key, inner] of Object.entries(obj)) {
+            const normalizedKey = key.toLowerCase().replace(/\s+/g, '');
+            if (domainKeys.has(normalizedKey)) {
+                add(inner, obj);
+            } else if (typeof inner === 'string' && /domain/i.test(key)) {
+                add(inner, obj);
+            }
+            visit(inner);
+        }
+    };
+
+    visit(data);
+    return Array.from(found.values());
 }
 
 function collectIndexed(

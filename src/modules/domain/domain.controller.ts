@@ -175,6 +175,10 @@ class DomainController {
         return ApiResponse.ok(res, 'Registrar configs retrieved', result);
     });
 
+    getDomainStatusOptionsAdmin = catchAsync(async (_req: Request, res: Response) => {
+        return ApiResponse.ok(res, 'Domain status options retrieved', domainService.getDomainStatusOptions());
+    });
+
     updateRegistrarConfig = catchAsync(async (req: Request, res: Response) => {
         const { registrarKey } = req.params;
         if (!registrarKey) {
@@ -219,6 +223,16 @@ class DomainController {
         return ApiResponse.ok(res, 'Domain synced successfully', result);
     });
 
+    getDomainServiceSnapshotAdmin = catchAsync(async (req: Request, res: Response) => {
+        const { serviceId } = req.params;
+        if (!serviceId) {
+            throw ApiError.badRequest('Service ID is required');
+        }
+        const clientId = typeof req.query.clientId === 'string' ? req.query.clientId.trim() : undefined;
+        const result = await domainService.getAdminDomainServiceSnapshot(serviceId, clientId);
+        return ApiResponse.ok(res, 'Domain service snapshot retrieved', result);
+    });
+
     bulkSyncDomainsAdmin = catchAsync(async (req: Request, res: Response) => {
         const authReq = req as AuthRequest;
         const result = await domainService.bulkSyncDomains(
@@ -258,6 +272,67 @@ class DomainController {
             authReq.user?._id?.toString?.()
         );
         return ApiResponse.ok(res, 'Registrar domains imported', result);
+    });
+
+    attachRecoveredDomainAdmin = catchAsync(async (req: Request, res: Response) => {
+        const authReq = req as AuthRequest;
+        const result = await domainService.adoptRegistrarDomainForService(
+            {
+                serviceId: String(req.body?.serviceId || '').trim(),
+                domainName: typeof req.body?.domainName === 'string' ? req.body.domainName : undefined,
+                registrar: typeof req.body?.registrar === 'string' ? req.body.registrar : undefined,
+            },
+            authReq.user?._id?.toString?.()
+        );
+        return ApiResponse.ok(res, 'Domain attached from registrar; confirmation required', result);
+    });
+
+    importRecoveredDomainAdmin = catchAsync(async (req: Request, res: Response) => {
+        const authReq = req as AuthRequest;
+        const result = await domainService.importRegistrarDomainForClient(
+            {
+                clientId: String(req.body?.clientId || '').trim(),
+                domainName: String(req.body?.domainName || '').trim(),
+                registrar: typeof req.body?.registrar === 'string' ? req.body.registrar : undefined,
+                billingCycle: typeof req.body?.billingCycle === 'string' ? req.body.billingCycle : undefined,
+                priceSnapshot: req.body?.priceSnapshot && typeof req.body.priceSnapshot === 'object'
+                    ? req.body.priceSnapshot
+                    : undefined,
+                nextDueDate: req.body?.nextDueDate,
+            },
+            authReq.user?._id?.toString?.()
+        );
+        return ApiResponse.created(res, 'Domain imported from registrar; confirmation required', result);
+    });
+
+    confirmRecoveredDomainAdmin = catchAsync(async (req: Request, res: Response) => {
+        const authReq = req as AuthRequest;
+        const { serviceId } = req.params;
+        if (!serviceId) {
+            throw ApiError.badRequest('Service ID is required');
+        }
+        const result = await domainService.confirmRecoveredDomainService(serviceId, authReq.user?._id?.toString?.());
+        return ApiResponse.ok(res, 'Recovered domain service activated', result);
+    });
+
+    updateDomainStatusAdmin = catchAsync(async (req: Request, res: Response) => {
+        const authReq = req as AuthRequest;
+        const { serviceId } = req.params;
+        if (!serviceId) {
+            throw ApiError.badRequest('Service ID is required');
+        }
+        const result = await domainService.updateDomainStatusAdmin(
+            serviceId,
+            {
+                serviceStatus: typeof req.body?.serviceStatus === 'string' ? req.body.serviceStatus : undefined,
+                lifecycleStatus: typeof req.body?.lifecycleStatus === 'string' ? req.body.lifecycleStatus : undefined,
+                transferStatus: typeof req.body?.transferStatus === 'string' ? req.body.transferStatus : undefined,
+                reason: typeof req.body?.reason === 'string' ? req.body.reason : undefined,
+                manualStatusOverrideUntil: req.body?.manualStatusOverrideUntil,
+            },
+            authReq.user?._id?.toString?.()
+        );
+        return ApiResponse.ok(res, 'Domain status updated', result);
     });
 
     getEppCode = catchAsync(async (req: Request, res: Response) => {

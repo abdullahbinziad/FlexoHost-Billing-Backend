@@ -20,6 +20,8 @@ import logger from '../../../utils/logger';
 import Invoice from '../../invoice/invoice.model';
 import { InvoiceStatus } from '../../invoice/invoice.interface';
 import config from '../../../config';
+import domainService from '../../domain/domain.service';
+import { normalizeDomainFqdn } from '../../domain/utils/domain-display';
 
 let providersRegistered = false;
 const PROVISIONING_STEP_TIMEOUT_MS = config.provisioning.stepTimeoutMs;
@@ -260,11 +262,24 @@ export class ProvisioningWorker {
         } catch (provErr: any) {
             const errMsg = provErr?.message || 'Unknown error';
             logger.error(`[Provisioning] Job ${job._id} failed for orderItem ${job.orderItemId}: ${errMsg}`, provErr);
-            await serviceRepository.updateStatus(serviceId, ServiceStatus.FAILED, {
+            const failedUpdate: Record<string, any> = {
                 provisioning: {
+                    ...(service.provisioning || {}),
                     lastError: errMsg,
                 },
-            });
+            };
+            if (serviceType === ServiceType.DOMAIN && domainService.isRecoverableDomainProvisioningError(errMsg)) {
+                const cfg = (orderItem as any)?.configSnapshot || {};
+                const recoverableDomainName = normalizeDomainFqdn(String(cfg.domainName || cfg.domain || '').trim());
+                failedUpdate.meta = {
+                    ...(service.meta || {}),
+                    domainRecoveryAvailable: true,
+                    domainRecoveryReason: errMsg,
+                    recoverableDomainName: recoverableDomainName || undefined,
+                    recoveredRegistrar: cfg.registrar || undefined,
+                };
+            }
+            await serviceRepository.updateStatus(serviceId, ServiceStatus.FAILED, failedUpdate);
             throw provErr;
         }
     }

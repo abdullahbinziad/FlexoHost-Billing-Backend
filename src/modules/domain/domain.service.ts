@@ -3,18 +3,29 @@ import { IDomainBulkRegistrationPayload, IDomainRegistrationPayload, IDomainTran
 import registrarRoutingService from './registrar/registrar-routing.service';
 import ApiError from '../../utils/apiError';
 import { serviceRepository } from '../services/repositories';
-import DomainServiceDetails from '../services/models/domain-details.model';
+import DomainServiceDetails, {
+    DOMAIN_LIFECYCLE_STATUS_OPTIONS,
+    DomainLifecycleStatus,
+    DomainOperationType,
+} from '../services/models/domain-details.model';
 import Service from '../services/service.model';
-import { ServiceType } from '../services/types/enums';
+import { BillingCycle, ServiceStatus, ServiceType, normalizeBillingCycle, normalizeServiceStatus } from '../services/types/enums';
 import { registrarAudit } from './registrar/registrar-audit';
 import { domainRegistrarService } from './registrar/domain-registrar.service';
-import type { DomainAvailabilityResult, DomainContactDetails, DnsRecord, RegistrarContact } from './registrar/registrar.types';
+import type { DomainAvailabilityResult, DomainContactDetails, DomainInformation, DnsRecord, RegistrarContact } from './registrar/registrar.types';
 import type { RegistrarRoutingSource } from './registrar/registrar-routing.service';
 import { DomainTransferStatus, type IDomainContact } from '../services/models/domain-details.model';
 import RegistrarDiscoveredDomain from './registrar/registrar-discovered-domain.model';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 import OrderItem from '../order/order-item.model';
 import { resolveDomainFqdnFromDetailsAndOrderItem, normalizeDomainFqdn } from './utils/domain-display';
+import Client from '../client/client.model';
+import Order from '../order/order.model';
+import { DomainActionType } from '../order/order-item.interface';
+import { OrderStatus } from '../order/order.interface';
+import { DEFAULT_CURRENCY } from '../../config/currency.config';
+import { getNextSequence, formatSequenceId } from '../../models/counter.model';
+import { getEffectiveDefaultNameserversForProvision } from './domain-system-settings.service';
 
 const DOMAIN_IMPORT_RESULT_STATUS = {
     ALREADY_TRACKED: 'already-tracked',
@@ -22,8 +33,31 @@ const DOMAIN_IMPORT_RESULT_STATUS = {
     FAILED: 'failed',
 } as const;
 
+const RECOVERABLE_DOMAIN_ERROR_PATTERN = /(already|exist|registered|unavailable|not available|taken|in account|owned)/i;
+
+type DomainRecoveryPriceSnapshot = {
+    setup?: number;
+    recurring?: number;
+    discount?: number;
+    tax?: number;
+    total?: number;
+    currency?: string;
+};
+
 class DomainService {
     private readonly syncStaleMs = 24 * 60 * 60 * 1000;
+
+    isRecoverableDomainProvisioningError(message: string): boolean {
+        return RECOVERABLE_DOMAIN_ERROR_PATTERN.test(message || '');
+    }
+
+    getDomainStatusOptions() {
+        return {
+            lifecycleStatuses: DOMAIN_LIFECYCLE_STATUS_OPTIONS,
+            transferStatuses: Object.values(DomainTransferStatus),
+            serviceStatuses: Object.values(ServiceStatus),
+        };
+    }
 
     private async getStoredRegistrarName(domainName: string): Promise<string | null> {
         const normalized = normalizeDomainFqdn(domainName);
@@ -216,23 +250,106 @@ class DomainService {
     }
 
     async getDomainDetails(domainCode: string): Promise<any> {
-        const registrarName = await this.getStoredRegistrarName(domainCode);
-        const details = await domainRegistrarService.getDomainInformation(domainCode, registrarName);
-        await this.syncStoredDomainDetails(domainCode, {
-            expiresAt: details.expiryDate,
-            nameservers: details.nameservers ?? [],
-            registrarLock: details.locked,
-            lastRegistrarSyncAt: new Date(),
-            registrar: details.registrar,
-        });
+        const details = await this.getStoredDomainDetailsByName(domainCode);
+        if (!details) {
+            throw ApiError.notFound('Domain details not found. Sync the domain from registrar first.');
+        }
         return {
-            domain: details.domain,
-            status: details.status,
-            expirationDate: details.expiryDate,
+            domain: details.domainName,
+            status: details.registrarStatus || details.lifecycleStatus || '',
+            expirationDate: details.expiresAt,
             nameservers: details.nameservers ?? [],
-            locked: details.locked,
+            locked: details.registrarLock,
             registrar: details.registrar,
-            autoRenew: /auto|yes/i.test(details.renewOption ?? ''),
+            lifecycleStatus: details.lifecycleStatus,
+            lifecycleReason: details.lifecycleReason,
+            syncStatus: details.syncStatus,
+            syncMessage: details.syncMessage,
+            lastRegistrarSyncAt: details.lastRegistrarSyncAt,
+            autoRenew: true,
+        };
+    }
+
+    async getAdminDomainServiceSnapshot(serviceId: string, clientId?: string): Promise<any> {
+        const service = await Service.findById(serviceId).lean<any>();
+        if (!service || service.type !== ServiceType.DOMAIN) {
+            throw ApiError.notFound('Domain service not found');
+        }
+        if (clientId && service.clientId?.toString?.() !== clientId) {
+            throw ApiError.notFound('Domain service not found for the selected client');
+        }
+
+        const [details, orderItem] = await Promise.all([
+            DomainServiceDetails.findOne({ serviceId }).select('-eppCodeEncrypted').lean<any>(),
+            OrderItem.findById(service.orderItemId).select('configSnapshot nameSnapshot pricingSnapshot').lean<any>(),
+        ]);
+        const domainName =
+            resolveDomainFqdnFromDetailsAndOrderItem(details, orderItem) ||
+            normalizeDomainFqdn((details as any)?.domainName) ||
+            '';
+        const registrarFromOrder = String((orderItem as any)?.configSnapshot?.registrar || '').trim();
+        const registrar = details?.registrar || registrarFromOrder || service.provisioning?.provider || '';
+        const expiresAt = details?.expiresAt || service.nextDueDate;
+        const syncState = this.deriveSyncState({
+            syncStatus: details?.syncStatus,
+            lastRegistrarSyncAt: details?.lastRegistrarSyncAt,
+        });
+
+        return {
+            service: {
+                id: service._id?.toString?.(),
+                serviceId: service._id?.toString?.(),
+                serviceNumber: service.serviceNumber,
+                type: service.type,
+                status: service.status,
+                rawStatus: service.status,
+                packageName: orderItem?.nameSnapshot || domainName || 'Domain',
+                domain: domainName,
+                identifier: domainName,
+                billingCycle: service.billingCycle,
+                currency: service.currency,
+                priceSnapshot: service.priceSnapshot,
+                autoRenew: service.autoRenew,
+                createdAt: service.createdAt,
+                updatedAt: service.updatedAt,
+                adminNotes: service.meta?.adminNotes || '',
+                billing: {
+                    firstPaymentAmount: service.priceSnapshot?.total ?? 0,
+                    recurringAmount: service.priceSnapshot?.recurring ?? service.priceSnapshot?.total ?? 0,
+                    billingCycle: service.billingCycle,
+                    paymentMethod: '—',
+                    registrationDate: service.createdAt,
+                    nextDueDate: service.nextDueDate,
+                    currency: service.currency,
+                },
+                provisioning: service.provisioning,
+                meta: service.meta,
+            },
+            domain: {
+                serviceId: service._id?.toString?.(),
+                domainName,
+                domain: domainName,
+                status: details?.registrarStatus || details?.lifecycleStatus || service.status,
+                registrar,
+                registrarStatus: details?.registrarStatus,
+                lifecycleStatus: details?.lifecycleStatus,
+                lifecycleReason: details?.lifecycleReason,
+                transferStatus: details?.transferStatus,
+                registeredAt: details?.registeredAt,
+                expirationDate: expiresAt,
+                expiresAt,
+                nameservers: details?.nameservers || [],
+                locked: !!details?.registrarLock,
+                registrarLock: !!details?.registrarLock,
+                contacts: this.toRegistrarContactDetails(details?.contacts),
+                dnsRecords: details?.dnsRecords || [],
+                syncStatus: details?.syncStatus || 'pending',
+                syncMessage: details?.syncMessage || '',
+                syncState,
+                lastRegistrarSyncAt: details?.lastRegistrarSyncAt,
+                source: details?.source,
+            },
+            details,
         };
     }
 
@@ -248,14 +365,11 @@ class DomainService {
     }
 
     async getRegistrarLock(domain: string): Promise<{ locked: boolean }> {
-        const registrarName = await this.getStoredRegistrarName(domain);
-        const result = await domainRegistrarService.getRegistrarLock(domain, registrarName);
-        await this.syncStoredDomainDetails(domain, {
-            registrarLock: result.locked,
-            lastRegistrarSyncAt: new Date(),
-            registrar: result.registrar,
-        });
-        return { locked: result.locked };
+        const details = await this.getStoredDomainDetailsByName(domain);
+        if (!details) {
+            throw ApiError.notFound('Domain details not found. Sync the domain from registrar first.');
+        }
+        return { locked: !!details.registrarLock };
     }
 
     async saveRegistrarLock(domain: string, locked: boolean): Promise<void> {
@@ -269,24 +383,11 @@ class DomainService {
     }
 
     async getContactDetails(domain: string): Promise<DomainContactDetails> {
-        const registrarName = await this.getStoredRegistrarName(domain);
-        const result = await domainRegistrarService.getContactDetails(domain, registrarName);
-        await this.syncStoredDomainDetails(domain, {
-            contacts: {
-                registrant: this.toStoredDomainContact(result.registrant),
-                admin: this.toStoredDomainContact(result.admin),
-                tech: this.toStoredDomainContact(result.tech),
-                billing: this.toStoredDomainContact(result.billing),
-            },
-            lastRegistrarSyncAt: new Date(),
-            registrar: result.registrar,
-        });
-        return {
-            registrant: result.registrant,
-            admin: result.admin,
-            tech: result.tech,
-            billing: result.billing,
-        };
+        const details = await this.getStoredDomainDetailsByName(domain);
+        if (!details) {
+            throw ApiError.notFound('Domain details not found. Sync the domain from registrar first.');
+        }
+        return this.toRegistrarContactDetails((details as any).contacts);
     }
 
     async saveContactDetails(domain: string, contacts: Partial<DomainContactDetails>): Promise<void> {
@@ -306,15 +407,18 @@ class DomainService {
     }
 
     async getDns(domain: string): Promise<DnsRecord[]> {
-        const registrarName = await this.getStoredRegistrarName(domain);
-        const result = await domainRegistrarService.getDns(domain, registrarName);
-        return result.records;
+        const details = await this.getStoredDomainDetailsByName(domain);
+        if (!details) {
+            throw ApiError.notFound('Domain details not found. Sync the domain from registrar first.');
+        }
+        return ((details as any).dnsRecords || []) as DnsRecord[];
     }
 
     async saveDns(domain: string, records: DnsRecord[]): Promise<void> {
         const registrarName = await this.getStoredRegistrarName(domain);
         const result = await domainRegistrarService.saveDns(domain, records, registrarName);
         await this.syncStoredDomainDetails(domain, {
+            dnsRecords: records,
             lastRegistrarSyncAt: new Date(),
             registrar: result.registrar,
             syncStatus: 'success',
@@ -353,7 +457,7 @@ class DomainService {
         const sortField = sortByMap[filter.sortBy || 'domainName'] ?? 'domainName';
 
         const pipeline = this.buildAdminInventoryPipeline(filter);
-        const [{ metadata = [], results = [] } = { metadata: [], results: [] }] = await DomainServiceDetails.aggregate([
+        const [{ metadata = [], results = [] } = { metadata: [], results: [] }] = await Service.aggregate([
             ...pipeline,
             {
                 $facet: {
@@ -407,30 +511,42 @@ class DomainService {
     }
 
     async syncDomainByServiceId(serviceId: string, actorId?: string): Promise<any> {
-        const details = await DomainServiceDetails.findOne({ serviceId }).lean();
-        if (!details) {
-            throw ApiError.notFound('Domain service details not found');
-        }
-
         const service = await Service.findById(serviceId).lean();
         if (!service || service.type !== ServiceType.DOMAIN) {
             throw ApiError.notFound('Domain service not found');
         }
 
+        let details = await DomainServiceDetails.findOne({ serviceId }).lean<any>();
         const orderItem = await OrderItem.findById(service.orderItemId).select('configSnapshot nameSnapshot').lean();
+        const orderRegistrar = String((orderItem as any)?.configSnapshot?.registrar || '').trim().toLowerCase();
         const fqdn =
             resolveDomainFqdnFromDetailsAndOrderItem(details, orderItem) ||
             normalizeDomainFqdn((details as any)?.domainName);
         if (!fqdn) {
             throw ApiError.badRequest('Domain name could not be resolved for sync.');
         }
-        if (normalizeDomainFqdn((details as any)?.domainName) !== fqdn) {
+        if (details && normalizeDomainFqdn((details as any)?.domainName) !== fqdn) {
             await DomainServiceDetails.updateOne({ serviceId }, { $set: { domainName: fqdn } }).exec();
             (details as any).domainName = fqdn;
         }
 
         try {
-            const liveInfo = await domainRegistrarService.syncDomain(fqdn, details.registrar);
+            const preferredRegistrar = details?.registrar || orderRegistrar || undefined;
+            const liveInfo = await domainRegistrarService.syncDomain(fqdn, preferredRegistrar);
+
+            if (!details) {
+                await this.upsertAdoptedDomainDetails({
+                    serviceId,
+                    domainName: fqdn,
+                    registrar: liveInfo.registrar || preferredRegistrar || '',
+                    liveInfo,
+                });
+                details = await DomainServiceDetails.findOne({ serviceId }).lean<any>();
+                if (!details) {
+                    throw ApiError.badRequest('Domain details could not be created from registrar sync');
+                }
+            }
+
             let nextTransferStatus = details.transferStatus;
 
             if (details.operationType === 'TRANSFER' && details.transferStatus === 'PENDING') {
@@ -449,16 +565,36 @@ class DomainService {
             }
 
             const syncedAt = new Date();
+            const lifecycleStatus = this.deriveLifecycleStatusFromLiveInfo(liveInfo, {
+                operationType: details.operationType,
+                transferStatus: nextTransferStatus,
+                expiresAt: liveInfo.expiryDate,
+            });
             await DomainServiceDetails.updateOne(
                 { serviceId },
                 {
                     $set: {
                         expiresAt: liveInfo.expiryDate,
                         nameservers: liveInfo.nameservers ?? [],
+                        ...(liveInfo.contacts
+                            ? {
+                                  contacts: {
+                                      registrant: this.toStoredDomainContact(liveInfo.contacts.registrant),
+                                      admin: this.toStoredDomainContact(liveInfo.contacts.admin),
+                                      tech: this.toStoredDomainContact(liveInfo.contacts.tech),
+                                      billing: this.toStoredDomainContact(liveInfo.contacts.billing),
+                                  },
+                                  contactsSameAsRegistrant: false,
+                              }
+                            : {}),
                         registrarLock: liveInfo.locked,
                         registrar: liveInfo.registrar,
                         registrarStatus: liveInfo.status,
                         transferStatus: nextTransferStatus,
+                        lifecycleStatus,
+                        lifecycleReason: 'Updated from registrar sync',
+                        lifecycleUpdatedAt: syncedAt,
+                        lastAutoStatusAt: syncedAt,
                         lastRegistrarSyncAt: syncedAt,
                         syncStatus: 'success',
                         syncMessage: 'Synced successfully',
@@ -466,15 +602,25 @@ class DomainService {
                 }
             ).exec();
 
-            await Service.updateOne(
-                { _id: serviceId },
-                {
-                    $set: {
-                        'provisioning.lastSyncedAt': syncedAt,
-                        'provisioning.lastError': '',
-                    },
-                }
-            ).exec();
+            const serviceSyncUpdate: Record<string, any> = {
+                $set: {
+                    ...(
+                        lifecycleStatus === DomainLifecycleStatus.ACTIVE &&
+                        !((service.meta as any)?.domainRecoveryPendingConfirmation)
+                            ? { status: ServiceStatus.ACTIVE }
+                            : {}
+                    ),
+                    'provisioning.lastSyncedAt': syncedAt,
+                    'provisioning.lastError': '',
+                },
+            };
+            if (lifecycleStatus === DomainLifecycleStatus.ACTIVE) {
+                serviceSyncUpdate.$unset = {
+                    'meta.domainRecoveryAvailable': '',
+                    'meta.domainRecoveryReason': '',
+                };
+            }
+            await Service.updateOne({ _id: serviceId }, serviceSyncUpdate).exec();
 
             auditLogSafe({
                 message: `Domain synced: ${fqdn}`,
@@ -588,7 +734,13 @@ class DomainService {
         registrar: string;
         totalDomains: number;
         knownCount: number;
-        missingDomains: Array<{ domainName: string; registrar: string; alreadyImported: boolean }>;
+        missingDomains: Array<{
+            domainName: string;
+            registrar: string;
+            alreadyImported: boolean;
+            matchedFailedServices: Array<{ serviceId: string; serviceNumber?: string; clientId: string; status: string }>;
+            recommendedAction: 'attach_to_failed_service' | 'import_as_new_service';
+        }>;
     }> {
         const { registrar, domains } = await domainRegistrarService.listRegistrarDomains(registrarKey);
         const normalizedRegistrar = registrar.toLowerCase();
@@ -625,6 +777,7 @@ class DomainService {
         const importedSet = new Set(
             importedDomains.map((item: any) => String(item.domainName || '').trim().toLowerCase()).filter(Boolean)
         );
+        const failedMatches = await this.findRecoverableServiceMatches(normalizedDomains);
 
         const missingDomains = normalizedDomains
             .filter((domainName) => !knownSet.has(domainName))
@@ -632,6 +785,10 @@ class DomainService {
                 domainName,
                 registrar: normalizedRegistrar,
                 alreadyImported: importedSet.has(domainName),
+                matchedFailedServices: failedMatches.get(domainName) ?? [],
+                recommendedAction: (failedMatches.get(domainName)?.length ? 'attach_to_failed_service' : 'import_as_new_service') as
+                    | 'attach_to_failed_service'
+                    | 'import_as_new_service',
             }));
 
         return {
@@ -639,6 +796,371 @@ class DomainService {
             totalDomains: normalizedDomains.length,
             knownCount: knownSet.size,
             missingDomains,
+        };
+    }
+
+    async adoptRegistrarDomainForService(
+        payload: { serviceId: string; domainName?: string; registrar?: string },
+        actorId?: string
+    ): Promise<any> {
+        const service = await Service.findById(payload.serviceId).exec();
+        if (!service || service.type !== ServiceType.DOMAIN) {
+            throw ApiError.notFound('Domain service not found');
+        }
+
+        if (![ServiceStatus.FAILED, ServiceStatus.PENDING, ServiceStatus.PROVISIONING].includes(service.status as ServiceStatus)) {
+            throw ApiError.badRequest('Only failed, pending, or provisioning domain services can be recovered');
+        }
+
+        const orderItem = await OrderItem.findById(service.orderItemId).select('configSnapshot nameSnapshot').lean();
+        const requestedDomain = normalizeDomainFqdn(payload.domainName || '');
+        const orderDomain = resolveDomainFqdnFromDetailsAndOrderItem(undefined, orderItem);
+        const domainName = requestedDomain || orderDomain;
+        if (!domainName) {
+            throw ApiError.badRequest('Domain name is required for recovery');
+        }
+
+        const registrar = String(payload.registrar || (orderItem as any)?.configSnapshot?.registrar || '').trim().toLowerCase() || undefined;
+        const liveInfo = await this.fetchLiveDomainForAdoption(domainName, registrar);
+        const details = await this.upsertAdoptedDomainDetails({
+            serviceId: (service._id as any).toString(),
+            domainName,
+            registrar: liveInfo.registrar || registrar || '',
+            liveInfo,
+        });
+
+        const syncedAt = new Date();
+        await Service.updateOne(
+            { _id: service._id },
+            {
+                $set: {
+                    status: ServiceStatus.PROVISIONING,
+                    provisioning: {
+                        ...(service.provisioning || {}),
+                        provider: liveInfo.registrar || registrar || 'registrar',
+                        remoteId: domainName,
+                        lastSyncedAt: syncedAt,
+                        lastError: '',
+                    },
+                    meta: {
+                        ...(service.meta || {}),
+                        domainRecoveryAvailable: true,
+                        domainRecoveryPendingConfirmation: true,
+                        domainRecoveryReason: 'adopted_from_registrar',
+                        recoverableDomainName: domainName,
+                        recoveredRegistrar: liveInfo.registrar || registrar,
+                        recoveredAt: syncedAt.toISOString(),
+                    },
+                },
+            }
+        ).exec();
+
+        auditLogSafe({
+            message: `Domain recovery attached: ${domainName}`,
+            type: 'domain_imported',
+            category: 'domain',
+            actorType: actorId ? 'user' : 'system',
+            actorId,
+            source: actorId ? 'manual' : 'system',
+            status: 'pending',
+            clientId: (service.clientId as any)?.toString?.(),
+            serviceId: (service._id as any)?.toString?.(),
+            meta: { domainName, registrar: liveInfo.registrar || registrar, recoveryMode: 'attach' },
+        });
+
+        return {
+            serviceId: (service._id as any).toString(),
+            domainName,
+            registrar: liveInfo.registrar || registrar,
+            status: ServiceStatus.PROVISIONING,
+            confirmationRequired: true,
+            details,
+        };
+    }
+
+    async importRegistrarDomainForClient(
+        payload: {
+            clientId: string;
+            domainName: string;
+            registrar?: string;
+            billingCycle?: string;
+            priceSnapshot?: DomainRecoveryPriceSnapshot;
+            nextDueDate?: string | Date;
+        },
+        actorId?: string
+    ): Promise<any> {
+        const domainName = normalizeDomainFqdn(payload.domainName || '');
+        if (!domainName) throw ApiError.badRequest('Domain name is required');
+
+        const client = await Client.findById(payload.clientId).lean<any>();
+        if (!client) throw ApiError.notFound('Client not found');
+
+        const liveInfo = await this.fetchLiveDomainForAdoption(domainName, payload.registrar);
+        await this.assertDomainNotLinkedToAnotherService(domainName);
+        const billingCycle = normalizeBillingCycle(payload.billingCycle || BillingCycle.ANNUALLY);
+        const priceSnapshot = this.normalizeRecoveryPriceSnapshot(payload.priceSnapshot, DEFAULT_CURRENCY);
+
+        const orderSeq = await getNextSequence('order');
+        const orderId = formatSequenceId('ORD', orderSeq);
+        const orderNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+        const order = await Order.create({
+            orderId,
+            orderNumber,
+            clientId: client._id,
+            userId: client.user,
+            status: OrderStatus.ACTIVE,
+            currency: priceSnapshot.currency,
+            subtotal: priceSnapshot.total,
+            discountTotal: priceSnapshot.discount,
+            taxTotal: priceSnapshot.tax,
+            total: priceSnapshot.total,
+            paidAt: new Date(),
+            meta: {
+                source: 'registrar_import',
+                domainName,
+                registrar: liveInfo.registrar || payload.registrar,
+                createdBy: actorId,
+            },
+        });
+
+        const tld = this.getTldFromDomain(domainName);
+        const orderItem = await OrderItem.create({
+            orderId: order._id,
+            clientId: client._id,
+            type: ServiceType.DOMAIN,
+            actionType: DomainActionType.REGISTER,
+            nameSnapshot: domainName,
+            billingCycle,
+            qty: 1,
+            pricingSnapshot: priceSnapshot,
+            configSnapshot: {
+                domainName,
+                tld: `.${tld}`,
+                period: this.yearsFromBillingCycle(billingCycle),
+                years: this.yearsFromBillingCycle(billingCycle),
+                registrar: liveInfo.registrar || payload.registrar,
+                source: 'registrar_import',
+            },
+            meta: { source: 'registrar_import' },
+        });
+
+        const svcSeq = await getNextSequence('service');
+        const service = await serviceRepository.create({
+            serviceNumber: formatSequenceId('SVC', svcSeq),
+            clientId: client._id,
+            userId: client.user,
+            orderId: order._id,
+            orderItemId: orderItem._id,
+            type: ServiceType.DOMAIN,
+            status: ServiceStatus.PROVISIONING,
+            billingCycle,
+            currency: priceSnapshot.currency,
+            priceSnapshot,
+            autoRenew: true,
+            nextDueDate: payload.nextDueDate ? new Date(payload.nextDueDate) : liveInfo.expiryDate || new Date(),
+            provisioning: {
+                provider: liveInfo.registrar || payload.registrar || 'registrar',
+                remoteId: domainName,
+                lastSyncedAt: new Date(),
+                lastError: '',
+            },
+            meta: {
+                source: 'registrar_import',
+                domainRecoveryAvailable: true,
+                domainRecoveryPendingConfirmation: true,
+                domainRecoveryReason: 'standalone_registrar_import',
+                recoverableDomainName: domainName,
+                recoveredRegistrar: liveInfo.registrar || payload.registrar,
+                recoveredAt: new Date().toISOString(),
+            },
+        } as any);
+
+        const details = await this.upsertAdoptedDomainDetails({
+            serviceId: (service as any)._id.toString(),
+            domainName,
+            registrar: liveInfo.registrar || payload.registrar || '',
+            liveInfo,
+        });
+
+        auditLogSafe({
+            message: `Registrar domain imported for client: ${domainName}`,
+            type: 'domain_imported',
+            category: 'domain',
+            actorType: actorId ? 'user' : 'system',
+            actorId,
+            source: actorId ? 'manual' : 'system',
+            status: 'pending',
+            clientId: client._id?.toString?.(),
+            serviceId: (service as any)._id?.toString?.(),
+            orderId: (order as any)._id?.toString?.(),
+            meta: { domainName, registrar: liveInfo.registrar || payload.registrar, recoveryMode: 'standalone_import' },
+        });
+
+        return {
+            serviceId: (service as any)._id.toString(),
+            orderId: (order as any)._id.toString(),
+            orderItemId: (orderItem as any)._id.toString(),
+            domainName,
+            registrar: liveInfo.registrar || payload.registrar,
+            status: ServiceStatus.PROVISIONING,
+            confirmationRequired: true,
+            details,
+        };
+    }
+
+    async confirmRecoveredDomainService(serviceId: string, actorId?: string): Promise<any> {
+        const service = await Service.findById(serviceId).exec();
+        if (!service || service.type !== ServiceType.DOMAIN) {
+            throw ApiError.notFound('Domain service not found');
+        }
+
+        const details = await DomainServiceDetails.findOne({ serviceId }).lean<any>();
+        if (!details) {
+            throw ApiError.badRequest('Domain details must be synced before activation');
+        }
+        if (details.syncStatus !== 'success') {
+            throw ApiError.badRequest('Domain recovery must sync successfully before activation');
+        }
+        if (!(service.meta as any)?.domainRecoveryPendingConfirmation && details.source !== 'registrar_import') {
+            throw ApiError.badRequest('Service is not pending domain recovery confirmation');
+        }
+
+        const previousStatus = service.status;
+        await Service.updateOne(
+            { _id: service._id },
+            {
+                $set: {
+                    status: ServiceStatus.ACTIVE,
+                    'provisioning.lastError': '',
+                    'provisioning.lastSyncedAt': new Date(),
+                },
+                $unset: {
+                    'meta.domainRecoveryAvailable': '',
+                    'meta.domainRecoveryPendingConfirmation': '',
+                    'meta.domainRecoveryReason': '',
+                    'meta.recoverableDomainName': '',
+                    'meta.recoveredRegistrar': '',
+                    'meta.recoveredAt': '',
+                },
+            }
+        ).exec();
+
+        auditLogSafe({
+            message: `Recovered domain activated: ${details.domainName}`,
+            type: 'domain_synced',
+            category: 'domain',
+            actorType: actorId ? 'user' : 'system',
+            actorId,
+            source: actorId ? 'manual' : 'system',
+            status: 'success',
+            clientId: (service.clientId as any)?.toString?.(),
+            serviceId,
+            meta: {
+                domainName: details.domainName,
+                registrar: details.registrar,
+                previousStatus,
+                recoveryConfirmed: true,
+            },
+        });
+
+        return await Service.findById(serviceId).lean();
+    }
+
+    async updateDomainStatusAdmin(
+        serviceId: string,
+        payload: {
+            serviceStatus?: string;
+            lifecycleStatus?: string;
+            transferStatus?: string;
+            reason?: string;
+            manualStatusOverrideUntil?: string | Date | null;
+        },
+        actorId?: string
+    ): Promise<any> {
+        const service = await Service.findById(serviceId).exec();
+        if (!service || service.type !== ServiceType.DOMAIN) {
+            throw ApiError.notFound('Domain service not found');
+        }
+
+        const details = await DomainServiceDetails.findOne({ serviceId }).exec();
+        if (!details) {
+            throw ApiError.notFound('Domain service details not found');
+        }
+
+        const before = {
+            serviceStatus: service.status,
+            lifecycleStatus: details.lifecycleStatus,
+            transferStatus: details.transferStatus,
+        };
+        const now = new Date();
+
+        if (payload.serviceStatus) {
+            const targetServiceStatus = normalizeServiceStatus(payload.serviceStatus);
+            const extra: Record<string, unknown> = {};
+            if (targetServiceStatus === ServiceStatus.ACTIVE) {
+                extra.suspendedAt = null;
+                extra.terminatedAt = null;
+                extra.cancelledAt = null;
+            }
+            await serviceRepository.updateStatus(serviceId, targetServiceStatus, extra as any);
+        }
+
+        const detailUpdates: Record<string, unknown> = {};
+        if (payload.lifecycleStatus) {
+            const lifecycleStatus = this.normalizeDomainLifecycleStatus(payload.lifecycleStatus);
+            detailUpdates.lifecycleStatus = lifecycleStatus;
+            detailUpdates.lifecycleReason = String(payload.reason || 'Manual admin status update').trim();
+            detailUpdates.lifecycleUpdatedAt = now;
+            detailUpdates.lastManualStatusAt = now;
+        }
+        if (payload.transferStatus) {
+            const transferStatus = String(payload.transferStatus).trim().toUpperCase();
+            if (!Object.values(DomainTransferStatus).includes(transferStatus as DomainTransferStatus)) {
+                throw ApiError.badRequest(`Invalid transferStatus: ${payload.transferStatus}`);
+            }
+            detailUpdates.transferStatus = transferStatus;
+        }
+        if (payload.manualStatusOverrideUntil !== undefined) {
+            detailUpdates.manualStatusOverrideUntil = payload.manualStatusOverrideUntil
+                ? new Date(payload.manualStatusOverrideUntil)
+                : null;
+        }
+
+        if (Object.keys(detailUpdates).length > 0) {
+            await DomainServiceDetails.updateOne({ serviceId }, { $set: detailUpdates }).exec();
+        }
+
+        const [updatedService, updatedDetails] = await Promise.all([
+            Service.findById(serviceId).lean(),
+            DomainServiceDetails.findOne({ serviceId }).lean(),
+        ]);
+
+        auditLogSafe({
+            message: `Domain status updated: ${details.domainName}`,
+            type: 'settings_changed',
+            category: 'domain',
+            actorType: actorId ? 'user' : 'system',
+            actorId,
+            source: actorId ? 'manual' : 'system',
+            status: 'success',
+            clientId: (service.clientId as any)?.toString?.(),
+            serviceId,
+            meta: {
+                domainName: details.domainName,
+                before,
+                after: {
+                    serviceStatus: (updatedService as any)?.status,
+                    lifecycleStatus: (updatedDetails as any)?.lifecycleStatus,
+                    transferStatus: (updatedDetails as any)?.transferStatus,
+                },
+                reason: payload.reason,
+            },
+        });
+
+        return {
+            service: updatedService,
+            details: updatedDetails,
+            statusOptions: this.getDomainStatusOptions(),
         };
     }
 
@@ -783,6 +1305,8 @@ class DomainService {
                 status: s.status,
                 domainName,
                 registrar: (details as any)?.registrar || registrarFromOrder || undefined,
+                lifecycleStatus: details?.lifecycleStatus,
+                lifecycleReason: details?.lifecycleReason,
                 expiresAt: details?.expiresAt ?? s.nextDueDate,
                 nameservers: details?.nameservers ?? [],
                 registrarLock: details?.registrarLock,
@@ -849,25 +1373,48 @@ class DomainService {
         syncState?: string;
         source?: string;
     }): any[] {
+        return this.buildServiceFirstAdminInventoryPipeline(filter);
+    }
+
+    private buildServiceFirstAdminInventoryPipeline(filter: {
+        search?: string;
+        registrar?: string;
+        serviceStatus?: string;
+        transferStatus?: string;
+        syncState?: string;
+        source?: string;
+    }): any[] {
         const pipeline: any[] = [
             {
-                $lookup: {
-                    from: 'services',
-                    localField: 'serviceId',
-                    foreignField: '_id',
-                    as: 'service',
-                },
-            },
-            { $unwind: '$service' },
-            {
                 $match: {
-                    'service.type': ServiceType.DOMAIN,
+                    type: ServiceType.DOMAIN,
                 },
             },
+            {
+                $lookup: {
+                    from: DomainServiceDetails.collection.collectionName,
+                    let: { serviceId: '$_id' },
+                    pipeline: [
+                        { $match: { $expr: { $eq: ['$serviceId', '$$serviceId'] } } },
+                        { $limit: 1 },
+                    ],
+                    as: 'details',
+                },
+            },
+            { $unwind: { path: '$details', preserveNullAndEmptyArrays: true } },
+            {
+                $lookup: {
+                    from: OrderItem.collection.collectionName,
+                    localField: 'orderItemId',
+                    foreignField: '_id',
+                    as: '_oiInv',
+                },
+            },
+            { $unwind: { path: '$_oiInv', preserveNullAndEmptyArrays: true } },
             {
                 $lookup: {
                     from: 'clients',
-                    localField: 'service.clientId',
+                    localField: 'clientId',
                     foreignField: '_id',
                     as: 'client',
                 },
@@ -905,25 +1452,42 @@ class DomainService {
                         $ifNull: ['$client.contactEmail', '$user.email'],
                     },
                     clientNumber: '$client.clientId',
-                    serviceNumber: '$service.serviceNumber',
-                    serviceStatus: '$service.status',
-                },
-            },
-            {
-                $lookup: {
-                    from: OrderItem.collection.collectionName,
-                    localField: 'service.orderItemId',
-                    foreignField: '_id',
-                    as: '_oiInv',
-                },
-            },
-            { $unwind: { path: '$_oiInv', preserveNullAndEmptyArrays: true } },
-            {
-                $addFields: {
+                    serviceNumber: '$serviceNumber',
+                    serviceStatus: '$status',
+                    domainName: {
+                        $ifNull: [
+                            '$details.domainName',
+                            {
+                                $ifNull: [
+                                    '$_oiInv.configSnapshot.domainName',
+                                    { $ifNull: ['$_oiInv.configSnapshot.domain', ''] },
+                                ],
+                            },
+                        ],
+                    },
+                    registrar: {
+                        $ifNull: ['$details.registrar', { $ifNull: ['$_oiInv.configSnapshot.registrar', ''] }],
+                    },
+                    registrarStatus: '$details.registrarStatus',
+                    lifecycleStatus: '$details.lifecycleStatus',
+                    lifecycleReason: '$details.lifecycleReason',
+                    lifecycleUpdatedAt: '$details.lifecycleUpdatedAt',
+                    lastAutoStatusAt: '$details.lastAutoStatusAt',
+                    lastManualStatusAt: '$details.lastManualStatusAt',
+                    manualStatusOverrideUntil: '$details.manualStatusOverrideUntil',
+                    transferStatus: '$details.transferStatus',
+                    nameservers: { $ifNull: ['$details.nameservers', []] },
+                    registrarLock: '$details.registrarLock',
+                    expiresAt: '$details.expiresAt',
+                    registeredAt: '$details.registeredAt',
+                    lastRegistrarSyncAt: '$details.lastRegistrarSyncAt',
+                    syncStatus: '$details.syncStatus',
+                    syncMessage: '$details.syncMessage',
+                    source: '$details.source',
                     _inventorySearchDomain: {
                         $let: {
                             vars: {
-                                fromDetails: { $toLower: { $trim: { input: { $ifNull: ['$domainName', ''] } } } },
+                                fromDetails: { $toLower: { $trim: { input: { $ifNull: ['$details.domainName', ''] } } } },
                                 fromOrder: {
                                     $toLower: {
                                         $trim: {
@@ -971,7 +1535,7 @@ class DomainService {
             matchClauses.push({ registrar: new RegExp(`^${escapeRegex(filter.registrar.trim())}$`, 'i') });
         }
         if (filter.serviceStatus) {
-            matchClauses.push({ 'service.status': filter.serviceStatus.trim().toUpperCase() });
+            matchClauses.push({ status: filter.serviceStatus.trim().toUpperCase() });
         }
         if (filter.transferStatus) {
             matchClauses.push({ transferStatus: filter.transferStatus.trim().toUpperCase() });
@@ -1008,8 +1572,8 @@ class DomainService {
         pipeline.push({
             $project: {
                 _id: 1,
-                serviceId: '$service._id',
-                orderItemId: '$service.orderItemId',
+                serviceId: '$_id',
+                orderItemId: '$orderItemId',
                 clientId: '$client._id',
                 clientNumber: 1,
                 clientName: 1,
@@ -1020,6 +1584,12 @@ class DomainService {
                 domainName: 1,
                 registrar: 1,
                 registrarStatus: 1,
+                lifecycleStatus: 1,
+                lifecycleReason: 1,
+                lifecycleUpdatedAt: 1,
+                lastAutoStatusAt: 1,
+                lastManualStatusAt: 1,
+                manualStatusOverrideUntil: 1,
                 transferStatus: 1,
                 nameservers: 1,
                 registrarLock: 1,
@@ -1044,7 +1614,7 @@ class DomainService {
         syncState?: string;
         source?: string;
     }): Promise<string[]> {
-        const results = await DomainServiceDetails.aggregate([
+        const results = await Service.aggregate([
             ...this.buildAdminInventoryPipeline(filter),
             { $project: { serviceId: 1 } },
             { $limit: 100 },
@@ -1069,6 +1639,230 @@ class DomainService {
         return Date.now() - syncDate.getTime() > this.syncStaleMs ? 'stale' : 'fresh';
     }
 
+    private async fetchLiveDomainForAdoption(domainName: string, registrar?: string): Promise<DomainInformation & { registrar: string }> {
+        try {
+            return await domainRegistrarService.syncDomain(domainName, registrar);
+        } catch (error: any) {
+            await RegistrarDiscoveredDomain.findOneAndUpdate(
+                { domainName, registrar: String(registrar || '').toLowerCase() || 'unknown' },
+                {
+                    $set: {
+                        domainName,
+                        registrar: String(registrar || '').toLowerCase() || 'unknown',
+                        syncStatus: 'failure',
+                        syncMessage: error?.message || 'Registrar domain adoption sync failed',
+                        lastDetectedAt: new Date(),
+                    },
+                },
+                { upsert: true }
+            ).exec();
+            throw error;
+        }
+    }
+
+    private async upsertAdoptedDomainDetails(params: {
+        serviceId: string;
+        domainName: string;
+        registrar: string;
+        liveInfo: DomainInformation & { registrar?: string };
+    }): Promise<any> {
+        const normalized = normalizeDomainFqdn(params.domainName);
+        if (!normalized) throw ApiError.badRequest('Invalid domain name');
+
+        await this.assertDomainNotLinkedToAnotherService(normalized, params.serviceId);
+
+        const now = new Date();
+        const nameservers = await this.resolveAdoptionNameservers(params.liveInfo.nameservers, normalized);
+        const detailsPayload = {
+            domainName: normalized,
+            sld: this.getSldFromDomain(normalized),
+            tld: this.getTldFromDomain(normalized),
+            registrar: String(params.liveInfo.registrar || params.registrar || '').toLowerCase() || 'registrar',
+            operationType: DomainOperationType.REGISTER,
+            contacts: {
+                registrant: this.toStoredDomainContact(params.liveInfo.contacts?.registrant),
+                admin: this.toStoredDomainContact(params.liveInfo.contacts?.admin),
+                tech: this.toStoredDomainContact(params.liveInfo.contacts?.tech),
+                billing: this.toStoredDomainContact(params.liveInfo.contacts?.billing),
+            },
+            contactsSameAsRegistrant: false,
+            nameservers,
+            registrarLock: !!params.liveInfo.locked,
+            whoisPrivacy: /yes|true|enabled/i.test(String(params.liveInfo.privacy || '')),
+            dnssecEnabled: false,
+            dnsManagementEnabled: false,
+            emailForwardingEnabled: false,
+            registeredAt: params.liveInfo.registrationDate,
+            expiresAt: params.liveInfo.expiryDate,
+            registrarStatus: params.liveInfo.status,
+            lifecycleStatus: this.deriveLifecycleStatusFromLiveInfo(params.liveInfo, {
+                operationType: DomainOperationType.REGISTER,
+                expiresAt: params.liveInfo.expiryDate,
+            }),
+            lifecycleReason: 'Adopted from registrar',
+            lifecycleUpdatedAt: now,
+            lastAutoStatusAt: now,
+            syncStatus: 'success' as const,
+            syncMessage: 'Adopted from registrar',
+            source: 'registrar_import' as const,
+            lastRegistrarSyncAt: now,
+            eppStatusCodes: params.liveInfo.locked ? ['clientTransferProhibited'] : [],
+        };
+
+        const updated = await DomainServiceDetails.findOneAndUpdate(
+            { serviceId: params.serviceId },
+            {
+                $set: detailsPayload,
+                $setOnInsert: { serviceId: params.serviceId },
+            },
+            { new: true, upsert: true, runValidators: true }
+        ).lean();
+
+        await RegistrarDiscoveredDomain.findOneAndUpdate(
+            { domainName: normalized, registrar: detailsPayload.registrar },
+            {
+                $set: {
+                    domainName: normalized,
+                    registrar: detailsPayload.registrar,
+                    registrarStatus: params.liveInfo.status,
+                    expiresAt: params.liveInfo.expiryDate,
+                    nameservers,
+                    registrarLock: !!params.liveInfo.locked,
+                    syncStatus: 'success',
+                    syncMessage: 'Linked to billing service',
+                    lastDetectedAt: now,
+                    importedAt: now,
+                    lastRegistrarSyncAt: now,
+                },
+            },
+            { upsert: true, new: true }
+        ).exec();
+
+        return updated;
+    }
+
+    private async assertDomainNotLinkedToAnotherService(domainName: string, allowedServiceId?: string): Promise<void> {
+        const normalized = normalizeDomainFqdn(domainName);
+        if (!normalized) throw ApiError.badRequest('Invalid domain name');
+        const existingForDomain = await DomainServiceDetails.findOne({
+            $expr: { $eq: [{ $toLower: '$domainName' }, normalized] },
+        }).lean<any>();
+        if (existingForDomain && existingForDomain.serviceId?.toString?.() !== allowedServiceId) {
+            throw ApiError.badRequest('Domain is already linked to another service');
+        }
+    }
+
+    private async resolveAdoptionNameservers(liveNameservers: string[] | undefined, domainName: string): Promise<string[]> {
+        const live = (liveNameservers || []).map((ns) => String(ns || '').trim().toLowerCase()).filter(Boolean);
+        if (live.length >= 2) return live.slice(0, 13);
+        const defaults = await getEffectiveDefaultNameserversForProvision();
+        if (defaults.length >= 2) return defaults.slice(0, 13);
+        return [`ns1.${domainName}`, `ns2.${domainName}`];
+    }
+
+    private normalizeRecoveryPriceSnapshot(snapshot: DomainRecoveryPriceSnapshot | undefined, fallbackCurrency: string) {
+        const currency = String(snapshot?.currency || fallbackCurrency || DEFAULT_CURRENCY).toUpperCase();
+        const setup = this.nonNegativeNumber(snapshot?.setup);
+        const recurring = this.nonNegativeNumber(snapshot?.recurring);
+        const discount = this.nonNegativeNumber(snapshot?.discount);
+        const tax = this.nonNegativeNumber(snapshot?.tax);
+        const total = snapshot?.total == null ? Math.max(0, setup + recurring + tax - discount) : this.nonNegativeNumber(snapshot.total);
+        return { setup, recurring, discount, tax, total, currency };
+    }
+
+    private nonNegativeNumber(value: unknown): number {
+        const n = Number(value ?? 0);
+        return Number.isFinite(n) && n >= 0 ? n : 0;
+    }
+
+    private getTldFromDomain(domainName: string): string {
+        const parts = domainName.split('.').filter(Boolean);
+        return parts.length > 1 ? parts.slice(1).join('.') : 'com';
+    }
+
+    private getSldFromDomain(domainName: string): string {
+        const tld = this.getTldFromDomain(domainName);
+        return domainName.replace(new RegExp(`\\.${escapeRegex(tld)}$`, 'i'), '') || domainName.split('.')[0] || domainName;
+    }
+
+    private yearsFromBillingCycle(billingCycle: BillingCycle): number {
+        if (billingCycle === BillingCycle.BIENNIALLY) return 2;
+        if (billingCycle === BillingCycle.TRIENNIALLY) return 3;
+        return 1;
+    }
+
+    private normalizeDomainLifecycleStatus(value: string): DomainLifecycleStatus {
+        const normalized = String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+        if (Object.values(DomainLifecycleStatus).includes(normalized as DomainLifecycleStatus)) {
+            return normalized as DomainLifecycleStatus;
+        }
+        throw ApiError.badRequest(`Invalid lifecycleStatus: ${value}`);
+    }
+
+    private deriveLifecycleStatusFromLiveInfo(
+        liveInfo: DomainInformation,
+        context: { operationType?: string; transferStatus?: string; expiresAt?: Date }
+    ): DomainLifecycleStatus {
+        const rawStatus = String(liveInfo.status || '').toLowerCase();
+        const raw = `${rawStatus} ${String(liveInfo.renewOption || '').toLowerCase()} ${JSON.stringify(liveInfo.raw || {}).toLowerCase()}`;
+        const expiry = context.expiresAt || liveInfo.expiryDate;
+        const now = new Date();
+
+        if (context.operationType === DomainOperationType.TRANSFER) {
+            if (context.transferStatus === DomainTransferStatus.REJECTED) return DomainLifecycleStatus.FRAUD;
+            if (context.transferStatus === DomainTransferStatus.CANCELLED) return DomainLifecycleStatus.CANCELLED;
+            if (context.transferStatus !== DomainTransferStatus.COMPLETED) return DomainLifecycleStatus.PENDING_TRANSFER;
+        }
+        if (/transfer.*away|transferred.*away|not in account|not found|external/i.test(raw)) {
+            return DomainLifecycleStatus.TRANSFERRED_AWAY;
+        }
+        if (/redemption|restore/i.test(raw)) return DomainLifecycleStatus.REDEMPTION_PERIOD_EXPIRED;
+        if (/grace/i.test(raw)) return DomainLifecycleStatus.GRACE_PERIOD_EXPIRED;
+        if (/cancel/i.test(raw)) return DomainLifecycleStatus.CANCELLED;
+        if (/fraud/i.test(raw)) return DomainLifecycleStatus.FRAUD;
+        if (expiry && expiry.getTime() < now.getTime()) return DomainLifecycleStatus.EXPIRED;
+        if (/active|ok|clienttransferprohibited|locked/i.test(raw) || liveInfo.domain) {
+            return DomainLifecycleStatus.ACTIVE;
+        }
+        return context.operationType === DomainOperationType.TRANSFER
+            ? DomainLifecycleStatus.PENDING_TRANSFER
+            : DomainLifecycleStatus.PENDING_REGISTRATION;
+    }
+
+    private async findRecoverableServiceMatches(
+        domainNames: string[]
+    ): Promise<Map<string, Array<{ serviceId: string; serviceNumber?: string; clientId: string; status: string }>>> {
+        const matches = new Map<string, Array<{ serviceId: string; serviceNumber?: string; clientId: string; status: string }>>();
+        if (!domainNames.length) return matches;
+
+        const services = await Service.find({
+            type: ServiceType.DOMAIN,
+            status: { $in: [ServiceStatus.FAILED, ServiceStatus.PENDING, ServiceStatus.PROVISIONING] },
+        })
+            .select('_id serviceNumber clientId status orderItemId')
+            .lean<any>();
+        const orderItemIds = services.map((s: any) => s.orderItemId).filter(Boolean);
+        const orderItems = await OrderItem.find({ _id: { $in: orderItemIds } }).select('configSnapshot nameSnapshot').lean<any>();
+        const orderItemById = Object.fromEntries(orderItems.map((item: any) => [item._id.toString(), item]));
+        const wanted = new Set(domainNames);
+
+        for (const service of services) {
+            const orderItem = orderItemById[service.orderItemId?.toString?.()];
+            const fqdn = resolveDomainFqdnFromDetailsAndOrderItem(undefined, orderItem);
+            if (!fqdn || !wanted.has(fqdn)) continue;
+            const rows = matches.get(fqdn) ?? [];
+            rows.push({
+                serviceId: service._id.toString(),
+                serviceNumber: service.serviceNumber,
+                clientId: service.clientId?.toString?.(),
+                status: service.status,
+            });
+            matches.set(fqdn, rows);
+        }
+
+        return matches;
+    }
+
     private async syncStoredDomainDetails(
         domainName: string,
         updates: Partial<{
@@ -1081,6 +1875,7 @@ class DomainService {
             syncStatus: 'success' | 'failure' | 'pending';
             syncMessage: string;
             source: 'billing' | 'registrar_import';
+            dnsRecords: DnsRecord[];
             contacts: {
                 registrant: IDomainContact;
                 admin: IDomainContact;
@@ -1095,6 +1890,16 @@ class DomainService {
             { $expr: { $eq: [{ $toLower: '$domainName' }, normalized] } },
             { $set: { ...updates, domainName: normalized } }
         ).exec();
+    }
+
+    private async getStoredDomainDetailsByName(domainName: string): Promise<any | null> {
+        const normalized = normalizeDomainFqdn(domainName);
+        if (!normalized) return null;
+        return DomainServiceDetails.findOne({
+            $expr: { $eq: [{ $toLower: '$domainName' }, normalized] },
+        })
+            .select('-eppCodeEncrypted')
+            .lean<any>();
     }
 
     private toStoredDomainContact(contact?: RegistrarContact): IDomainContact {
@@ -1112,6 +1917,37 @@ class DomainService {
             state: contact?.state || 'Unknown',
             postcode: contact?.zip || 'Unknown',
             country: contact?.country || 'US',
+        };
+    }
+
+    private toRegistrarContactDetails(
+        contacts?: {
+            registrant?: Partial<IDomainContact>;
+            admin?: Partial<IDomainContact>;
+            tech?: Partial<IDomainContact>;
+            billing?: Partial<IDomainContact>;
+        }
+    ): DomainContactDetails {
+        const convert = (contact?: Partial<IDomainContact>): RegistrarContact => {
+            const firstName = String(contact?.firstName || '').trim();
+            const lastName = String(contact?.lastName || '').trim();
+            const phone = String(contact?.phone || '').trim();
+            return {
+                name: [firstName, lastName].filter(Boolean).join(' ').trim(),
+                email: contact?.email || '',
+                phonenum: phone,
+                address1: contact?.address1 || '',
+                city: contact?.city || '',
+                state: contact?.state || '',
+                zip: contact?.postcode || '',
+                country: contact?.country || '',
+            };
+        };
+        return {
+            registrant: convert(contacts?.registrant),
+            admin: convert(contacts?.admin),
+            tech: convert(contacts?.tech),
+            billing: convert(contacts?.billing),
         };
     }
 

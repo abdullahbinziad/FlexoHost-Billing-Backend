@@ -12,6 +12,35 @@ export enum DomainTransferStatus {
     CANCELLED = 'CANCELLED',
 }
 
+export enum DomainLifecycleStatus {
+    PENDING_REGISTRATION = 'PENDING_REGISTRATION',
+    PENDING_TRANSFER = 'PENDING_TRANSFER',
+    ACTIVE = 'ACTIVE',
+    GRACE_PERIOD_EXPIRED = 'GRACE_PERIOD_EXPIRED',
+    REDEMPTION_PERIOD_EXPIRED = 'REDEMPTION_PERIOD_EXPIRED',
+    EXPIRED = 'EXPIRED',
+    TRANSFERRED_AWAY = 'TRANSFERRED_AWAY',
+    CANCELLED = 'CANCELLED',
+    FRAUD = 'FRAUD',
+}
+
+export const DOMAIN_LIFECYCLE_STATUS_LABELS: Record<DomainLifecycleStatus, string> = {
+    [DomainLifecycleStatus.PENDING_REGISTRATION]: 'Pending Registration',
+    [DomainLifecycleStatus.PENDING_TRANSFER]: 'Pending Transfer',
+    [DomainLifecycleStatus.ACTIVE]: 'Active',
+    [DomainLifecycleStatus.GRACE_PERIOD_EXPIRED]: 'Grace Period (Expired)',
+    [DomainLifecycleStatus.REDEMPTION_PERIOD_EXPIRED]: 'Redemption Period (Expired)',
+    [DomainLifecycleStatus.EXPIRED]: 'Expired',
+    [DomainLifecycleStatus.TRANSFERRED_AWAY]: 'Transferred Away',
+    [DomainLifecycleStatus.CANCELLED]: 'Cancelled',
+    [DomainLifecycleStatus.FRAUD]: 'Fraud',
+};
+
+export const DOMAIN_LIFECYCLE_STATUS_OPTIONS = Object.values(DomainLifecycleStatus).map((value) => ({
+    value,
+    label: DOMAIN_LIFECYCLE_STATUS_LABELS[value],
+}));
+
 export interface IDomainContact {
     firstName: string;
     lastName: string;
@@ -41,6 +70,13 @@ export interface IDomainServiceDetails extends Document {
     };
     contactsSameAsRegistrant: boolean;
     nameservers: string[];
+    dnsRecords?: Array<{
+        type: string;
+        name?: string;
+        value: string;
+        priority?: number;
+        ttl?: number;
+    }>;
     registrarLock: boolean;
     whoisPrivacy: boolean;
     dnssecEnabled: boolean;
@@ -53,6 +89,12 @@ export interface IDomainServiceDetails extends Document {
     registrarOrderId?: string;
     eppStatusCodes: string[];
     registrarStatus?: string;
+    lifecycleStatus?: DomainLifecycleStatus;
+    lifecycleReason?: string;
+    lifecycleUpdatedAt?: Date;
+    lastAutoStatusAt?: Date;
+    lastManualStatusAt?: Date;
+    manualStatusOverrideUntil?: Date;
     syncStatus?: 'success' | 'failure' | 'pending';
     syncMessage?: string;
     source?: 'billing' | 'registrar_import';
@@ -101,6 +143,18 @@ const domainServiceDetailsSchema = new Schema<IDomainServiceDetails>({
         ],
         required: true
     },
+    dnsRecords: {
+        type: [
+            {
+                type: { type: String },
+                name: { type: String },
+                value: { type: String },
+                priority: { type: Number },
+                ttl: { type: Number },
+            },
+        ],
+        default: [],
+    },
     registrarLock: { type: Boolean, default: true },
     whoisPrivacy: { type: Boolean, default: false },
     dnssecEnabled: { type: Boolean, default: false },
@@ -113,6 +167,17 @@ const domainServiceDetailsSchema = new Schema<IDomainServiceDetails>({
     registrarOrderId: { type: String },
     eppStatusCodes: { type: [String], default: [] },
     registrarStatus: { type: String },
+    lifecycleStatus: {
+        type: String,
+        enum: Object.values(DomainLifecycleStatus),
+        default: DomainLifecycleStatus.PENDING_REGISTRATION,
+        index: true,
+    },
+    lifecycleReason: { type: String },
+    lifecycleUpdatedAt: { type: Date },
+    lastAutoStatusAt: { type: Date },
+    lastManualStatusAt: { type: Date },
+    manualStatusOverrideUntil: { type: Date },
     syncStatus: {
         type: String,
         enum: ['success', 'failure', 'pending'],

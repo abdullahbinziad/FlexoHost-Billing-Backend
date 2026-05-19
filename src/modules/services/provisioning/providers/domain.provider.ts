@@ -1,6 +1,6 @@
 import { ServiceType } from '../../types/enums';
 import type { IProvisioningProvider, ProvisioningContext, ProvisioningResult } from '../types';
-import { DomainOperationType, DomainTransferStatus } from '../../models/domain-details.model';
+import { DomainLifecycleStatus, DomainOperationType, DomainTransferStatus } from '../../models/domain-details.model';
 import { DOMAIN_CONFIG } from '../../../domain/domain.config';
 import { getEffectiveDefaultNameserversForProvision } from '../../../domain/domain-system-settings.service';
 import { domainRegistrarService } from '../../../domain/registrar/domain-registrar.service';
@@ -70,6 +70,11 @@ export class DomainProvisioningProvider implements IProvisioningProvider {
                 registrar: registrarName || DOMAIN_CONFIG.defaultRegistrar,
                 operationType: isTransfer ? DomainOperationType.TRANSFER : DomainOperationType.REGISTER,
                 transferStatus: isTransfer ? DomainTransferStatus.PENDING : undefined,
+                lifecycleStatus: isTransfer
+                    ? DomainLifecycleStatus.PENDING_TRANSFER
+                    : DomainLifecycleStatus.PENDING_REGISTRATION,
+                lifecycleReason: isTransfer ? 'Transfer requested' : 'Registration requested',
+                lifecycleUpdatedAt: new Date(),
                 eppCodeEncrypted: isTransfer && config.eppCode
                     ? Buffer.from(config.eppCode).toString('base64')
                     : undefined,
