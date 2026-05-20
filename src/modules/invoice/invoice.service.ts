@@ -122,6 +122,14 @@ class InvoiceService {
                             lineItems,
                         },
                         attachments,
+                        logContext: {
+                            clientId: invoice.clientId?.toString?.(),
+                            invoiceId: invoice._id?.toString?.(),
+                            source: 'system',
+                            actorType: 'system',
+                            emailType: 'billing.invoice_created',
+                            bodyPreview: `Invoice ${invoice.invoiceNumber}`,
+                        },
                     });
                 } catch (e: any) {
                     logger.warn('[Invoice] Invoice created email failed:', e?.message || e);
@@ -233,6 +241,14 @@ class InvoiceService {
                         billingUrl: `${baseUrl}/client`,
                     },
                     attachments,
+                    logContext: {
+                        clientId: invoice.clientId?.toString?.(),
+                        invoiceId: invoice._id?.toString?.(),
+                        source: 'system',
+                        actorType: 'system',
+                        emailType: 'billing.payment_success',
+                        bodyPreview: `Payment received for ${invoice.invoiceNumber}`,
+                    },
                 }).catch(() => {});
             }
         }

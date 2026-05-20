@@ -9,6 +9,7 @@ import { requireClientAccess } from '../client-access-grant/require-client-acces
 import emailService from '../email/email.service';
 import { buildCustomEmailHtml } from '../email/build-custom-email';
 import { auditLogSafe } from '../activity-log/activity-log.service';
+import Service from '../services/service.model';
 
 const baseCookieOptions = {
     httpOnly: true,
@@ -116,10 +117,21 @@ class ClientController {
         const client = await clientService.getClientById(req.params.id);
         const subject = String(req.body.subject || '').trim();
         const message = String(req.body.message || '').trim();
+        const serviceId = typeof req.body.serviceId === 'string' ? req.body.serviceId : undefined;
+        const invoiceId = typeof req.body.invoiceId === 'string' ? req.body.invoiceId : undefined;
+        const domainId = typeof req.body.domainId === 'string' ? req.body.domainId : undefined;
+        const orderId = typeof req.body.orderId === 'string' ? req.body.orderId : undefined;
         const recipientEmail = client.contactEmail || client.user?.email;
 
         if (!recipientEmail) {
             throw ApiError.badRequest('This client does not have an email address');
+        }
+
+        if (serviceId) {
+            const ownsService = await Service.exists({ _id: serviceId, clientId: req.params.id });
+            if (!ownsService) {
+                throw ApiError.badRequest('Selected service does not belong to this client');
+            }
         }
 
         const clientName = [client.firstName, client.lastName].filter(Boolean).join(' ').trim() || 'Client';
@@ -129,6 +141,18 @@ class ClientController {
             subject,
             text: message,
             html: buildCustomEmailHtml({ clientName, message, senderLabel }),
+            logContext: {
+                clientId: req.params.id,
+                serviceId,
+                invoiceId,
+                domainId,
+                orderId,
+                sentBy: req.user?._id?.toString?.(),
+                actorType: 'user',
+                source: 'manual',
+                emailType: serviceId ? 'service_custom' : 'custom',
+                bodyPreview: message,
+            },
         });
 
         const bodyPreview = message.length > 500 ? `${message.slice(0, 500)}...` : message;
@@ -148,6 +172,10 @@ class ClientController {
                 subject,
                 to: recipientEmail,
                 bodyPreview,
+                serviceId,
+                invoiceId,
+                domainId,
+                orderId,
                 error: result.success ? undefined : result.error,
             },
         });

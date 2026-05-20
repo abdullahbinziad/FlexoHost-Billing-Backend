@@ -21,6 +21,7 @@ import {
     revokeGrant,
     listGrantsSharedWithMe,
 } from '../client-access-grant/client-access-grant.controller';
+import { requirePermission } from '../../middlewares/requirePermission';
 
 const router = Router();
 
@@ -67,6 +68,7 @@ router.post(
 router.post(
     '/:id/email',
     restrictTo('superadmin', 'admin', 'staff'),
+    requirePermission('clients:send_email'),
     validate(sendClientEmailValidation),
     clientController.sendClientEmail
 );

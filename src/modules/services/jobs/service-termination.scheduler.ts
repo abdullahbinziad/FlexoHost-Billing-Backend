@@ -97,6 +97,15 @@ export class ServiceTerminationScheduler {
                         restoreActionUrl,
                         supportUrl,
                     },
+                    logContext: {
+                        clientId: (client._id ?? client)?.toString?.(),
+                        serviceId: svc._id?.toString?.(),
+                        invoiceId: invoice?._id?.toString?.(),
+                        source: 'cron',
+                        actorType: 'system',
+                        emailType: 'service.termination_warning',
+                        bodyPreview: `Termination warning for ${serviceIdentifier}`,
+                    },
                 });
 
                 await TerminationWarningLog.create({ serviceId: svc._id, reminderType });

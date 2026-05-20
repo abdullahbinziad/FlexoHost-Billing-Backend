@@ -4,6 +4,7 @@ import serviceTerminationScheduler from './service-termination.scheduler';
 import usageSyncScheduler from './usage-sync.scheduler';
 import provisioningWorker from './provisioning.worker';
 import serviceActionWorker from './service-action.worker';
+import domainRenewalWorker from './domain-renewal.worker';
 import domainSyncScheduler from './domain-sync.scheduler';
 import domainExpiryReminderScheduler from './domain-expiry-reminder.scheduler';
 import { billableItemService } from '../../billable-item/billable-item.service';
@@ -162,6 +163,13 @@ class AutomationTasksService {
         });
     }
 
+    runDomainRenewals(source: TaskSource = 'cron') {
+        return runWithAudit('domain-renewals', source, async () => {
+            const processed = await domainRenewalWorker.processQueuedJobs();
+            return { processed };
+        });
+    }
+
     runActionWorker(source: TaskSource = 'cron') {
         return runWithAudit('action-worker', source, async () => {
             const processed = await serviceActionWorker.processQueuedJobs();
@@ -202,6 +210,8 @@ class AutomationTasksService {
                 return this.runActionWorker(source);
             case 'provisioning-worker':
                 return this.runProvisioningWorker(source);
+            case 'domain-renewals':
+                return this.runDomainRenewals(source);
             case 'domain-sync':
                 return this.runDomainSync(source);
             case 'digest-email':

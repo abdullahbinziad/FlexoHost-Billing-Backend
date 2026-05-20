@@ -9,6 +9,7 @@ import ApiResponse from '../../utils/apiResponse';
 import type { TemplateKey } from './templates/types';
 import emailController from './email.controller';
 import { sendBulkEmailValidation } from './email.validation';
+import { requirePermission } from '../../middlewares/requirePermission';
 
 const router = Router();
 
@@ -19,8 +20,17 @@ router.post(
     '/send-bulk',
     protect,
     restrictTo('superadmin', 'admin', 'staff'),
+    requirePermission('clients:send_email'),
     validate(sendBulkEmailValidation),
     emailController.sendBulk
+);
+
+router.get(
+    '/logs',
+    protect,
+    restrictTo('superadmin', 'admin', 'staff'),
+    requirePermission('clients:read'),
+    emailController.getLogs
 );
 
 

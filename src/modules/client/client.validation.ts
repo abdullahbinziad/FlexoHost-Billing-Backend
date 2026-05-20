@@ -159,6 +159,10 @@ export const sendClientEmailValidation = [
         .withMessage('Message is required')
         .isLength({ max: 10000 })
         .withMessage('Message cannot exceed 10000 characters'),
+    body('serviceId').optional().isMongoId().withMessage('serviceId must be a valid MongoDB ObjectId'),
+    body('invoiceId').optional().isMongoId().withMessage('invoiceId must be a valid MongoDB ObjectId'),
+    body('domainId').optional().isMongoId().withMessage('domainId must be a valid MongoDB ObjectId'),
+    body('orderId').optional().isMongoId().withMessage('orderId must be a valid MongoDB ObjectId'),
 ];
 
 export const actingAsClientIdValidation = [

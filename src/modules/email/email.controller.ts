@@ -9,6 +9,7 @@ import { buildCustomEmailHtml } from './build-custom-email';
 import { isTransportConfigured, verifySmtpConnection } from './transport/nodemailer.transport';
 import { resolveEmailSmtpConfig } from './smtp';
 import { auditLogSafe } from '../activity-log/activity-log.service';
+import { getEmailLogs } from './email-log.service';
 
 const MAX_RECIPIENTS = 100;
 
@@ -22,6 +23,33 @@ function personalizeMessage(message: string, firstName?: string, lastName?: stri
 }
 
 class EmailController {
+    getLogs = catchAsync(async (req: AuthRequest, res: Response) => {
+        const result = await getEmailLogs(
+            {
+                clientId: req.query.clientId as string,
+                serviceId: req.query.serviceId as string,
+                invoiceId: req.query.invoiceId as string,
+                domainId: req.query.domainId as string,
+                orderId: req.query.orderId as string,
+                ticketId: req.query.ticketId as string,
+                status: req.query.status as any,
+                source: req.query.source as any,
+                templateKey: req.query.templateKey as string,
+                search: req.query.search as string,
+                dateFrom: req.query.dateFrom as string,
+                dateTo: req.query.dateTo as string,
+            },
+            {
+                page: Number(req.query.page) || 1,
+                limit: Number(req.query.limit) || 20,
+                sortBy: (req.query.sortBy as string) || 'createdAt',
+                sortOrder: (req.query.sortOrder as 'asc' | 'desc') || 'desc',
+            }
+        );
+
+        return ApiResponse.ok(res, 'Email logs retrieved', result);
+    });
+
     /**
      * POST /email/send-bulk
      * Send the same email to multiple clients. Admin/staff only.
@@ -115,6 +143,14 @@ class EmailController {
                 subject: subject || '',
                 text: personalizedMessage,
                 html: htmlBody,
+                logContext: {
+                    clientId,
+                    sentBy: req.user?._id?.toString?.(),
+                    actorType: 'user',
+                    source: 'manual',
+                    emailType: 'bulk_custom',
+                    bodyPreview: personalizedMessage,
+                },
             });
 
             if (result.success) {

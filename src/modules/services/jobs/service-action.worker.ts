@@ -218,6 +218,14 @@ export class ServiceActionWorker {
                 restoreActionUrl,
                 supportUrl,
             },
+            logContext: {
+                clientId: client._id?.toString?.(),
+                serviceId: service._id?.toString?.(),
+                source: 'system',
+                actorType: 'system',
+                emailType: 'service.suspended',
+                bodyPreview: `Service suspended: ${serviceIdentifier}`,
+            },
         });
     }
 }

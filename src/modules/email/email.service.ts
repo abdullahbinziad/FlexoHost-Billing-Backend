@@ -11,6 +11,7 @@ import { sendViaTransport, isTransportConfigured, type EmailAttachment } from '.
 import { inlineEmailBrandLogo } from './inline-brand-logo';
 import type { TemplateKey } from './templates/types';
 import type { SendResult } from './templates/types';
+import { createEmailLog, type EmailLogContext } from './email-log.service';
 
 export interface SendTemplatedEmailOptions<T = Record<string, unknown>> {
     to: string;
@@ -20,6 +21,7 @@ export interface SendTemplatedEmailOptions<T = Record<string, unknown>> {
     cc?: string[];
     bcc?: string[];
     attachments?: EmailAttachment[];
+    logContext?: EmailLogContext;
 }
 
 /**
@@ -29,7 +31,7 @@ export interface SendTemplatedEmailOptions<T = Record<string, unknown>> {
 export async function sendTemplatedEmail<T>(
     options: SendTemplatedEmailOptions<T>
 ): Promise<SendResult> {
-    const { to, templateKey, props, replyTo, cc, bcc, attachments } = options;
+    const { to, templateKey, props, replyTo, cc, bcc, attachments, logContext } = options;
 
     const validation = validateProps(templateKey, props);
     if (!validation.success) {
@@ -49,10 +51,23 @@ export async function sendTemplatedEmail<T>(
         logger.warn(
             `[Email] SMTP not configured – no email sent. Would send ${templateKey} to ${to} | Subject: ${subject}. Set SMTP_* in the API environment.`
         );
-        return {
+        const result = {
             success: false,
             error: 'SMTP not configured. Set SMTP_USER and SMTP_PASSWORD in the API environment.',
         };
+        await createEmailLog({
+            ...logContext,
+            to,
+            replyTo,
+            cc,
+            bcc,
+            subject,
+            templateKey,
+            status: 'failed',
+            error: result.error,
+            bodyPreview: logContext?.bodyPreview || text,
+        });
+        return result;
     }
 
     let sendHtml = html;
@@ -63,7 +78,7 @@ export async function sendTemplatedEmail<T>(
         sendAttachments = [...sendAttachments, ...inlined.attachments];
     }
 
-    return sendViaTransport({
+    const result = await sendViaTransport({
         to,
         subject,
         html: sendHtml,
@@ -73,6 +88,20 @@ export async function sendTemplatedEmail<T>(
         bcc,
         attachments: sendAttachments.length ? sendAttachments : undefined,
     });
+    await createEmailLog({
+        ...logContext,
+        to,
+        replyTo,
+        cc,
+        bcc,
+        subject,
+        templateKey,
+        status: result.success ? 'sent' : 'failed',
+        providerMessageId: result.messageId,
+        error: result.error,
+        bodyPreview: logContext?.bodyPreview || text,
+    });
+    return result;
 }
 
 /**
@@ -83,15 +112,31 @@ export interface IEmailOptions {
     subject: string;
     text?: string;
     html: string;
+    replyTo?: string;
+    cc?: string[];
+    bcc?: string[];
+    logContext?: EmailLogContext;
 }
 
 export async function sendEmail(options: IEmailOptions): Promise<SendResult> {
     if (!(await isTransportConfigured())) {
         logger.warn(`[Email-Stub] to ${options.to} | Subject: ${options.subject}`);
-        return {
+        const result = {
             success: false,
             error: 'SMTP not configured. Set SMTP_USER and SMTP_PASSWORD in the API environment.',
         };
+        await createEmailLog({
+            ...options.logContext,
+            to: options.to,
+            replyTo: options.replyTo,
+            cc: options.cc,
+            bcc: options.bcc,
+            subject: options.subject,
+            status: 'failed',
+            error: result.error,
+            bodyPreview: options.logContext?.bodyPreview || options.text || options.html,
+        });
+        return result;
     }
 
     let sendHtml = options.html;
@@ -102,13 +147,29 @@ export async function sendEmail(options: IEmailOptions): Promise<SendResult> {
         attachments = inlined.attachments.length ? inlined.attachments : undefined;
     }
 
-    return sendViaTransport({
+    const result = await sendViaTransport({
         to: options.to,
         subject: options.subject,
         html: sendHtml,
         text: options.text,
+        replyTo: options.replyTo,
+        cc: options.cc,
+        bcc: options.bcc,
         attachments,
     });
+    await createEmailLog({
+        ...options.logContext,
+        to: options.to,
+        replyTo: options.replyTo,
+        cc: options.cc,
+        bcc: options.bcc,
+        subject: options.subject,
+        status: result.success ? 'sent' : 'failed',
+        providerMessageId: result.messageId,
+        error: result.error,
+        bodyPreview: options.logContext?.bodyPreview || options.text || options.html,
+    });
+    return result;
 }
 
 // --- Convenience methods (delegate to sendTemplatedEmail) ---
@@ -424,6 +485,22 @@ export async function sendEmailByTemplate(
         to,
         templateKey,
         props,
+        logContext: {
+            clientId:
+                context.clientId?.toString?.() ||
+                context.clientId ||
+                invoice?.clientId?._id?.toString?.() ||
+                invoice?.clientId?.toString?.(),
+            serviceId: context.serviceId?.toString?.() || context.serviceId,
+            invoiceId: context.invoiceId?.toString?.() || context.invoiceId || invoice?._id?.toString?.(),
+            domainId: context.domainId?.toString?.() || context.domainId,
+            orderId: context.orderId?.toString?.() || context.orderId,
+            ticketId: context.ticketId?.toString?.() || context.ticketId,
+            source: context.source || 'system',
+            actorType: 'system',
+            emailType: legacyTemplateName,
+            bodyPreview: templateKey,
+        },
     });
 
     return result.success;

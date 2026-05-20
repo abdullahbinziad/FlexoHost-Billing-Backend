@@ -95,10 +95,14 @@ export class DomainExpiryReminderScheduler {
                             renewalPrice,
                             currency: DEFAULT_CURRENCY,
                             autoRenewEnabled: service?.autoRenew ?? false,
-                            renewUrl,
-                            customerName,
-                        }
-                    );
+                        renewUrl,
+                        customerName,
+                        clientId: (client._id ?? client)?.toString?.(),
+                        serviceId: (service._id ?? service)?.toString?.(),
+                        domainId: domain._id?.toString?.(),
+                        source: 'cron',
+                    }
+                );
 
                     if (sent) {
                         await DomainReminderLog.create({
@@ -170,6 +174,10 @@ export class DomainExpiryReminderScheduler {
                         expirationDate,
                         statusLabel: 'Expired',
                         restoreUrl,
+                        clientId: (client._id ?? client)?.toString?.(),
+                        serviceId: (service._id ?? service)?.toString?.(),
+                        domainId: domain._id?.toString?.(),
+                        source: 'cron',
                     }
                 );
 

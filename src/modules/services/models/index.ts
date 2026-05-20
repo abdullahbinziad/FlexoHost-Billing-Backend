@@ -22,3 +22,5 @@ export { default as ServiceAuditLog } from './service-audit-log.model';
 export * from './service-action-job.model';
 export { default as ServiceActionJob } from './service-action-job.model';
 
+export * from './domain-renewal-job.model';
+export { default as DomainRenewalJob } from './domain-renewal-job.model';

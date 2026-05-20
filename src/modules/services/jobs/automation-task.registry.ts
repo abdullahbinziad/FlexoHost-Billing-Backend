@@ -9,6 +9,7 @@ export type AutomationTaskKey =
     | 'usage-sync'
     | 'action-worker'
     | 'provisioning-worker'
+    | 'domain-renewals'
     | 'domain-sync'
     | 'digest-email';
 
@@ -85,6 +86,14 @@ export function getAutomationTaskRegistry(): AutomationTaskRegistryItem[] {
             category: 'service',
             description: 'Process queued provisioning jobs.',
             intervalMs: config.cron.provisioningWorkerIntervalMs,
+            runOnStart: config.cron.runOnStart,
+        },
+        {
+            key: 'domain-renewals',
+            label: 'Domain Renewals',
+            category: 'domain',
+            description: 'Process queued registrar renewals after paid domain renewal invoices.',
+            intervalMs: config.cron.domainRenewalWorkerIntervalMs,
             runOnStart: config.cron.runOnStart,
         },
         {

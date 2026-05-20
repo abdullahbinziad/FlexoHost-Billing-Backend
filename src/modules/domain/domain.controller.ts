@@ -147,8 +147,12 @@ class DomainController {
         if (!owned && requestedClientId) {
             return res.status(404).json({ success: false, message: 'Domain not found for the selected client' });
         }
-        const result = await domainService.renewDomain(domain, duration);
-        return ApiResponse.ok(res, 'Domain renewal initiated', result);
+        const result = await domainService.createDomainRenewalInvoice({ clientId, domain, duration });
+        return ApiResponse.ok(
+            res,
+            result.reusedExisting ? 'Existing domain renewal invoice retrieved' : 'Domain renewal invoice created',
+            result
+        );
     });
 
     transferDomain = catchAsync(async (req: Request, res: Response) => {

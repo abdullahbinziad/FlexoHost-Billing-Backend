@@ -4,8 +4,12 @@ import Invoice from '../../invoice/invoice.model';
 import ServiceActionJob from '../models/service-action-job.model';
 import RenewalLedger from '../models/renewal-ledger.model';
 import ServiceAuditLog from '../models/service-audit-log.model';
-import { ServiceStatus, ServiceActionType, ProvisioningJobStatus, BillingCycle } from '../types/enums';
+import DomainServiceDetails from '../models/domain-details.model';
+import DomainRenewalJob from '../models/domain-renewal-job.model';
+import { ServiceStatus, ServiceActionType, ProvisioningJobStatus, BillingCycle, ServiceType } from '../types/enums';
 import { addBillingCycleToDate } from '../utils/billing-cycle.util';
+import { InvoiceStatus } from '../../invoice/invoice.interface';
+import { auditLogSafe } from '../../activity-log/activity-log.service';
 
 export class ServiceLifecycleService {
     /**
@@ -123,12 +127,15 @@ export class ServiceLifecycleService {
     async applyRenewalPayment(invoiceId: string | mongoose.Types.ObjectId) {
         const invoice = await Invoice.findById(invoiceId).lean().exec();
         if (!invoice) return;
+        if (invoice.status !== InvoiceStatus.PAID || (invoice.balanceDue ?? 0) > 0) return;
 
         // Locate renewal service mappings natively.
         const mappedServiceIds: mongoose.Types.ObjectId[] = [];
+        const itemMetaByServiceId = new Map<string, Record<string, any>>();
         for (const item of invoice.items) {
             if (item.meta && item.meta.serviceId) {
                 mappedServiceIds.push(item.meta.serviceId);
+                itemMetaByServiceId.set(item.meta.serviceId.toString(), item.meta);
             }
         }
 
@@ -137,7 +144,16 @@ export class ServiceLifecycleService {
         const servicesToRenew = await Service.find({ _id: { $in: mappedServiceIds } }).exec();
 
         for (const svc of servicesToRenew) {
-            const currentDueDate = svc.nextDueDate;
+            if ([ServiceStatus.TERMINATED, ServiceStatus.CANCELLED].includes(svc.status as ServiceStatus)) {
+                await this.markRenewalSkipped(svc, invoice, `Service is ${svc.status}`);
+                continue;
+            }
+
+            const itemMeta = itemMetaByServiceId.get(svc._id.toString()) || {};
+            const metaDueDate = itemMeta.renewalDueDate ? new Date(itemMeta.renewalDueDate) : null;
+            const currentDueDate = metaDueDate && !Number.isNaN(metaDueDate.getTime())
+                ? metaDueDate
+                : svc.nextDueDate;
             // Check renewal_ledger for idempotency based on dueDate
             const ledger = await RenewalLedger.findOne({ serviceId: svc._id, dueDate: currentDueDate }).exec();
 
@@ -156,7 +172,6 @@ export class ServiceLifecycleService {
 
             await svc.save();
 
-            const { auditLogSafe } = await import('../../activity-log/activity-log.service');
             auditLogSafe({
                 message: `Service ${svc._id} renewed`,
                 type: 'service_renewed',
@@ -183,6 +198,148 @@ export class ServiceLifecycleService {
                     paidInvoiceId: invoice._id
                 });
             }
+
+            if (svc.type === ServiceType.DOMAIN) {
+                await this.processPaidDomainRenewal(svc, invoice, itemMeta, currentDueDate, nextTargetDate);
+            }
+        }
+    }
+
+    private async markRenewalSkipped(svc: any, invoice: any, reason: string): Promise<void> {
+        svc.meta = svc.meta || {};
+        svc.meta.renewalSkippedReason = reason;
+        svc.meta.renewalSkippedInvoiceId = invoice._id.toString();
+        svc.meta.renewalSkippedAt = new Date();
+        await svc.save();
+
+        auditLogSafe({
+            message: `Renewal skipped for service ${svc._id}: ${reason}`,
+            type: 'service_renewed',
+            category: 'service',
+            actorType: 'system',
+            source: 'system',
+            clientId: (svc.clientId as any)?.toString(),
+            serviceId: svc._id.toString(),
+            invoiceId: invoice._id.toString(),
+            meta: { reason },
+        });
+    }
+
+    private yearsFromBillingCycle(cycle: BillingCycle): number {
+        if (cycle === BillingCycle.BIENNIALLY) return 2;
+        if (cycle === BillingCycle.TRIENNIALLY) return 3;
+        return 1;
+    }
+
+    private async processPaidDomainRenewal(
+        svc: any,
+        invoice: any,
+        itemMeta: Record<string, any>,
+        renewedFrom: Date,
+        renewedUntil: Date
+    ): Promise<void> {
+        const details = await DomainServiceDetails.findOne({ serviceId: svc._id }).exec();
+        if (!details?.domainName) {
+            svc.meta = svc.meta || {};
+            svc.meta.domainRenewalStatus = 'failed';
+            svc.meta.domainRenewalError = 'Domain details not found';
+            await svc.save();
+            return;
+        }
+
+        if (details.expiresAt && new Date(details.expiresAt).getTime() >= renewedUntil.getTime()) {
+            svc.meta = svc.meta || {};
+            svc.meta.domainRenewalStatus = 'already_current';
+            svc.meta.domainRenewalInvoiceId = invoice._id.toString();
+            await svc.save();
+            return;
+        }
+
+        try {
+            const years = this.yearsFromBillingCycle(svc.billingCycle as BillingCycle);
+            const idempotencyKey = `domain-renewal:${svc._id.toString()}:${invoice._id.toString()}:${renewedFrom.toISOString()}`;
+            const job = await DomainRenewalJob.findOneAndUpdate(
+                { idempotencyKey },
+                {
+                    $setOnInsert: {
+                        serviceId: svc._id,
+                        domainDetailsId: details._id,
+                        invoiceId: invoice._id,
+                        clientId: svc.clientId,
+                        domainName: details.domainName,
+                        registrar: details.registrar,
+                        years,
+                        currency: svc.currency,
+                        renewedFrom,
+                        renewedUntil,
+                        status: ProvisioningJobStatus.QUEUED,
+                        attempts: 0,
+                        maxAttempts: 3,
+                        idempotencyKey,
+                    },
+                },
+                { new: true, upsert: true, setDefaultsOnInsert: true }
+            ).exec();
+
+            const shouldRequeueFailed = job.status === ProvisioningJobStatus.FAILED;
+            if (shouldRequeueFailed) {
+                job.status = ProvisioningJobStatus.QUEUED;
+                job.attempts = 0;
+                job.lastError = undefined;
+                job.lockedAt = undefined;
+                job.lockOwner = undefined;
+                await job.save();
+            }
+
+            svc.provisioning = svc.provisioning || {};
+            svc.meta = svc.meta || {};
+            svc.meta.domainRenewalStatus = 'queued';
+            svc.meta.domainRenewalJobId = job._id.toString();
+            svc.meta.domainRenewalInvoiceId = invoice._id.toString();
+            svc.meta.domainRenewedFrom = renewedFrom.toISOString();
+            svc.meta.domainRenewedUntil = renewedUntil.toISOString();
+            svc.meta.domainRenewalOrderItemId = itemMeta.orderItemId;
+            await svc.save();
+
+            auditLogSafe({
+                message: `Domain renewal queued for ${details.domainName} after invoice ${invoice.invoiceNumber} was paid`,
+                type: 'domain_renewed',
+                category: 'domain',
+                actorType: 'system',
+                source: 'system',
+                clientId: (svc.clientId as any)?.toString(),
+                serviceId: svc._id.toString(),
+                invoiceId: invoice._id.toString(),
+                meta: {
+                    domain: details.domainName,
+                    years,
+                    registrar: details.registrar,
+                    jobId: job._id.toString(),
+                },
+            });
+        } catch (err: any) {
+            svc.provisioning = svc.provisioning || {};
+            svc.provisioning.lastError = err?.message || 'Registrar renewal failed';
+            svc.meta = svc.meta || {};
+            svc.meta.domainRenewalStatus = 'failed';
+            svc.meta.domainRenewalInvoiceId = invoice._id.toString();
+            svc.meta.domainRenewalError = err?.message || 'Registrar renewal failed';
+            svc.meta.domainRenewalFailedAt = new Date();
+            await svc.save();
+
+            auditLogSafe({
+                message: `Domain renewal failed for ${details.domainName}: ${err?.message || 'Unknown error'}`,
+                type: 'domain_renewed',
+                category: 'domain',
+                actorType: 'system',
+                source: 'system',
+                status: 'failure',
+                severity: 'high',
+                clientId: (svc.clientId as any)?.toString(),
+                serviceId: svc._id.toString(),
+                invoiceId: invoice._id.toString(),
+                meta: { domain: details.domainName },
+            });
         }
     }
 }

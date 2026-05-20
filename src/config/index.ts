@@ -128,6 +128,7 @@ interface Config {
         actionWorkerIntervalMs: number;
         provisioningWorkerIntervalMs: number;
         domainSyncIntervalMs: number;
+        domainRenewalWorkerIntervalMs: number;
     };
     automationAlerts: {
         enabled: boolean;
@@ -318,6 +319,7 @@ const config: Config = {
         actionWorkerIntervalMs: parseInt(process.env.CRON_ACTION_WORKER_INTERVAL_MS || `${5 * 60 * 1000}`, 10),
         provisioningWorkerIntervalMs: parseInt(process.env.CRON_PROVISIONING_WORKER_INTERVAL_MS || `${2 * 60 * 1000}`, 10),
         domainSyncIntervalMs: parseInt(process.env.CRON_DOMAIN_SYNC_INTERVAL_MS || `${60 * 60 * 1000}`, 10),
+        domainRenewalWorkerIntervalMs: parseInt(process.env.CRON_DOMAIN_RENEWAL_WORKER_INTERVAL_MS || `${5 * 60 * 1000}`, 10),
     },
     automationAlerts: {
         enabled: (process.env.AUTOMATION_ALERTS_ENABLED || 'true').toLowerCase() !== 'false',

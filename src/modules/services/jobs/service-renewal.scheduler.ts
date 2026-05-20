@@ -6,6 +6,7 @@ import ServiceActionJob from '../models/service-action-job.model';
 import RenewalLedger from '../models/renewal-ledger.model';
 import ServiceAuditLog from '../models/service-audit-log.model';
 import HostingServiceDetails from '../models/hosting-details.model';
+import DomainServiceDetails from '../models/domain-details.model';
 import { BillingCycle, ServiceStatus, ServiceActionType, ProvisioningJobStatus } from '../types/enums';
 import { InvoiceStatus, InvoiceItemType } from '../../invoice/invoice.interface';
 import { getNextSequence, formatSequenceId } from '../../../models/counter.model';
@@ -15,6 +16,19 @@ import config from '../../../config';
 import * as emailService from '../../email/email.service';
 import { getInvoicePdfBuffer } from '../../invoice/pdf/invoice-pdf.service';
 import logger from '../../../utils/logger';
+import { addBillingCycleToDate } from '../utils/billing-cycle.util';
+
+function normalizeDateKey(date: Date): string {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+}
+
+function buildRenewalGroupKey(svc: any): string {
+    const clientId = svc.clientId?._id ? svc.clientId._id.toString() : svc.clientId.toString();
+    const currency = svc.currency || DEFAULT_CURRENCY;
+    return `${clientId}:${currency}:${normalizeDateKey(svc.nextDueDate)}`;
+}
 
 export class ServiceRenewalScheduler {
     /**
@@ -51,16 +65,17 @@ export class ServiceRenewalScheduler {
         let invoicesCreated = 0;
         let itemsCreated = 0;
 
-        // Group by Client
+        // Group by client + currency + due date so one invoice only combines services sharing the same billing deadline.
         const clientServiceMap = new Map<string, typeof nonInvoicedServices>();
         for (const svc of nonInvoicedServices) {
-            const clientId = (svc.clientId as any)._id ? (svc.clientId as any)._id.toString() : svc.clientId.toString();
-            if (!clientServiceMap.has(clientId)) clientServiceMap.set(clientId, []);
-            clientServiceMap.get(clientId)!.push(svc);
+            const groupKey = buildRenewalGroupKey(svc);
+            if (!clientServiceMap.has(groupKey)) clientServiceMap.set(groupKey, []);
+            clientServiceMap.get(groupKey)!.push(svc);
         }
 
-        for (const [clientId, services] of clientServiceMap.entries()) {
+        for (const services of clientServiceMap.values()) {
             const client = services[0].clientId as any; // Populated doc
+            const clientId = client?._id ? client._id.toString() : services[0].clientId.toString();
             const hostingServiceIds = services
                 .filter((svc) => svc.type === 'HOSTING')
                 .map((svc) => svc._id);
@@ -72,20 +87,47 @@ export class ServiceRenewalScheduler {
             const primaryDomainByServiceId = new Map(
                 hostingDetails.map((detail: any) => [detail.serviceId?.toString(), detail.primaryDomain])
             );
+            const domainServiceIds = services
+                .filter((svc) => svc.type === 'DOMAIN')
+                .map((svc) => svc._id);
+            const domainDetails = domainServiceIds.length > 0
+                ? await DomainServiceDetails.find({ serviceId: { $in: domainServiceIds } })
+                    .select('serviceId domainName')
+                    .lean()
+                : [];
+            const domainNameByServiceId = new Map(
+                domainDetails.map((detail: any) => [detail.serviceId?.toString(), detail.domainName])
+            );
 
             const invoiceItems = services.map(svc => {
                 const itemType = svc.type === 'DOMAIN' ? InvoiceItemType.DOMAIN : InvoiceItemType.HOSTING;
                 const primaryDomain = svc.type === 'HOSTING'
                     ? (primaryDomainByServiceId.get(svc._id.toString()) || '').trim()
                     : '';
+                const domainName = svc.type === 'DOMAIN'
+                    ? (domainNameByServiceId.get(svc._id.toString()) || '').trim()
+                    : '';
+                const renewalDueDate = new Date(svc.nextDueDate);
+                const renewalPeriodEnd = addBillingCycleToDate(renewalDueDate, svc.billingCycle as BillingCycle);
                 itemsCreated++;
                 return {
                     type: itemType,
-                    description: `${svc.type} Renewal - ${(svc as any).productName || svc._id} (${svc.billingCycle})${primaryDomain ? ` (${primaryDomain})` : ''}`,
+                    description: `${svc.type} Renewal - ${domainName || (svc as any).productName || svc._id} (${svc.billingCycle})${primaryDomain ? ` (${primaryDomain})` : ''}`,
                     amount: svc.priceSnapshot.recurring,
+                    period: {
+                        startDate: renewalDueDate,
+                        endDate: renewalPeriodEnd,
+                    },
                     meta: {
                         serviceId: svc._id,
-                        orderItemId: svc.orderItemId
+                        orderItemId: svc.orderItemId,
+                        source: 'service_renewal',
+                        serviceType: svc.type,
+                        domainName: domainName || undefined,
+                        billingCycle: svc.billingCycle,
+                        renewalDueDate,
+                        renewalPeriodStart: renewalDueDate,
+                        renewalPeriodEnd,
                     }
                 };
             });
@@ -174,6 +216,14 @@ export class ServiceRenewalScheduler {
                             lineItems,
                         },
                         attachments,
+                        logContext: {
+                            clientId,
+                            invoiceId: invoice._id?.toString?.(),
+                            source: 'cron',
+                            actorType: 'system',
+                            emailType: 'renewal_invoice_created',
+                            bodyPreview: `Renewal invoice ${invoice.invoiceNumber}`,
+                        },
                     });
                 }
             } catch (emailErr: any) {

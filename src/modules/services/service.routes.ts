@@ -40,19 +40,24 @@ router.post('/admin/jobs/provisioning/:jobId/retry', ...authAdmin, systemAdminCo
 
 router.get('/admin/jobs/actions', ...authAdmin, systemAdminController.getServiceActionJobs);
 router.post('/admin/jobs/actions/:jobId/retry', ...authAdmin, systemAdminController.retryServiceActionJob);
-router.get('/admin/automation-summary', ...authAdmin, systemAdminController.getAutomationSummary);
-router.get('/admin/automation-runs', ...authAdmin, systemAdminController.getAutomationRuns);
+router.get('/admin/jobs/domain-renewals', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.getDomainRenewalJobs);
+router.post('/admin/jobs/domain-renewals/:jobId/retry', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.retryDomainRenewalJob);
+router.post('/admin/jobs/domain-renewals/:jobId/mark-renewed', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.markDomainRenewalManuallyRenewed);
+router.post('/admin/jobs/domain-renewals/:jobId/sync-registrar', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.syncDomainRenewalJobFromRegistrar);
+router.get('/admin/automation-summary', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.getAutomationSummary);
+router.get('/admin/automation-runs', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.getAutomationRuns);
 
 // Cron Overrides
-router.post('/admin/trigger/:taskKey', ...authAdmin, systemAdminController.triggerAutomationTask);
-router.post('/admin/trigger/renewals', ...authAdmin, systemAdminController.triggerRenewals);
-router.post('/admin/trigger/overdue-suspensions', ...authAdmin, systemAdminController.triggerOverdueSuspensions);
-router.post('/admin/trigger/invoice-reminders', ...authAdmin, systemAdminController.triggerInvoiceReminders);
-router.post('/admin/trigger/terminations', ...authAdmin, systemAdminController.triggerTerminations);
-router.post('/admin/trigger/usage-sync', ...authAdmin, systemAdminController.triggerUsageSync);
-router.post('/admin/trigger/provisioning-worker', ...authAdmin, systemAdminController.triggerProvisioningWorker);
-router.post('/admin/trigger/action-worker', ...authAdmin, systemAdminController.triggerActionWorker);
-router.post('/admin/trigger/domain-sync', ...authAdmin, systemAdminController.triggerDomainSync);
+router.post('/admin/trigger/:taskKey', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerAutomationTask);
+router.post('/admin/trigger/renewals', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerRenewals);
+router.post('/admin/trigger/overdue-suspensions', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerOverdueSuspensions);
+router.post('/admin/trigger/invoice-reminders', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerInvoiceReminders);
+router.post('/admin/trigger/terminations', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerTerminations);
+router.post('/admin/trigger/usage-sync', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerUsageSync);
+router.post('/admin/trigger/provisioning-worker', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerProvisioningWorker);
+router.post('/admin/trigger/action-worker', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerActionWorker);
+router.post('/admin/trigger/domain-renewals', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerDomainRenewals);
+router.post('/admin/trigger/domain-sync', ...authAdmin, requirePermission('dashboard:automation'), systemAdminController.triggerDomainSync);
 
 
 export default router;

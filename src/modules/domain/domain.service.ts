@@ -26,6 +26,12 @@ import { OrderStatus } from '../order/order.interface';
 import { DEFAULT_CURRENCY } from '../../config/currency.config';
 import { getNextSequence, formatSequenceId } from '../../models/counter.model';
 import { getEffectiveDefaultNameserversForProvision } from './domain-system-settings.service';
+import invoiceService from '../invoice/invoice.service';
+import Invoice from '../invoice/invoice.model';
+import { InvoiceItemType, InvoiceStatus } from '../invoice/invoice.interface';
+import RenewalLedger from '../services/models/renewal-ledger.model';
+import { addBillingCycleToDate } from '../services/utils/billing-cycle.util';
+import tldService from './tld/tld.service';
 
 const DOMAIN_IMPORT_RESULT_STATUS = {
     ALREADY_TRACKED: 'already-tracked',
@@ -233,6 +239,149 @@ class DomainService {
             registrar: result.registrar,
         });
         return { ...result, message: 'Domain renewal initiated', duration };
+    }
+
+    async createDomainRenewalInvoice(params: {
+        clientId: string;
+        domain: string;
+        duration?: number;
+    }): Promise<{
+        invoiceId: string;
+        invoiceNumber: string;
+        status: InvoiceStatus;
+        dueDate: Date;
+        reusedExisting: boolean;
+    }> {
+        const owned = await this.getDomainServiceForClient(params.clientId, params.domain);
+        if (!owned) throw ApiError.notFound('Domain not found for this client');
+
+        const service = await Service.findById(owned.service._id).exec();
+        if (!service) throw ApiError.notFound('Domain service not found');
+        if (service.type !== ServiceType.DOMAIN) throw ApiError.badRequest('Service is not a domain service');
+        if ([ServiceStatus.TERMINATED, ServiceStatus.CANCELLED].includes(service.status as ServiceStatus)) {
+            throw ApiError.badRequest(`Cannot renew a ${service.status.toLowerCase()} domain service`);
+        }
+        if (service.billingCycle === BillingCycle.ONE_TIME) {
+            throw ApiError.badRequest('One-time domain services cannot be renewed automatically');
+        }
+
+        const years = this.yearsFromBillingCycle(service.billingCycle as BillingCycle);
+        if (params.duration && Number(params.duration) !== years) {
+            throw ApiError.badRequest(`This domain service renews for ${years} year(s) based on its billing cycle`);
+        }
+
+        const currentDueDate = service.nextDueDate;
+        const existingLedger = await RenewalLedger.findOne({
+            serviceId: service._id,
+            dueDate: currentDueDate,
+        }).exec();
+        if (existingLedger?.invoiceId) {
+            const existingInvoice = await Invoice.findById(existingLedger.invoiceId).lean();
+            if (existingInvoice && existingInvoice.status !== InvoiceStatus.CANCELLED) {
+                return {
+                    invoiceId: existingInvoice._id.toString(),
+                    invoiceNumber: existingInvoice.invoiceNumber,
+                    status: existingInvoice.status as InvoiceStatus,
+                    dueDate: existingInvoice.dueDate,
+                    reusedExisting: true,
+                };
+            }
+        }
+
+        const client = await Client.findById(service.clientId).lean();
+        if (!client) throw ApiError.notFound('Client not found');
+
+        const domainName = normalizeDomainFqdn((owned.details as any)?.domainName) || normalizeDomainFqdn(params.domain) || params.domain;
+        const renewalPeriodEnd = addBillingCycleToDate(currentDueDate, service.billingCycle as BillingCycle);
+        const currency = service.currency || DEFAULT_CURRENCY;
+        const amount = await this.resolveDomainRenewalAmount(domainName, currency, years, Number(service.priceSnapshot?.recurring || 0));
+
+        const invoice = await invoiceService.createInvoice({
+            clientId: service.clientId,
+            currency,
+            dueDate: currentDueDate,
+            billedTo: {
+                companyName: (client as any).companyName || '',
+                customerName: `${(client as any).firstName || ''} ${(client as any).lastName || ''}`.trim() || 'Client',
+                address: (client as any).address?.street || 'N/A',
+                country: (client as any).address?.country || 'N/A',
+            },
+            items: [
+                {
+                    type: InvoiceItemType.DOMAIN,
+                    description: `DOMAIN Renewal - ${domainName} (${service.billingCycle})`,
+                    amount,
+                    period: {
+                        startDate: currentDueDate,
+                        endDate: renewalPeriodEnd,
+                    },
+                    meta: {
+                        serviceId: service._id,
+                        orderItemId: service.orderItemId,
+                        source: 'domain_renewal_request',
+                        serviceType: ServiceType.DOMAIN,
+                        domainName,
+                        billingCycle: service.billingCycle,
+                        renewalYears: years,
+                        renewalDueDate: currentDueDate,
+                        renewalPeriodStart: currentDueDate,
+                        renewalPeriodEnd,
+                    },
+                },
+            ],
+        });
+
+        if (existingLedger) {
+            existingLedger.invoiceId = invoice._id as any;
+            existingLedger.paidAt = undefined;
+            existingLedger.paidInvoiceId = undefined;
+            await existingLedger.save();
+        } else {
+            try {
+                await RenewalLedger.create({
+                    serviceId: service._id,
+                    dueDate: currentDueDate,
+                    invoiceId: invoice._id,
+                });
+            } catch (err: any) {
+                if (err?.code === 11000) {
+                    const ledger = await RenewalLedger.findOne({ serviceId: service._id, dueDate: currentDueDate }).lean();
+                    if (ledger?.invoiceId) {
+                        const existingInvoice = await Invoice.findById(ledger.invoiceId).lean();
+                        if (existingInvoice) {
+                            return {
+                                invoiceId: existingInvoice._id.toString(),
+                                invoiceNumber: existingInvoice.invoiceNumber,
+                                status: existingInvoice.status as InvoiceStatus,
+                                dueDate: existingInvoice.dueDate,
+                                reusedExisting: true,
+                            };
+                        }
+                    }
+                }
+                throw err;
+            }
+        }
+
+        auditLogSafe({
+            message: `Domain renewal invoice ${invoice.invoiceNumber} created for ${domainName}`,
+            type: 'invoice_auto_generated',
+            category: 'invoice',
+            actorType: 'system',
+            source: 'manual',
+            clientId: service.clientId.toString(),
+            serviceId: service._id.toString(),
+            invoiceId: invoice._id.toString(),
+            meta: { domainName, renewalDueDate: currentDueDate },
+        });
+
+        return {
+            invoiceId: invoice._id.toString(),
+            invoiceNumber: invoice.invoiceNumber,
+            status: invoice.status,
+            dueDate: invoice.dueDate,
+            reusedExisting: false,
+        };
     }
 
     async transferDomain(payload: IDomainTransferPayload): Promise<any> {
@@ -1853,6 +2002,28 @@ class DomainService {
         if (billingCycle === BillingCycle.BIENNIALLY) return 2;
         if (billingCycle === BillingCycle.TRIENNIALLY) return 3;
         return 1;
+    }
+
+    private async resolveDomainRenewalAmount(
+        domainName: string,
+        currency: string,
+        years: number,
+        fallbackAmount: number
+    ): Promise<number> {
+        if (fallbackAmount > 0) return fallbackAmount;
+
+        try {
+            const tld = `.${this.getTldFromDomain(domainName)}`;
+            const tldDoc: any = await tldService.getTLDByExtension(tld);
+            const pricing = tldDoc?.pricing?.find((p: any) => String(p.currency || '').toUpperCase() === currency.toUpperCase())
+                || tldDoc?.pricing?.[0];
+            const yearKey = String(Math.min(Math.max(years, 1), 3));
+            const detail = pricing?.[yearKey] || pricing?.[years as any] || pricing?.['1'];
+            const amount = Number(detail?.renew ?? detail?.register ?? 0);
+            return amount > 0 ? amount : 0;
+        } catch {
+            return 0;
+        }
     }
 
     private normalizeDomainLifecycleStatus(value: string): DomainLifecycleStatus {

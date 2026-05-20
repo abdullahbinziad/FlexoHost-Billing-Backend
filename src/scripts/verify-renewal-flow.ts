@@ -242,6 +242,15 @@ async function main() {
                 serviceId: service._id,
                 dueDate: deterministicDueDate,
             });
+            await Invoice.updateOne(
+                { _id: renewalInvoice._id, 'items.meta.serviceId': service._id },
+                {
+                    $set: {
+                        'items.$.meta.renewalDueDate': deterministicDueDate,
+                        'items.$.meta.renewalPeriodStart': deterministicDueDate,
+                    },
+                }
+            );
             await serviceLifecycleService.applyRenewalPayment(renewalInvoice._id as any);
             const renewedService = await Service.findById(service._id).lean().exec();
             (report.checks as any).paymentRenewal = {
@@ -301,4 +310,3 @@ main().catch((err) => {
     console.error(JSON.stringify({ error: err?.message || 'Verification failed' }, null, 2));
     process.exit(1);
 });
-
