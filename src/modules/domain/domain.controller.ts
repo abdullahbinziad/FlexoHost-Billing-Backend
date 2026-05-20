@@ -274,6 +274,25 @@ class DomainController {
         return ApiResponse.ok(res, 'Registrar domains imported', result);
     });
 
+    adoptExistingRegistrarDomainAdmin = catchAsync(async (req: Request, res: Response) => {
+        const authReq = req as AuthRequest;
+        const result = await domainService.adoptExistingRegistrarDomainForClient(
+            {
+                clientId: String(req.body?.clientId || '').trim(),
+                domainName: String(req.body?.domainName || '').trim(),
+                registrar: typeof req.body?.registrar === 'string' ? req.body.registrar : undefined,
+                billingCycle: typeof req.body?.billingCycle === 'string' ? req.body.billingCycle : undefined,
+                priceSnapshot: req.body?.priceSnapshot && typeof req.body.priceSnapshot === 'object'
+                    ? req.body.priceSnapshot
+                    : undefined,
+                nextDueDate: req.body?.nextDueDate,
+                reason: typeof req.body?.reason === 'string' ? req.body.reason : undefined,
+            },
+            authReq.user?._id?.toString?.()
+        );
+        return ApiResponse.created(res, 'Existing registrar domain adopted for client', result);
+    });
+
     attachRecoveredDomainAdmin = catchAsync(async (req: Request, res: Response) => {
         const authReq = req as AuthRequest;
         const result = await domainService.adoptRegistrarDomainForService(
@@ -351,7 +370,26 @@ class DomainController {
         const clientId = await this.assertDomainAccess(req, res, domain);
         if (!clientId) return;
         const result = await domainService.getDomainDetails(domain);
-        return ApiResponse.ok(res, 'Domain details retrieved', result);
+        const owned = await domainService.getDomainServiceForClient(clientId, domain);
+        const service = owned?.service as any;
+        return ApiResponse.ok(res, 'Domain details retrieved', {
+            ...result,
+            billing: service
+                ? {
+                      serviceId: service._id?.toString?.(),
+                      status: service.status,
+                      registrationDate:
+                          service.meta?.adminBillingRegistrationDate ||
+                          (service.createdAt ? new Date(service.createdAt).toISOString().slice(0, 10) : ''),
+                      nextDueDate: service.nextDueDate,
+                      billingCycle: service.billingCycle,
+                      firstPaymentAmount:
+                          service.meta?.adminBillingFirstPaymentAmount ?? service.priceSnapshot?.total ?? 0,
+                      recurringAmount: service.priceSnapshot?.recurring ?? service.priceSnapshot?.total ?? 0,
+                      currency: service.currency || service.priceSnapshot?.currency,
+                  }
+                : undefined,
+        });
     });
 
     updateNameservers = catchAsync(async (req: Request, res: Response) => {

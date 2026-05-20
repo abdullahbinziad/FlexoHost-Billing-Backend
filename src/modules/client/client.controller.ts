@@ -166,13 +166,17 @@ class ClientController {
     private static readonly ALLOWED_CLIENT_UPDATE = [
         'firstName', 'lastName', 'companyName', 'contactEmail', 'phoneNumber', 'avatar', 'address',
     ];
+    private static readonly ADMIN_ALLOWED_CLIENT_UPDATE = [
+        ...ClientController.ALLOWED_CLIENT_UPDATE,
+        'accountCreditCurrency',
+    ];
 
     // Get current client profile (for logged-in client)
     // Update client profile
     updateClient = catchAsync(async (req: AuthRequest, res: Response) => {
         const body = req.body as Record<string, unknown>;
         const updates = Object.fromEntries(
-            Object.entries(body).filter(([k]) => ClientController.ALLOWED_CLIENT_UPDATE.includes(k))
+            Object.entries(body).filter(([k]) => ClientController.ADMIN_ALLOWED_CLIENT_UPDATE.includes(k))
         );
         const client = await clientService.updateClient(req.params.id, updates as any);
 

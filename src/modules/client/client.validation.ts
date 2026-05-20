@@ -109,6 +109,15 @@ export const updateClientValidation = [
         .optional()
         .isString()
         .withMessage('Avatar must be a string'),
+
+    body('accountCreditCurrency')
+        .optional()
+        .trim()
+        .isLength({ min: 3, max: 3 })
+        .withMessage('Account currency must be a 3-letter currency code')
+        .isAlpha()
+        .withMessage('Account currency must contain letters only')
+        .toUpperCase(),
 ];
 
 /** Required business/contact details before the account is considered complete (welcome email sent here). */
@@ -201,4 +210,3 @@ export const updateGrantValidation = [
 ];
 
 export const revokeGrantValidation = accessGrantPathValidation;
-

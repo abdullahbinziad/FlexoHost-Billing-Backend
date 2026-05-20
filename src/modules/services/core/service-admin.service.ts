@@ -23,6 +23,7 @@ import Product from '../../product/product.model';
 import { encrypt, decrypt } from '../../../utils/encryption';
 import Invoice from '../../invoice/invoice.model';
 import { InvoiceStatus } from '../../invoice/invoice.interface';
+import currencyService from '../../currency/currency.service';
 
 export class ServiceAdminService {
     private getEncryptedModulePasswordMetaUpdate(extra?: { password?: string }) {
@@ -613,6 +614,12 @@ export class ServiceAdminService {
 
         const recurringAmount = Number(payload.recurringAmount);
         if (payload.recurringAmount !== undefined && Number.isFinite(recurringAmount) && recurringAmount >= 0) {
+            const requestedCurrency = typeof payload.currency === 'string' && payload.currency.trim()
+                ? payload.currency.trim().toUpperCase()
+                : String((service.priceSnapshot as any)?.currency || service.currency || 'USD').toUpperCase();
+            if (!(await currencyService.isEnabledCurrency(requestedCurrency))) {
+                throw new Error(`Unsupported currency: ${requestedCurrency}`);
+            }
             const currentPrice = (service.priceSnapshot || {}) as Record<string, any>;
             const setup = Number(currentPrice.setup || 0);
             const discount = Number(currentPrice.discount || 0);
@@ -623,7 +630,7 @@ export class ServiceAdminService {
                 discount,
                 tax,
                 total: Math.max(0, recurringAmount + setup - discount + tax),
-                currency: (typeof payload.currency === 'string' && payload.currency.trim()) || currentPrice.currency || service.currency || 'USD',
+                currency: requestedCurrency,
             };
             updateData.currency = updateData.priceSnapshot.currency;
         }

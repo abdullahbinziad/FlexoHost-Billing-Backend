@@ -49,6 +49,7 @@ export interface IClientUpdate {
     phoneNumber?: string;
     avatar?: string;
     address?: IAddress;
+    accountCreditCurrency?: string;
 }
 
 export interface IRegisterClientData {

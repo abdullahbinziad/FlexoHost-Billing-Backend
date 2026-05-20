@@ -369,7 +369,15 @@ class DomainService {
         if (!details) {
             throw ApiError.notFound('Domain details not found. Sync the domain from registrar first.');
         }
-        return { locked: !!details.registrarLock };
+        const registrarName = await this.getStoredRegistrarName(domain);
+        const live = await domainRegistrarService.getRegistrarLock(domain, registrarName);
+        await this.syncStoredDomainDetails(domain, {
+            registrarLock: live.locked,
+            lastRegistrarSyncAt: new Date(),
+            registrar: live.registrar,
+            syncStatus: 'success',
+        });
+        return { locked: live.locked };
     }
 
     async saveRegistrarLock(domain: string, locked: boolean): Promise<void> {
@@ -387,7 +395,21 @@ class DomainService {
         if (!details) {
             throw ApiError.notFound('Domain details not found. Sync the domain from registrar first.');
         }
-        return this.toRegistrarContactDetails((details as any).contacts);
+        const registrarName = await this.getStoredRegistrarName(domain);
+        const live = await domainRegistrarService.getContactDetails(domain, registrarName);
+        const contacts: DomainContactDetails = {
+            registrant: live.registrant,
+            admin: live.admin,
+            tech: live.tech,
+            billing: live.billing,
+        };
+        await this.syncStoredDomainDetails(domain, {
+            contacts: this.mergeStoredContacts(undefined, contacts),
+            lastRegistrarSyncAt: new Date(),
+            registrar: live.registrar,
+            syncStatus: 'success',
+        });
+        return contacts;
     }
 
     async saveContactDetails(domain: string, contacts: Partial<DomainContactDetails>): Promise<void> {
@@ -411,7 +433,15 @@ class DomainService {
         if (!details) {
             throw ApiError.notFound('Domain details not found. Sync the domain from registrar first.');
         }
-        return ((details as any).dnsRecords || []) as DnsRecord[];
+        const registrarName = await this.getStoredRegistrarName(domain);
+        const live = await domainRegistrarService.getDns(domain, registrarName);
+        await this.syncStoredDomainDetails(domain, {
+            dnsRecords: live.records,
+            lastRegistrarSyncAt: new Date(),
+            registrar: live.registrar,
+            syncStatus: 'success',
+        });
+        return live.records;
     }
 
     async saveDns(domain: string, records: DnsRecord[]): Promise<void> {
@@ -886,6 +916,7 @@ class DomainService {
             billingCycle?: string;
             priceSnapshot?: DomainRecoveryPriceSnapshot;
             nextDueDate?: string | Date;
+            reason?: string;
         },
         actorId?: string
     ): Promise<any> {
@@ -898,7 +929,9 @@ class DomainService {
         const liveInfo = await this.fetchLiveDomainForAdoption(domainName, payload.registrar);
         await this.assertDomainNotLinkedToAnotherService(domainName);
         const billingCycle = normalizeBillingCycle(payload.billingCycle || BillingCycle.ANNUALLY);
-        const priceSnapshot = this.normalizeRecoveryPriceSnapshot(payload.priceSnapshot, DEFAULT_CURRENCY);
+        const clientDefaultCurrency =
+            String((client as any).accountCreditCurrency || '').trim().toUpperCase() || DEFAULT_CURRENCY;
+        const priceSnapshot = this.normalizeRecoveryPriceSnapshot(payload.priceSnapshot, clientDefaultCurrency);
 
         const orderSeq = await getNextSequence('order');
         const orderId = formatSequenceId('ORD', orderSeq);
@@ -920,6 +953,7 @@ class DomainService {
                 domainName,
                 registrar: liveInfo.registrar || payload.registrar,
                 createdBy: actorId,
+                reason: payload.reason,
             },
         });
 
@@ -941,7 +975,7 @@ class DomainService {
                 registrar: liveInfo.registrar || payload.registrar,
                 source: 'registrar_import',
             },
-            meta: { source: 'registrar_import' },
+            meta: { source: 'registrar_import', reason: payload.reason },
         });
 
         const svcSeq = await getNextSequence('service');
@@ -972,6 +1006,7 @@ class DomainService {
                 recoverableDomainName: domainName,
                 recoveredRegistrar: liveInfo.registrar || payload.registrar,
                 recoveredAt: new Date().toISOString(),
+                adoptionReason: payload.reason,
             },
         } as any);
 
@@ -1005,6 +1040,35 @@ class DomainService {
             status: ServiceStatus.PROVISIONING,
             confirmationRequired: true,
             details,
+        };
+    }
+
+    async adoptExistingRegistrarDomainForClient(
+        payload: {
+            clientId: string;
+            domainName: string;
+            registrar?: string;
+            billingCycle?: string;
+            priceSnapshot?: DomainRecoveryPriceSnapshot;
+            nextDueDate?: string | Date;
+            reason?: string;
+        },
+        actorId?: string
+    ): Promise<any> {
+        const imported = await this.importRegistrarDomainForClient(
+            {
+                ...payload,
+                reason: payload.reason || 'Silent admin adoption of existing registrar domain',
+            },
+            actorId
+        );
+        const activated = await this.confirmRecoveredDomainService(imported.serviceId, actorId);
+
+        return {
+            ...imported,
+            status: (activated as any)?.status,
+            activated: true,
+            confirmationRequired: false,
         };
     }
 

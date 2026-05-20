@@ -4,9 +4,19 @@ import { getRateForDate, setRate } from './fx.service';
 import catchAsync from '../../utils/catchAsync';
 import ApiResponse from '../../utils/apiResponse';
 import ApiError from '../../utils/apiError';
+import currencyService from '../currency/currency.service';
 
 const router = Router();
 router.use(protect);
+
+/** Supported currencies for billing UI selections. */
+router.get(
+    '/currencies',
+    catchAsync(async (_req, res) => {
+        const result = await currencyService.listEnabled();
+        return ApiResponse.ok(res, 'Supported currencies retrieved', result);
+    })
+);
 
 /** Get rate for a currency at a date (for display/validation) */
 router.get(

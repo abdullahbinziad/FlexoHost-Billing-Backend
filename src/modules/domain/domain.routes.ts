@@ -37,20 +37,21 @@ router.put(
     requirePermission('domain_settings:defaults_update'),
     domainController.updateDomainSystemDefaultsAdmin
 );
-router.get('/admin/inventory', restrictTo('admin', 'staff', 'superadmin'), domainController.listAllDomainsAdmin);
-router.get('/admin/client/:clientId', restrictTo('admin', 'staff', 'superadmin'), domainController.listDomainsByClientAdmin);
-router.get('/admin/registrars', restrictTo('admin', 'staff', 'superadmin'), domainController.getRegistrarConfigs);
-router.get('/admin/statuses', restrictTo('admin', 'staff', 'superadmin'), domainController.getDomainStatusOptionsAdmin);
-router.put('/admin/registrars/:registrarKey', restrictTo('admin', 'staff', 'superadmin'), domainController.updateRegistrarConfig);
-router.post('/admin/sync', restrictTo('admin', 'staff', 'superadmin'), domainController.bulkSyncDomainsAdmin);
-router.post('/admin/reconcile/:registrarKey', restrictTo('admin', 'staff', 'superadmin'), domainController.reconcileRegistrarDomainsAdmin);
-router.post('/admin/reconcile/:registrarKey/import', restrictTo('admin', 'staff', 'superadmin'), domainController.importRegistrarDomainsAdmin);
+router.get('/admin/inventory', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:inventory_list'), domainController.listAllDomainsAdmin);
+router.get('/admin/client/:clientId', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:client_list'), domainController.listDomainsByClientAdmin);
+router.get('/admin/registrars', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:registrars_read'), domainController.getRegistrarConfigs);
+router.get('/admin/statuses', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:inventory_list'), domainController.getDomainStatusOptionsAdmin);
+router.put('/admin/registrars/:registrarKey', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:registrars_update'), domainController.updateRegistrarConfig);
+router.post('/admin/sync', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:sync_bulk'), domainController.bulkSyncDomainsAdmin);
+router.post('/admin/reconcile/:registrarKey', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:reconcile'), domainController.reconcileRegistrarDomainsAdmin);
+router.post('/admin/reconcile/:registrarKey/import', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:reconcile_import'), domainController.importRegistrarDomainsAdmin);
+router.post('/admin/adoptions', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:adopt_existing'), domainController.adoptExistingRegistrarDomainAdmin);
 router.post('/admin/recovery/attach', restrictTo('admin', 'staff', 'superadmin'), domainController.attachRecoveredDomainAdmin);
 router.post('/admin/recovery/import', restrictTo('admin', 'staff', 'superadmin'), domainController.importRecoveredDomainAdmin);
 router.post('/admin/recovery/:serviceId/confirm', restrictTo('admin', 'staff', 'superadmin'), domainController.confirmRecoveredDomainAdmin);
 router.get('/admin/:serviceId/snapshot', restrictTo('admin', 'staff', 'superadmin'), domainController.getDomainServiceSnapshotAdmin);
-router.patch('/admin/:serviceId/status', restrictTo('admin', 'staff', 'superadmin'), domainController.updateDomainStatusAdmin);
-router.post('/admin/:serviceId/sync', restrictTo('admin', 'staff', 'superadmin'), domainController.syncDomainByServiceIdAdmin);
+router.patch('/admin/:serviceId/status', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:status_update'), domainController.updateDomainStatusAdmin);
+router.post('/admin/:serviceId/sync', restrictTo('admin', 'staff', 'superadmin'), requirePermission('domains:sync_by_service'), domainController.syncDomainByServiceIdAdmin);
 router.post('/register', restrictTo('admin', 'staff', 'superadmin'), validate(registerDomainValidation), domainController.registerDomain);
 router.post(
     '/register-bulk',
