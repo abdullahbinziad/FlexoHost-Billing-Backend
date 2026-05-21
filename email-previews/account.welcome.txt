@@ -1,0 +1,1 @@
+Welcome, John Doe! Your account is ready. Log in at http://localhost:3000/login. Support: http://localhost:3000/support. Knowledge Base: http://localhost:3000/kb.

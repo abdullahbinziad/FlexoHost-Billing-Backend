@@ -25,12 +25,38 @@ router.post(
     emailController.sendBulk
 );
 
+router.get('/logs', protect, restrictTo('superadmin', 'admin', 'staff'), requirePermission('clients:read'), emailController.getLogs);
+
 router.get(
-    '/logs',
+    '/templates/manage',
     protect,
     restrictTo('superadmin', 'admin', 'staff'),
-    requirePermission('clients:read'),
-    emailController.getLogs
+    requirePermission('settings:read'),
+    emailController.listTemplates
+);
+
+router.post(
+    '/templates/:templateKey/preview-saved',
+    protect,
+    restrictTo('superadmin', 'admin', 'staff'),
+    requirePermission('settings:read'),
+    emailController.previewSavedTemplate
+);
+
+router.patch(
+    '/templates/:templateKey/override',
+    protect,
+    restrictTo('superadmin', 'admin', 'staff'),
+    requirePermission('settings:update_billing'),
+    emailController.saveTemplateOverride
+);
+
+router.delete(
+    '/templates/:templateKey/override',
+    protect,
+    restrictTo('superadmin', 'admin', 'staff'),
+    requirePermission('settings:update_billing'),
+    emailController.deleteTemplateOverride
 );
 
 

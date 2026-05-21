@@ -1,0 +1,1 @@
+Service terminated: Shared Hosting - example.com (SVC-12345). Reason: Unpaid invoice INV-2024-001. Contact support: http://localhost:3000/support

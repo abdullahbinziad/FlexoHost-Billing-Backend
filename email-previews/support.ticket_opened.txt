@@ -1,0 +1,1 @@
+Support ticket #TKT-12345 received. Subject: cPanel login issue. Priority: Medium. Department: Technical Support. Created: 2024-01-15 14:32 UTC. I am unable to log in to cPanel. Getting "Authentication failed" error. View: http://localhost:3000/support/12345. Expected: A support agent will respond within 24 hours.

@@ -1,0 +1,1 @@
+Hi Alex Johnson, new sign-in to your account. Time: Mon, 15 Jan 2024, 14:32 (UTC) Method: Google IP: 203.0.113.42 Device: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 If this wasn't you, change your password and contact support@flexohost.com. Settings: http://localhost:3000/settings

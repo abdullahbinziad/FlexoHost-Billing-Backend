@@ -1,0 +1,1 @@
+Suspension warning: Shared Hosting - example.com (SVC-12345). Reason: Unpaid invoice INV-2024-001. Deadline: 2025-01-07. Pay: http://localhost:3000/invoices/123/pay. Support: support@flexohost.com

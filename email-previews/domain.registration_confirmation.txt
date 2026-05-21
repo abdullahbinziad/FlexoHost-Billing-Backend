@@ -1,0 +1,1 @@
+Domain example.com registered. Period: 1 Year. Date: 2024-01-15. Auto-renew: Yes. Manage: http://localhost:3000/domains/example.com. DNS propagation may take up to 48 hours. Support: support@flexohost.com

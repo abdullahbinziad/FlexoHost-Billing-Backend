@@ -1,0 +1,1 @@
+Your hosting for example.com is ready. Server: server123.example.com Username: acmecom Nameservers: - ns1.example.com - ns2.example.com Set password (secure link): http://localhost:3000/hosting/setup-password?token=abc123 Control panel: https://cpanel.example.com:2083 Getting started: http://localhost:3000/kb/getting-started Support: http://localhost:3000/support

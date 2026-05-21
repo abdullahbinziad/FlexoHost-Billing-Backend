@@ -1,0 +1,1 @@
+Final Reminder - Invoice INV-2024-001. Invoice: INV-2024-001. Due date: 2024-12-31. Amount: USD 1,200.00. Pay: http://localhost:3000/invoices/123/pay. Support: support@flexohost.com

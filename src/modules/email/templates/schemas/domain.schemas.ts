@@ -21,10 +21,28 @@ export const domainRenewalReminderSchema = z.object({
     daysRemaining: z.number().int().min(0),
     renewalPrice: z.string().min(1),
     currency: z.string().min(1),
-    autoRenewEnabled: z.boolean(),
+    autoRenewEnabled: z.boolean().optional(),
     renewUrl: z.string().url(),
 });
 export type DomainRenewalReminderPropsSchema = z.infer<typeof domainRenewalReminderSchema>;
+
+export const domainRenewalSuccessSchema = z.object({
+    customerName: z.string().min(1),
+    domain: z.string().min(1),
+    previousExpirationDate: z.string().min(1),
+    newExpirationDate: z.string().min(1),
+    manageDomainUrl: z.string().url(),
+});
+export type DomainRenewalSuccessPropsSchema = z.infer<typeof domainRenewalSuccessSchema>;
+
+export const domainRenewalFailedSchema = z.object({
+    customerName: z.string().min(1),
+    domain: z.string().min(1),
+    expirationDate: z.string().min(1),
+    invoiceNumber: z.string().optional(),
+    supportUrl: z.string().url(),
+});
+export type DomainRenewalFailedPropsSchema = z.infer<typeof domainRenewalFailedSchema>;
 
 export const domainExpiredNoticeSchema = z.object({
     customerName: z.string().min(1),

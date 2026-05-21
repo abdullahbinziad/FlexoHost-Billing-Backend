@@ -24,6 +24,25 @@ interface CreateInvoiceOptions {
     sendEmail?: boolean;
 }
 
+type BulkInvoiceAction = 'mark_paid' | 'mark_unpaid' | 'mark_cancelled' | 'send_reminder';
+
+interface BulkInvoiceActionInput {
+    invoiceIds: string[];
+    action: BulkInvoiceAction;
+    paymentMethod?: string;
+    paymentDate?: string;
+    transactionIdPrefix?: string;
+    sendEmail?: boolean;
+    reminderTemplate?: string;
+}
+
+interface BulkInvoiceActionResult {
+    invoiceId: string;
+    invoiceNumber?: string;
+    status: 'success' | 'skipped' | 'failed';
+    message: string;
+}
+
 class InvoiceService {
     /**
      * Set historical FX snapshot at invoice date and sync totalInBase/balanceDueInBase. Never use current rate.
@@ -427,7 +446,7 @@ class InvoiceService {
             const clientEmail = clientDoc?.contactEmail || '';
             const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
             const baseUrl = config.frontendUrl;
-            if (clientEmail) {
+            if (clientEmail && data.sendEmail !== false) {
                 let attachments: { filename: string; content: Buffer }[] | undefined;
                 try {
                     const pdfBuffer = await getInvoicePdfBuffer(invoice);
@@ -475,6 +494,107 @@ class InvoiceService {
         }
 
         return invoice;
+    }
+
+    async bulkAction(input: BulkInvoiceActionInput): Promise<{
+        action: BulkInvoiceAction;
+        total: number;
+        successCount: number;
+        skippedCount: number;
+        failedCount: number;
+        results: BulkInvoiceActionResult[];
+    }> {
+        const ids = Array.from(new Set((input.invoiceIds || []).map((id) => String(id || '').trim()).filter(Boolean)));
+        if (ids.length === 0) {
+            throw new ApiError(400, 'At least one invoice is required');
+        }
+        if (ids.length > 100) {
+            throw new ApiError(400, 'Bulk action is limited to 100 invoices at a time');
+        }
+
+        const results: BulkInvoiceActionResult[] = [];
+
+        for (const invoiceId of ids) {
+            try {
+                const invoice = await this.getInvoiceById(invoiceId);
+                const invoiceNumber = invoice.invoiceNumber;
+
+                if (input.action === 'send_reminder') {
+                    const result = await this.sendReminder(invoiceId, input.reminderTemplate);
+                    results.push({
+                        invoiceId,
+                        invoiceNumber,
+                        status: result.sent ? 'success' : 'skipped',
+                        message: result.message,
+                    });
+                    continue;
+                }
+
+                if (input.action === 'mark_paid') {
+                    if (invoice.status === InvoiceStatus.PAID) {
+                        results.push({ invoiceId, invoiceNumber, status: 'skipped', message: 'Invoice is already paid' });
+                        continue;
+                    }
+                    if (invoice.status === InvoiceStatus.CANCELLED) {
+                        results.push({ invoiceId, invoiceNumber, status: 'skipped', message: 'Cancelled invoices cannot be paid in bulk' });
+                        continue;
+                    }
+                    const amount = Number(invoice.balanceDue ?? invoice.total ?? 0);
+                    if (amount <= 0) {
+                        await this.updateInvoiceStatus(invoiceId, InvoiceStatus.PAID);
+                    } else {
+                        await this.addPayment(invoiceId, {
+                            date: input.paymentDate || new Date().toISOString(),
+                            amount,
+                            paymentMethod: input.paymentMethod || 'Bulk manual payment',
+                            transactionId: input.transactionIdPrefix
+                                ? `${input.transactionIdPrefix}-${invoice.invoiceNumber}`
+                                : undefined,
+                            sendEmail: input.sendEmail,
+                        });
+                    }
+                    results.push({ invoiceId, invoiceNumber, status: 'success', message: 'Invoice marked as paid' });
+                    continue;
+                }
+
+                if (input.action === 'mark_unpaid') {
+                    if (invoice.status === InvoiceStatus.UNPAID) {
+                        results.push({ invoiceId, invoiceNumber, status: 'skipped', message: 'Invoice is already unpaid' });
+                        continue;
+                    }
+                    await this.updateInvoiceStatus(invoiceId, InvoiceStatus.UNPAID);
+                    results.push({ invoiceId, invoiceNumber, status: 'success', message: 'Invoice marked as unpaid' });
+                    continue;
+                }
+
+                if (input.action === 'mark_cancelled') {
+                    if (invoice.status === InvoiceStatus.CANCELLED) {
+                        results.push({ invoiceId, invoiceNumber, status: 'skipped', message: 'Invoice is already cancelled' });
+                        continue;
+                    }
+                    await this.updateInvoiceStatus(invoiceId, InvoiceStatus.CANCELLED);
+                    results.push({ invoiceId, invoiceNumber, status: 'success', message: 'Invoice marked as cancelled' });
+                    continue;
+                }
+
+                results.push({ invoiceId, invoiceNumber, status: 'failed', message: 'Unsupported bulk action' });
+            } catch (err: any) {
+                results.push({
+                    invoiceId,
+                    status: 'failed',
+                    message: err?.message || 'Bulk action failed',
+                });
+            }
+        }
+
+        return {
+            action: input.action,
+            total: results.length,
+            successCount: results.filter((r) => r.status === 'success').length,
+            skippedCount: results.filter((r) => r.status === 'skipped').length,
+            failedCount: results.filter((r) => r.status === 'failed').length,
+            results,
+        };
     }
 
     /**

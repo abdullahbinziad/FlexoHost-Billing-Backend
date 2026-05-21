@@ -16,6 +16,8 @@
         "seed:users:force": "ts-node src/seeders/user.seeder.ts --force",
         "seed:roles": "ts-node src/seeders/role.seeder.ts",
         "backfill:fx": "ts-node src/scripts/backfill-fx.ts",
+        "backfill:email-logs": "ts-node src/scripts/backfill-email-logs-from-activity.ts",
+        "email:render-previews": "ts-node src/scripts/render-email-previews.ts",
         "verify:renewal-flow": "ts-node src/scripts/verify-renewal-flow.ts",
         "migrate:whmcs": "ts-node src/scripts/whmcs-migration/run.ts",
         "migrate:whmcs:import": "ts-node src/scripts/whmcs-migration/import-sql.ts",

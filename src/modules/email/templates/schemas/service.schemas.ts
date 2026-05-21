@@ -42,7 +42,7 @@ export const hostingAccountCreatedSchema = z.object({
     domain: z.string().min(1, 'domain is required'),
     cpanelUrl: z.string().min(1, 'cpanelUrl is required'),
     cpanelUsername: z.string().min(1, 'cpanelUsername is required'),
-    cpanelPassword: z.string().min(1, 'cpanelPassword is required'),
+    setupPasswordUrl: z.string().url('setupPasswordUrl must be a valid URL'),
     serverHostname: z.string().min(1, 'serverHostname is required'),
     nameserver1: z.string(),
     nameserver2: z.string(),
@@ -74,3 +74,24 @@ export const terminatedSchema = z.object({
     supportUrl: z.string().url(),
 });
 export type TerminatedPropsSchema = z.infer<typeof terminatedSchema>;
+
+export const unsuspendedSchema = z.object({
+    customerName: z.string().min(1),
+    serviceName: z.string().min(1),
+    serviceIdentifier: z.string().min(1),
+    restoredAt: z.string().min(1),
+    manageServiceUrl: z.string().url(),
+    supportUrl: z.string().url(),
+});
+export type UnsuspendedPropsSchema = z.infer<typeof unsuspendedSchema>;
+
+export const serviceRenewedSchema = z.object({
+    customerName: z.string().min(1),
+    serviceName: z.string().min(1),
+    serviceIdentifier: z.string().min(1),
+    previousDueDate: z.string().min(1),
+    nextDueDate: z.string().min(1),
+    invoiceNumber: z.string().optional(),
+    manageServiceUrl: z.string().url(),
+});
+export type ServiceRenewedPropsSchema = z.infer<typeof serviceRenewedSchema>;

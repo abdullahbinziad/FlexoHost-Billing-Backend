@@ -1,0 +1,1 @@
+Invoice INV-2024-001 created. Due 2024-12-31. Amount due: USD 1,200.00. Items: - Shared Hosting - Starter (Annual): USD 99.00 - Domain example.com (1 Year): USD 12.99 Pay: http://localhost:3000/invoices/123/pay Billing: http://localhost:3000/billing

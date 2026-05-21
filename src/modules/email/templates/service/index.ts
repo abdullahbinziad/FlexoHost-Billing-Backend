@@ -4,3 +4,5 @@ export { suspensionWarningTemplate } from './suspension-warning';
 export { suspendedTemplate } from './suspended';
 export { terminatedTemplate } from './terminated';
 export { terminationWarningTemplate } from './termination-warning';
+export { unsuspendedTemplate } from './unsuspended';
+export { serviceRenewedTemplate } from './renewed';

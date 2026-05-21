@@ -11,6 +11,7 @@ router.use(protect);
 router.post('/', restrictTo('superadmin', 'admin', 'staff'), invoiceController.createInvoice);
 router.get('/', restrictTo('superadmin', 'admin', 'staff', 'user', 'client'), invoiceController.getAllInvoices); // Users see their own? Need scope logic in service usually
 router.get('/stats', restrictTo('superadmin', 'admin', 'staff'), invoiceController.getDashboardStats);
+router.post('/bulk-action', restrictTo('superadmin', 'admin', 'staff'), invoiceController.bulkAction);
 router.get('/:id/pdf', restrictTo('superadmin', 'admin', 'staff', 'user', 'client'), invoiceController.getInvoicePdf);
 router.get('/:id', restrictTo('superadmin', 'admin', 'staff', 'user', 'client'), invoiceController.getInvoice);
 router.patch('/:id/status', restrictTo('superadmin', 'admin', 'staff'), invoiceController.updateStatus);

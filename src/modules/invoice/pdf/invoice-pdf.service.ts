@@ -7,6 +7,7 @@ import config from '../../../config';
 import type { IInvoiceDocument } from '../invoice.interface';
 import PaymentTransaction from '../../transaction/transaction.model';
 import { buildInvoiceHtml, type InvoicePdfData } from './invoice-pdf-html';
+import { getBrandLogoForLightBackgroundDataUri } from '../../../utils/brand-assets';
 
 export type InvoiceForPdf = IInvoiceDocument;
 
@@ -36,27 +37,6 @@ function formatInvoicedAddress(address: string, country: string): string {
     if (!a && !c) return '—';
     if (!a) return c;
     return c ? `${a} • ${c}` : a;
-}
-
-/** Inline image for Puppeteer so PDF does not depend on remote fetch at render time. */
-async function fetchLogoAsDataUri(logoUrl: string): Promise<string | undefined> {
-    try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 15_000);
-        const res = await fetch(logoUrl, {
-            signal: controller.signal,
-            headers: { 'User-Agent': 'FlexoHost-InvoicePdf/1.0' },
-        });
-        clearTimeout(timer);
-        if (!res.ok) return undefined;
-        const buf = Buffer.from(await res.arrayBuffer());
-        if (buf.length > 2 * 1024 * 1024) return undefined;
-        let mime = (res.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
-        if (!mime.startsWith('image/')) mime = 'image/png';
-        return `data:${mime};base64,${buf.toString('base64')}`;
-    } catch {
-        return undefined;
-    }
 }
 
 function toPdfData(inv: any, transactions: TransactionForPdf[]): InvoicePdfData {
@@ -104,11 +84,7 @@ export async function generateInvoicePdf(
     const inv = invoice as any;
     const transactions = options?.transactions ?? [];
     const data = toPdfData(inv, transactions);
-    const rawLogo = config.app.invoicePdfLogoUrl || config.email.logoUrl?.trim();
-    let logoSrc: string | undefined;
-    if (rawLogo) {
-        logoSrc = (await fetchLogoAsDataUri(rawLogo)) || rawLogo;
-    }
+    const logoSrc = getBrandLogoForLightBackgroundDataUri();
     const html = buildInvoiceHtml({
         ...data,
         logoSrc,

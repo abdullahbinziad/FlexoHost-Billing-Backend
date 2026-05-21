@@ -9,15 +9,18 @@ import { brandSchema } from './brand.schema';
 import { welcomeSchema, verifyEmailSchema, passwordResetSchema, loginAlertSchema } from './account.schemas';
 import {
     invoiceCreatedSchema,
+    lateFeeAppliedSchema,
     paymentSuccessSchema,
     paymentFailedSchema,
     overdueReminderSchema,
 } from './billing.schemas';
 import { orderConfirmationSchema } from './order.schemas';
-import { hostingReadySchema, hostingAccountCreatedSchema, suspensionWarningSchema, suspendedSchema, terminationWarningSchema, terminatedSchema } from './service.schemas';
+import { hostingReadySchema, hostingAccountCreatedSchema, suspensionWarningSchema, suspendedSchema, terminationWarningSchema, terminatedSchema, unsuspendedSchema, serviceRenewedSchema } from './service.schemas';
 import {
     domainRegistrationConfirmationSchema,
     domainRenewalReminderSchema,
+    domainRenewalSuccessSchema,
+    domainRenewalFailedSchema,
     domainExpiredNoticeSchema,
 } from './domain.schemas';
 import { ticketOpenedSchema, ticketReplySchema } from './support.schemas';
@@ -30,8 +33,14 @@ const SCHEMA_MAP: Record<TemplateKey, z.ZodTypeAny> = {
     'account.password_reset': passwordResetSchema,
     'account.login_alert': loginAlertSchema,
     'billing.invoice_created': invoiceCreatedSchema,
+    'billing.invoice_due_soon': overdueReminderSchema,
+    'billing.invoice_due_today': overdueReminderSchema,
+    'billing.invoice_overdue_first': overdueReminderSchema,
+    'billing.invoice_overdue_second': overdueReminderSchema,
+    'billing.invoice_overdue_final': overdueReminderSchema,
     'billing.payment_success': paymentSuccessSchema,
     'billing.payment_failed': paymentFailedSchema,
+    'billing.late_fee_applied': lateFeeAppliedSchema,
     'billing.overdue_reminder': overdueReminderSchema,
     'order.confirmation': orderConfirmationSchema,
     'service.hosting_ready': hostingReadySchema,
@@ -40,8 +49,12 @@ const SCHEMA_MAP: Record<TemplateKey, z.ZodTypeAny> = {
     'service.suspended': suspendedSchema,
     'service.termination_warning': terminationWarningSchema,
     'service.terminated': terminatedSchema,
+    'service.unsuspended': unsuspendedSchema,
+    'service.renewed': serviceRenewedSchema,
     'domain.registration_confirmation': domainRegistrationConfirmationSchema,
     'domain.renewal_reminder': domainRenewalReminderSchema,
+    'domain.renewal_success': domainRenewalSuccessSchema,
+    'domain.renewal_failed': domainRenewalFailedSchema,
     'domain.expired_notice': domainExpiredNoticeSchema,
     'support.ticket_opened': ticketOpenedSchema,
     'support.ticket_reply': ticketReplySchema,
@@ -123,12 +136,14 @@ export function validatePropsOrThrow<K extends TemplateKey>(
 }
 
 export { brandSchema, welcomeSchema, verifyEmailSchema, passwordResetSchema, loginAlertSchema };
-export { invoiceCreatedSchema, paymentSuccessSchema, paymentFailedSchema, overdueReminderSchema };
+export { invoiceCreatedSchema, paymentSuccessSchema, paymentFailedSchema, lateFeeAppliedSchema, overdueReminderSchema };
 export { orderConfirmationSchema };
-export { hostingReadySchema, hostingAccountCreatedSchema, suspensionWarningSchema, suspendedSchema, terminationWarningSchema, terminatedSchema };
+export { hostingReadySchema, hostingAccountCreatedSchema, suspensionWarningSchema, suspendedSchema, terminationWarningSchema, terminatedSchema, unsuspendedSchema, serviceRenewedSchema };
 export {
     domainRegistrationConfirmationSchema,
     domainRenewalReminderSchema,
+    domainRenewalSuccessSchema,
+    domainRenewalFailedSchema,
     domainExpiredNoticeSchema,
 };
 export { ticketOpenedSchema, ticketReplySchema };

@@ -8,10 +8,11 @@ import { getTemplate } from './templates/registry';
 import { mergeBrandProps } from './templates/config';
 import { validateProps } from './templates/schemas';
 import { sendViaTransport, isTransportConfigured, type EmailAttachment } from './transport';
-import { inlineEmailBrandLogo } from './inline-brand-logo';
+import { ensureEmailBrandLogoInline } from './inline-brand-logo';
 import type { TemplateKey } from './templates/types';
 import type { SendResult } from './templates/types';
 import { createEmailLog, type EmailLogContext } from './email-log.service';
+import { getOverride, renderTemplateString } from './email-template-override.service';
 
 export interface SendTemplatedEmailOptions<T = Record<string, unknown>> {
     to: string;
@@ -43,9 +44,16 @@ export async function sendTemplatedEmail<T>(
     const validatedData = validation.data as Record<string, unknown>;
     const fullProps = mergeBrandProps({ ...validatedData, ...props } as Record<string, unknown>) as any;
 
-    const subject = template.buildSubject(fullProps);
-    const html = template.renderHtml(fullProps);
-    const text = template.renderText(fullProps);
+    const override = await getOverride(templateKey);
+    const subject = override?.subject
+        ? renderTemplateString(override.subject, fullProps, { escape: false })
+        : template.buildSubject(fullProps);
+    const html = override?.html
+        ? renderTemplateString(override.html, fullProps)
+        : template.renderHtml(fullProps);
+    const text = override?.text
+        ? renderTemplateString(override.text, fullProps, { escape: false })
+        : template.renderText(fullProps);
 
     if (!(await isTransportConfigured())) {
         logger.warn(
@@ -72,11 +80,9 @@ export async function sendTemplatedEmail<T>(
 
     let sendHtml = html;
     let sendAttachments = attachments ? [...attachments] : [];
-    if (config.email.logoInline) {
-        const inlined = await inlineEmailBrandLogo(html);
-        sendHtml = inlined.html;
-        sendAttachments = [...sendAttachments, ...inlined.attachments];
-    }
+    const inlined = ensureEmailBrandLogoInline(html);
+    sendHtml = inlined.html;
+    sendAttachments = [...sendAttachments, ...inlined.attachments];
 
     const result = await sendViaTransport({
         to,
@@ -141,11 +147,9 @@ export async function sendEmail(options: IEmailOptions): Promise<SendResult> {
 
     let sendHtml = options.html;
     let attachments: EmailAttachment[] | undefined;
-    if (config.email.logoInline) {
-        const inlined = await inlineEmailBrandLogo(options.html);
-        sendHtml = inlined.html;
-        attachments = inlined.attachments.length ? inlined.attachments : undefined;
-    }
+    const inlined = ensureEmailBrandLogoInline(options.html);
+    sendHtml = inlined.html;
+    attachments = inlined.attachments.length ? inlined.attachments : undefined;
 
     const result = await sendViaTransport({
         to: options.to,
@@ -318,13 +322,15 @@ export async function sendPasswordResetEmail(
  */
 const LEGACY_TEMPLATE_MAP: Record<string, TemplateKey> = {
     'invoice-created': 'billing.invoice_created',
-    'invoice-pre-reminder': 'billing.overdue_reminder',
-    'invoice-due-today': 'billing.overdue_reminder',
-    'invoice-overdue-1': 'billing.overdue_reminder',
-    'invoice-overdue-2': 'billing.overdue_reminder',
-    'invoice-overdue-3': 'billing.overdue_reminder',
-    'invoice-overdue-7': 'service.suspension_warning',
-    'invoice-overdue-14': 'billing.overdue_reminder',
+    'invoice-pre-reminder': 'billing.invoice_due_soon',
+    'invoice-due-today': 'billing.invoice_due_today',
+    'invoice-overdue-1': 'billing.invoice_overdue_first',
+    'invoice-overdue-2': 'billing.invoice_overdue_first',
+    'invoice-overdue-3': 'billing.invoice_overdue_first',
+    'invoice-overdue-7': 'billing.invoice_overdue_second',
+    'invoice-overdue-14': 'billing.invoice_overdue_final',
+    'invoice-suspension-warning': 'service.suspension_warning',
+    'late-fee-applied': 'billing.late_fee_applied',
     'invoice-payment-confirmation': 'billing.payment_success',
     'invoice-modified': 'billing.invoice_created',
     'support.ticket_opened': 'support.ticket_opened',
@@ -399,13 +405,21 @@ export async function sendEmailByTemplate(
             billingUrl: `${base}/billing`,
             serviceName: context.serviceName,
         };
-    } else if (templateKey === 'billing.overdue_reminder') {
+    } else if (
+        templateKey === 'billing.overdue_reminder' ||
+        templateKey === 'billing.invoice_due_soon' ||
+        templateKey === 'billing.invoice_due_today' ||
+        templateKey === 'billing.invoice_overdue_first' ||
+        templateKey === 'billing.invoice_overdue_second' ||
+        templateKey === 'billing.invoice_overdue_final'
+    ) {
         const daysOverdueMap: Record<string, number> = {
             'invoice-pre-reminder': -7,
             'invoice-due-today': 0,
             'invoice-overdue-1': 1,
             'invoice-overdue-2': 2,
             'invoice-overdue-3': 3,
+            'invoice-overdue-7': 7,
             'invoice-overdue-14': 14,
         };
         const overdueDays = context.daysOverdue ?? daysOverdueMap[legacyTemplateName] ?? 0;
@@ -415,6 +429,16 @@ export async function sendEmailByTemplate(
             originalDueDate: dueDate,
             overdueDays,
             amountDue: balanceDue.toLocaleString(),
+            currency,
+            paymentUrl: `${base}/invoices/${invoice._id}/pay`,
+        };
+    } else if (templateKey === 'billing.late_fee_applied') {
+        props = {
+            customerName,
+            invoiceNumber,
+            originalDueDate: dueDate,
+            lateFeeAmount: String(context.lateFeeAmount ?? '0'),
+            newAmountDue: balanceDue.toLocaleString(),
             currency,
             paymentUrl: `${base}/invoices/${invoice._id}/pay`,
         };

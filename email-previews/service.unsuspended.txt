@@ -1,0 +1,1 @@
+Service restored: Shared Hosting - example.com (SVC-12345). Restored at: 2025-01-08 10:00 UTC. Manage: http://localhost:3000/hosting/SVC-12345. Support: http://localhost:3000/support

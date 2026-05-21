@@ -1,0 +1,1 @@
+Domain renewal needs attention: example.com. Expiration: 2025-01-15. Support: http://localhost:3000/support

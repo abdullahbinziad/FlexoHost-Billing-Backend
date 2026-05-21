@@ -8,6 +8,9 @@ import { domainRegistrarService } from '../../domain/registrar/domain-registrar.
 import { ProvisioningJobStatus } from '../types/enums';
 import { auditLogSafe } from '../../activity-log/activity-log.service';
 import logger from '../../../utils/logger';
+import Client from '../../client/client.model';
+import config from '../../../config';
+import * as emailService from '../../email/email.service';
 
 export class DomainRenewalWorker {
     async processQueuedJobs(): Promise<number> {
@@ -146,6 +149,8 @@ export class DomainRenewalWorker {
                 jobId: job._id.toString(),
             },
         });
+
+        await this.sendRenewalSuccessEmail(job, invoice, details, expirationDate);
     }
 
     private async markServiceFailure(job: any, reason: string): Promise<void> {
@@ -176,6 +181,83 @@ export class DomainRenewalWorker {
             invoiceId: job.invoiceId.toString(),
             meta: { domain: job.domainName, jobId: job._id.toString() },
         });
+
+        await this.sendRenewalFailedEmail(job);
+    }
+
+    private async getClientForEmail(clientId: any) {
+        return Client.findById(clientId).select('contactEmail firstName lastName').lean();
+    }
+
+    private async sendRenewalSuccessEmail(job: any, invoice: any, details: any, expirationDate: Date): Promise<void> {
+        try {
+            const client = await this.getClientForEmail(job.clientId);
+            const clientEmail = (client as any)?.contactEmail;
+            if (!clientEmail) return;
+            const customerName = [((client as any).firstName || '').trim(), ((client as any).lastName || '').trim()]
+                .filter(Boolean)
+                .join(' ') || 'Customer';
+            const base = config.frontendUrl.replace(/\/$/, '');
+            await emailService.sendTemplatedEmail({
+                to: clientEmail,
+                templateKey: 'domain.renewal_success',
+                props: {
+                    customerName,
+                    domain: details.domainName,
+                    previousExpirationDate: new Date(job.renewedFrom).toLocaleDateString(),
+                    newExpirationDate: new Date(expirationDate).toLocaleDateString(),
+                    manageDomainUrl: `${base}/domains/${encodeURIComponent(details.domainName)}`,
+                },
+                logContext: {
+                    clientId: job.clientId?.toString?.(),
+                    serviceId: job.serviceId?.toString?.(),
+                    invoiceId: job.invoiceId?.toString?.(),
+                    domainId: job.domainDetailsId?.toString?.(),
+                    source: 'cron',
+                    actorType: 'system',
+                    emailType: 'domain.renewal_success',
+                    bodyPreview: `Domain ${details.domainName} renewed from invoice ${invoice.invoiceNumber}`,
+                },
+            });
+        } catch (err: any) {
+            logger.warn('[DomainRenewal] Success email failed:', err?.message || err);
+        }
+    }
+
+    private async sendRenewalFailedEmail(job: any): Promise<void> {
+        try {
+            const client = await this.getClientForEmail(job.clientId);
+            const clientEmail = (client as any)?.contactEmail;
+            if (!clientEmail) return;
+            const invoice = await Invoice.findById(job.invoiceId).select('invoiceNumber').lean();
+            const customerName = [((client as any).firstName || '').trim(), ((client as any).lastName || '').trim()]
+                .filter(Boolean)
+                .join(' ') || 'Customer';
+            const base = config.frontendUrl.replace(/\/$/, '');
+            await emailService.sendTemplatedEmail({
+                to: clientEmail,
+                templateKey: 'domain.renewal_failed',
+                props: {
+                    customerName,
+                    domain: job.domainName,
+                    expirationDate: new Date(job.renewedFrom).toLocaleDateString(),
+                    invoiceNumber: (invoice as any)?.invoiceNumber,
+                    supportUrl: `${base}/tickets/new`,
+                },
+                logContext: {
+                    clientId: job.clientId?.toString?.(),
+                    serviceId: job.serviceId?.toString?.(),
+                    invoiceId: job.invoiceId?.toString?.(),
+                    domainId: job.domainDetailsId?.toString?.(),
+                    source: 'cron',
+                    actorType: 'system',
+                    emailType: 'domain.renewal_failed',
+                    bodyPreview: `Domain renewal failed for ${job.domainName}`,
+                },
+            });
+        } catch (err: any) {
+            logger.warn('[DomainRenewal] Failure email failed:', err?.message || err);
+        }
     }
 }
 

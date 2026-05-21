@@ -202,6 +202,65 @@ class InvoiceController {
         return ApiResponse.ok(res, 'Payment recorded successfully', invoice);
     });
 
+    bulkAction = catchAsync(async (req: Request, res: Response) => {
+        const {
+            invoiceIds,
+            action,
+            paymentMethod,
+            paymentDate,
+            transactionIdPrefix,
+            sendEmail,
+            reminderTemplate,
+        } = req.body as {
+            invoiceIds?: string[];
+            action?: 'mark_paid' | 'mark_unpaid' | 'mark_cancelled' | 'send_reminder';
+            paymentMethod?: string;
+            paymentDate?: string;
+            transactionIdPrefix?: string;
+            sendEmail?: boolean;
+            reminderTemplate?: string;
+        };
+
+        const allowedActions = ['mark_paid', 'mark_unpaid', 'mark_cancelled', 'send_reminder'];
+        if (!action || !allowedActions.includes(action)) {
+            throw new ApiError(400, 'Invalid bulk action');
+        }
+        if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+            throw new ApiError(400, 'At least one invoice is required');
+        }
+
+        const result = await invoiceService.bulkAction({
+            invoiceIds,
+            action,
+            paymentMethod,
+            paymentDate,
+            transactionIdPrefix,
+            sendEmail,
+            reminderTemplate,
+        });
+
+        const authReq = req as AuthRequest;
+        auditLogSafe({
+            message: `Bulk invoice action ${action}: ${result.successCount} succeeded, ${result.skippedCount} skipped, ${result.failedCount} failed`,
+            type: 'invoice_updated',
+            category: 'invoice',
+            actorType: authReq.user ? 'user' : 'system',
+            actorId: authReq.user?.id || authReq.user?._id,
+            source: 'manual',
+            ipAddress: getIp(req),
+            userAgent: getUserAgent(req),
+            meta: {
+                action,
+                total: result.total,
+                successCount: result.successCount,
+                skippedCount: result.skippedCount,
+                failedCount: result.failedCount,
+            },
+        });
+
+        return ApiResponse.ok(res, 'Bulk invoice action completed', result);
+    });
+
     updateInvoice = catchAsync(async (req: Request, res: Response) => {
         const { id } = req.params;
         const { billedTo, invoiceDate, dueDate, items, credit, currency } = req.body;

@@ -12,8 +12,14 @@ export type TemplateKey =
     | 'account.login_alert'
     // Billing
     | 'billing.invoice_created'
+    | 'billing.invoice_due_soon'
+    | 'billing.invoice_due_today'
+    | 'billing.invoice_overdue_first'
+    | 'billing.invoice_overdue_second'
+    | 'billing.invoice_overdue_final'
     | 'billing.payment_success'
     | 'billing.payment_failed'
+    | 'billing.late_fee_applied'
     | 'billing.overdue_reminder'
     // Order
     | 'order.confirmation'
@@ -24,9 +30,13 @@ export type TemplateKey =
     | 'service.suspended'
     | 'service.termination_warning'
     | 'service.terminated'
+    | 'service.unsuspended'
+    | 'service.renewed'
     // Domain
     | 'domain.registration_confirmation'
     | 'domain.renewal_reminder'
+    | 'domain.renewal_success'
+    | 'domain.renewal_failed'
     | 'domain.expired_notice'
     // Support
     | 'support.ticket_opened'

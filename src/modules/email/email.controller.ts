@@ -10,6 +10,8 @@ import { isTransportConfigured, verifySmtpConnection } from './transport/nodemai
 import { resolveEmailSmtpConfig } from './smtp';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 import { getEmailLogs } from './email-log.service';
+import { deleteOverride, listTemplatesWithOverrides, saveOverride } from './email-template-override.service';
+import { previewTemplateWithSavedOverride } from './preview';
 
 const MAX_RECIPIENTS = 100;
 
@@ -48,6 +50,33 @@ class EmailController {
         );
 
         return ApiResponse.ok(res, 'Email logs retrieved', result);
+    });
+
+    listTemplates = catchAsync(async (_req: AuthRequest, res: Response) => {
+        const templates = await listTemplatesWithOverrides();
+        return ApiResponse.ok(res, 'Email templates retrieved', { templates });
+    });
+
+    saveTemplateOverride = catchAsync(async (req: AuthRequest, res: Response) => {
+        const override = await saveOverride(req.params.templateKey, {
+            enabled: req.body.enabled,
+            subject: req.body.subject,
+            previewText: req.body.previewText,
+            html: req.body.html,
+            text: req.body.text,
+            updatedBy: req.user?._id?.toString?.(),
+        });
+        return ApiResponse.ok(res, 'Email template override saved', { override });
+    });
+
+    deleteTemplateOverride = catchAsync(async (req: AuthRequest, res: Response) => {
+        await deleteOverride(req.params.templateKey);
+        return ApiResponse.ok(res, 'Email template override reset');
+    });
+
+    previewSavedTemplate = catchAsync(async (req: AuthRequest, res: Response) => {
+        const result = await previewTemplateWithSavedOverride(req.params.templateKey as any, req.body?.props || {}, req.body?.draft);
+        return ApiResponse.ok(res, 'Preview rendered', result);
     });
 
     /**

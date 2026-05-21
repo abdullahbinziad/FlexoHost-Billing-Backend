@@ -45,11 +45,22 @@ export const paymentFailedSchema = z.object({
 });
 export type PaymentFailedPropsSchema = z.infer<typeof paymentFailedSchema>;
 
+export const lateFeeAppliedSchema = z.object({
+    customerName: z.string().min(1),
+    invoiceNumber: z.string().min(1),
+    originalDueDate: z.string().min(1),
+    lateFeeAmount: z.string().min(1),
+    newAmountDue: z.string().min(1),
+    currency: z.string().min(1),
+    paymentUrl: z.string().url(),
+});
+export type LateFeeAppliedPropsSchema = z.infer<typeof lateFeeAppliedSchema>;
+
 export const overdueReminderSchema = z.object({
     customerName: z.string().min(1),
     invoiceNumber: z.string().min(1),
     originalDueDate: z.string().min(1),
-    overdueDays: z.number().int().min(0),
+    overdueDays: z.number().int(),
     amountDue: z.string().min(1),
     currency: z.string().min(1),
     paymentUrl: z.string().url(),

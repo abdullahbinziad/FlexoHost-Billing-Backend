@@ -1,11 +1,13 @@
 /**
  * service.hosting_account_created - New hosting account created (WHMCS-style)
  * Sent immediately after successful provisioning with login and server details.
+ * Passwords are intentionally not sent by email.
  */
 
 import type { BaseEmailTemplate } from '../types';
 import { renderDefaultLayout } from '../layouts/default.layout';
 import { renderGreetingBlock, renderSectionCard, renderInfoTable, renderSignatureBlock } from '../blocks';
+import { renderAlertBox, renderCTAButton } from '../blocks';
 import { htmlToPlainText } from '../utils/plain-text';
 
 export interface HostingAccountCreatedProps {
@@ -13,7 +15,7 @@ export interface HostingAccountCreatedProps {
     domain: string;
     cpanelUrl: string;
     cpanelUsername: string;
-    cpanelPassword: string;
+    setupPasswordUrl: string;
     serverHostname: string;
     nameserver1: string;
     nameserver2: string;
@@ -34,7 +36,6 @@ export const hostingAccountCreatedTemplate: BaseEmailTemplate<HostingAccountCrea
             { label: 'Domain', value: props.domain },
             { label: 'Control Panel', value: props.cpanelUrl },
             { label: 'Username', value: props.cpanelUsername },
-            { label: 'Password', value: props.cpanelPassword },
         ];
 
         const serverRows: { label: string; value: string }[] = [
@@ -50,6 +51,11 @@ ${renderGreetingBlock({ name: props.clientName })}
 ${renderSectionCard(`
   <p style="margin:0 0 16px;">Your hosting account for <strong>${props.domain}</strong> has been successfully created and is ready to use.</p>
   <p style="margin:0 0 24px; font-size:14px; color:#4b5563;">Welcome! You can log in using the details below.</p>
+  ${renderAlertBox({
+      message: 'For security, we do not send passwords by email. Use the secure button below to set or reset your control panel password.',
+      variant: 'info',
+  })}
+  ${renderCTAButton({ href: props.setupPasswordUrl, label: 'Set Up Password' })}
 
   <p style="margin:0 0 8px; font-size:14px; font-weight:600; color:#374151;">Hosting Account Information</p>
   ${renderInfoTable({ rows: accountRows, title: '' })}
@@ -93,7 +99,7 @@ ${renderSectionCard(`
         return htmlToPlainText(
             `Hello ${props.clientName},\n\n` +
             `Your hosting account for ${props.domain} has been successfully created and is ready to use.\n\n` +
-            `Hosting Account Information\nDomain: ${props.domain}\nControl Panel: ${props.cpanelUrl}\nUsername: ${props.cpanelUsername}\nPassword: ${props.cpanelPassword}\n\n` +
+            `Hosting Account Information\nDomain: ${props.domain}\nControl Panel: ${props.cpanelUrl}\nUsername: ${props.cpanelUsername}\nSet password: ${props.setupPasswordUrl}\n\n` +
             `Server Information\nServer Hostname: ${props.serverHostname || ''}\nNameserver 1: ${props.nameserver1}\nNameserver 2: ${props.nameserver2}\n\n` +
             `Login URLs\ncPanel: ${props.cpanelUrl}\nOR ${cpanelDomain}\nWebmail: ${webmailUrl}\n\n` +
             `Nameserver Setup\nPlease update your domain nameservers to:\n${props.nameserver1}\n${props.nameserver2}\nDNS propagation may take 0–24 hours.\n\n` +

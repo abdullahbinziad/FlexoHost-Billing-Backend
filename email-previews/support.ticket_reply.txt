@@ -1,0 +1,1 @@
+New reply on ticket #TKT-12345. Subject: cPanel login issue. Our team has reviewed your ticket. Please try resetting your cPanel password from the client area.. View: http://localhost:3000/tickets/12345

@@ -1,0 +1,1 @@
+Order #ORD-2024-001 confirmed. Total: USD 111.99. Items: - Shared Hosting - Starter (hosting, Annual) x1: USD 99.00 - example.com (domain, 1 Year) x1: USD 12.99 Dashboard: http://localhost:3000/dashboard. Support: http://localhost:3000/support

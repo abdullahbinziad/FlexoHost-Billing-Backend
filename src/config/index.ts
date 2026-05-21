@@ -50,9 +50,6 @@ interface Config {
             tlsRejectUnauthorized: boolean;
         };
         from: string;
-        logoUrl: string;
-        /** When true, fetch EMAIL_LOGO_URL and embed as inline CID (better WebP/client support). */
-        logoInline: boolean;
         /** Nodemailer socket/timeouts; env SMTP_FORCE_IPV4, SMTP_CONNECTION_TIMEOUT_MS, etc. */
         transport: {
             forceIpv4: boolean;
@@ -160,8 +157,6 @@ interface Config {
         companyEmail: string;
         /** PDF letterhead address. Env: COMPANY_ADDRESS */
         companyAddress: string;
-        /** PDF logo URL. Env: INVOICE_PDF_LOGO_URL */
-        invoicePdfLogoUrl: string;
     };
     /** Successful login notification email (password + OAuth). */
     loginAlert: {
@@ -182,11 +177,6 @@ const smtpForceIpv4 =
     process.env.SMTP_FORCE_IPV4 === 'true' ||
     process.env.SMTP_FORCE_IPV4 === '1' ||
     process.env.SMTP_FAMILY === '4';
-
-/** ImgBB and some docs use i.ibb.co; a common typo i.ibb.co.com breaks TLS / does not resolve. */
-function normalizeEmailLogoUrl(url: string): string {
-    return url.replace(/i\.ibb\.co\.com/gi, 'i.ibb.co');
-}
 
 const config: Config = {
     env: process.env.NODE_ENV || 'development',
@@ -242,17 +232,6 @@ const config: Config = {
             tlsRejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
         },
         from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
-        /**
-         * Hosted image URL (HTTPS). Env wins, else Cloudinary default.
-         * WebP is inlined as CID when logoInline is true so more clients render it reliably.
-         */
-        /** Default uses f_png — WebP remote/CID breaks many clients (Outlook, some webmail). */
-        logoUrl:
-            (process.env.EMAIL_LOGO_URL?.trim()
-                ? normalizeEmailLogoUrl(process.env.EMAIL_LOGO_URL.trim())
-                : '') ||
-            'https://res.cloudinary.com/dzmglrehf/image/upload/f_png/v1774867247/FlexoHostHorizontalforDark_kwcztr.webp',
-        logoInline: process.env.EMAIL_LOGO_INLINE?.toLowerCase() !== 'false',
         transport: {
             forceIpv4: smtpForceIpv4,
             connectionTimeoutMs: parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '25000', 10),
@@ -358,9 +337,6 @@ const config: Config = {
         companyEmail: process.env.COMPANY_EMAIL || 'billing@flexohost.com',
         companyAddress:
             process.env.COMPANY_ADDRESS || 'Ghunti, Mymensingh Sadar, Mymensingh, Bangladesh, Post-2200',
-        invoicePdfLogoUrl:
-            process.env.INVOICE_PDF_LOGO_URL?.trim() ||
-            'https://res.cloudinary.com/dzmglrehf/image/upload/v1774877112/FlexoHostHorizontalforLight_gszd0a.webp',
     },
     loginAlert: {
         successEnabled: (process.env.LOGIN_ALERT_SUCCESS_ENABLED || 'true').toLowerCase() !== 'false',

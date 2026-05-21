@@ -14,7 +14,7 @@ export interface DomainRenewalReminderProps {
     daysRemaining: number;
     renewalPrice: string;
     currency: string;
-    autoRenewEnabled: boolean;
+    autoRenewEnabled?: boolean;
     renewUrl: string;
 }
 
@@ -40,7 +40,6 @@ ${renderSectionCard(`
         { label: 'Expiration Date', value: props.expirationDate },
         { label: 'Days Remaining', value: `${props.daysRemaining} day${props.daysRemaining !== 1 ? 's' : ''}` },
         { label: 'Renewal Price', value: `${props.currency} ${props.renewalPrice}` },
-        { label: 'Auto-Renew', value: props.autoRenewEnabled ? 'Enabled' : 'Disabled' },
       ],
       title: 'Domain Details',
   })}
@@ -54,6 +53,6 @@ ${renderSectionCard(`
 
     renderText: (props) =>
         htmlToPlainText(
-            `Domain ${props.domain} expires in ${props.daysRemaining} days. Expiration: ${props.expirationDate}. Price: ${props.currency} ${props.renewalPrice}. Auto-renew: ${props.autoRenewEnabled ? 'Yes' : 'No'}. Renew: ${props.renewUrl}. Support: ${props.supportEmail}`
+            `Domain ${props.domain} expires in ${props.daysRemaining} days. Expiration: ${props.expirationDate}. Price: ${props.currency} ${props.renewalPrice}. Renew: ${props.renewUrl}. Support: ${props.supportEmail}`
         ),
 };

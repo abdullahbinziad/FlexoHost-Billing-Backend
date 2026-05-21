@@ -1,0 +1,1 @@
+Domain example.com expires in 14 days. Expiration: 2025-01-15. Price: USD 12.99. Renew: http://localhost:3000/domains/example.com/renew. Support: support@flexohost.com

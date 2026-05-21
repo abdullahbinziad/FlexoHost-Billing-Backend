@@ -1,12 +1,7 @@
 /**
  * Send "New Hosting Account Created" email after successful provisioning.
  * Loads service, hosting details, client, and server from DB.
- * Password must be passed in (never read from DB).
- *
- * SECURITY NOTE: This email includes the cPanel password in plaintext. Ensure:
- * - SMTP uses TLS; emails are transmitted over encrypted channels.
- * - Consider alternative: send a "Set your password" link instead (one-time token).
- * - Never log or persist the password.
+ * Password may be passed by provisioning, but it is never sent by email.
  */
 
 import type { SendResult } from '../../email/templates/types';
@@ -27,14 +22,9 @@ function normalizeHostname(host: string): string {
 
 export async function sendHostingAccountCreatedEmail(
     serviceId: string | { toString(): string },
-    password: string
+    _password: string
 ): Promise<SendResult> {
     const id = typeof serviceId === 'string' ? serviceId : (serviceId as any).toString();
-
-    if (!password || typeof password !== 'string') {
-        logger.warn(`[HostingAccountEmail] Password required for service: ${id}`);
-        return { success: false, error: 'Account password not available' };
-    }
 
     const service = await serviceRepository.findById(id);
     if (!service) {
@@ -97,6 +87,7 @@ export async function sendHostingAccountCreatedEmail(
         cpanelUrl = domain ? `${protocol}://${domain}/cpanel` : '';
     }
     const clientPortalUrl = config.frontendUrl.replace(/\/$/, '');
+    const setupPasswordUrl = `${clientPortalUrl}/hosting/${id}`;
     const supportEmail = DEFAULT_BRAND.supportEmail;
     const clientName = [((client as any).firstName || '').trim(), ((client as any).lastName || '').trim()]
         .filter(Boolean)
@@ -110,7 +101,7 @@ export async function sendHostingAccountCreatedEmail(
             domain,
             cpanelUrl,
             cpanelUsername: details.accountUsername || '',
-            cpanelPassword: password,
+            setupPasswordUrl,
             serverHostname,
             nameserver1,
             nameserver2,

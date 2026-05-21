@@ -1,0 +1,1 @@
+Hi Jane Smith, verify your email: http://localhost:3000/verify-email?token=abc123 (expires in 24 hours). If you didn't request this, ignore this email.

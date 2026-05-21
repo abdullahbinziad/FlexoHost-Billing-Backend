@@ -1,0 +1,1 @@
+Termination warning: Shared Hosting - example.com (SVC-12345). 7 days remaining. Terminates: 2025-02-07. Pay: http://localhost:3000/invoices/123/pay. Support: http://localhost:3000/support

@@ -1,0 +1,1 @@
+Late fee applied to invoice INV-2024-001. Fee: USD 10.00. New amount due: USD 1,210.00. Pay: http://localhost:3000/invoices/123/pay.

@@ -1,0 +1,1 @@
+Thank you for your payment! Invoice: INV-2024-001 Transaction ID: TXN-ABC123 Amount: USD 1,200.00 Date: 2024-01-15 Method: Credit Card (•••• 4242) Billing: http://localhost:3000/billing

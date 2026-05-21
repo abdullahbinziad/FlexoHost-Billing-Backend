@@ -1,0 +1,1 @@
+Domain renewed: example.com. Previous expiration: 2025-01-15. New expiration: 2026-01-15. Manage: http://localhost:3000/domains/example.com

@@ -10,7 +10,7 @@ import type { BillingSettingsDto } from '../../billing-settings/billing-settings
 function getTemplateForReminderType(reminderType: string): string {
     if (reminderType === 'DUE_TODAY') return 'invoice-due-today';
     if (reminderType.startsWith('PRE_')) return 'invoice-pre-reminder';
-    if (reminderType.startsWith('SUSPEND_WARN_')) return 'invoice-overdue-7';
+    if (reminderType.startsWith('SUSPEND_WARN_')) return 'invoice-suspension-warning';
     if (reminderType.startsWith('OVERDUE_')) {
         const days = parseInt(reminderType.replace('OVERDUE_', ''), 10) || 0;
         if (days <= 3) return 'invoice-overdue-3';
