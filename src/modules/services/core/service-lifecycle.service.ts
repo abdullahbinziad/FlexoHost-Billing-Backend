@@ -95,6 +95,74 @@ export class ServiceLifecycleService {
         }
     }
 
+    async convertTrialServicesForPaidInvoice(invoiceId: string | mongoose.Types.ObjectId) {
+        const invoice = await Invoice.findById(invoiceId).lean().exec();
+        if (!invoice) return { converted: 0, unsuspendJobsQueued: 0 };
+        if (invoice.status !== InvoiceStatus.PAID || (invoice.balanceDue ?? 0) > 0) {
+            return { converted: 0, unsuspendJobsQueued: 0 };
+        }
+
+        const ownershipConditions: Record<string, unknown>[] = [{ invoiceId: invoice._id }];
+        if (invoice.orderId) {
+            ownershipConditions.push({ orderId: invoice.orderId });
+        }
+
+        const query: any = {
+            type: ServiceType.HOSTING,
+            'meta.trialProvisioned': true,
+            'meta.provisionedWithoutPayment': true,
+            $or: ownershipConditions,
+        };
+
+        const services = await Service.find(query).exec();
+        let converted = 0;
+        let unsuspendJobsQueued = 0;
+        const paidAt = new Date();
+
+        for (const svc of services) {
+            svc.meta = svc.meta || {};
+            svc.meta.trialConvertedAt = paidAt;
+            svc.meta.trialConvertedInvoiceId = invoice._id.toString();
+            svc.meta.trialProvisioned = false;
+            svc.meta.provisionedWithoutPayment = false;
+            svc.meta.trialSuspendedAt = undefined;
+            svc.meta.suspendReason = undefined;
+            svc.meta.lastPaidInvoiceId = invoice._id.toString();
+            svc.meta.lastPaidAt = paidAt;
+            svc.meta.trialOriginalNextDueDate = svc.nextDueDate;
+            svc.nextDueDate = this.addBillingCycle(paidAt, svc.billingCycle as BillingCycle);
+            svc.graceUntil = undefined;
+            if (svc.status === ServiceStatus.SUSPENDED) {
+                svc.status = ServiceStatus.ACTIVE;
+                try {
+                    await ServiceActionJob.create({
+                        serviceId: svc._id,
+                        invoiceId: invoice._id,
+                        action: ServiceActionType.UNSUSPEND,
+                        status: ProvisioningJobStatus.QUEUED,
+                    });
+                    unsuspendJobsQueued++;
+                } catch (err: any) {
+                    if (err.code !== 11000) throw err;
+                }
+            }
+            await svc.save();
+            converted++;
+            auditLogSafe({
+                message: `Trial service ${svc._id} converted after invoice ${invoice.invoiceNumber} was paid`,
+                type: 'service_activated',
+                category: 'service',
+                actorType: 'system',
+                source: 'system',
+                clientId: (svc.clientId as any)?.toString(),
+                serviceId: svc._id.toString(),
+                invoiceId: invoice._id.toString(),
+            });
+        }
+
+        return { converted, unsuspendJobsQueued };
+    }
+
     /**
      * Optional Cron Loop Fallback: Find PAID invoices holding services still internally tracked as SUSPENDED.
      * Perfect for race-condition recoveries.

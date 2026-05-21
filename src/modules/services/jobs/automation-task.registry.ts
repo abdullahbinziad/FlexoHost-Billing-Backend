@@ -11,6 +11,7 @@ export type AutomationTaskKey =
     | 'provisioning-worker'
     | 'domain-renewals'
     | 'domain-sync'
+    | 'trial-lifecycle'
     | 'digest-email';
 
 export interface AutomationTaskRegistryItem {
@@ -102,6 +103,14 @@ export function getAutomationTaskRegistry(): AutomationTaskRegistryItem[] {
             category: 'domain',
             description: 'Sync transfer and expiry state from registrars.',
             intervalMs: config.cron.domainSyncIntervalMs,
+            runOnStart: config.cron.runOnStart,
+        },
+        {
+            key: 'trial-lifecycle',
+            label: 'Trial Lifecycle',
+            category: 'service',
+            description: 'Suspend unpaid hosting trials after their trial end date.',
+            intervalMs: config.cron.overdueSuspensionsIntervalMs,
             runOnStart: config.cron.runOnStart,
         },
         {

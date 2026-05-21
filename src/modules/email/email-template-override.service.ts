@@ -56,9 +56,22 @@ export async function listTemplatesWithOverrides() {
             defaultPreviewText: template.previewText(fullProps),
             defaultHtml: template.renderHtml(fullProps),
             defaultText: template.renderText(fullProps),
+            availableVariables: collectVariablePaths(PREVIEW_DATA[key] || {}),
             override: overrideMap.get(key) || null,
         };
     });
+}
+
+function collectVariablePaths(value: unknown, prefix = ''): string[] {
+    if (Array.isArray(value)) {
+        return value.length > 0 ? collectVariablePaths(value[0], prefix ? `${prefix}.0` : '0') : [];
+    }
+    if (value && typeof value === 'object') {
+        return Object.entries(value as Record<string, unknown>).flatMap(([key, child]) =>
+            collectVariablePaths(child, prefix ? `${prefix}.${key}` : key)
+        );
+    }
+    return prefix ? [prefix] : [];
 }
 
 function buildPlaceholderProps(templateKey: TemplateKey): Record<string, unknown> {

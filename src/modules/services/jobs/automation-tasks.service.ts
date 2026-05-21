@@ -7,6 +7,7 @@ import serviceActionWorker from './service-action.worker';
 import domainRenewalWorker from './domain-renewal.worker';
 import domainSyncScheduler from './domain-sync.scheduler';
 import domainExpiryReminderScheduler from './domain-expiry-reminder.scheduler';
+import trialLifecycleScheduler from './trial-lifecycle.scheduler';
 import { billableItemService } from '../../billable-item/billable-item.service';
 import {
     AutomationTaskKey,
@@ -186,6 +187,14 @@ class AutomationTasksService {
         });
     }
 
+    runTrialLifecycle(source: TaskSource = 'cron') {
+        return runWithAudit('trial-lifecycle', source, async () => {
+            const result = await trialLifecycleScheduler.processExpiredTrials();
+            const actionJobsProcessed = await serviceActionWorker.processQueuedJobs();
+            return { ...result, actionJobsProcessed };
+        });
+    }
+
     runDigestEmail(source: TaskSource = 'cron') {
         return runWithAudit('digest-email', source, async () =>
             automationDigestService.sendLatestDigest()
@@ -214,6 +223,8 @@ class AutomationTasksService {
                 return this.runDomainRenewals(source);
             case 'domain-sync':
                 return this.runDomainSync(source);
+            case 'trial-lifecycle':
+                return this.runTrialLifecycle(source);
             case 'digest-email':
                 return this.runDigestEmail(source);
             default:

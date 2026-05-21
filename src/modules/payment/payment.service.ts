@@ -356,6 +356,7 @@ class PaymentService {
                 await affiliateService.processPaidInvoice(invoice._id.toString());
 
                 // Unsuspend outside session because it might call HTTP hooks
+                await serviceLifecycleService.convertTrialServicesForPaidInvoice(invoice._id as any);
                 await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
                 await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
 
@@ -534,6 +535,7 @@ class PaymentService {
                 const invId = order.invoiceId as any;
                 await affiliateService.processPaidInvoice(invId.toString());
                 await handleInvoicePaid(invId);
+                await serviceLifecycleService.convertTrialServicesForPaidInvoice(invId);
                 await serviceLifecycleService.onInvoicePaidUnsuspend(invId);
                 await serviceLifecycleService.applyRenewalPayment(invId);
             }

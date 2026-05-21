@@ -36,6 +36,7 @@ import { registerProvisioningProviders } from '../services/provisioning/provider
 import { computeInitialNextDueDate } from '../services/utils/billing-cycle.util';
 import { encrypt } from '../../utils/encryption';
 import type { WhmApiClient } from '../whm/whm-api-client';
+import { sendHostingAccountCreatedEmail } from '../services/core/hosting-account-email.service';
 
 /** Default payment methods for admin order creation (extend via settings if needed) */
 const DEFAULT_PAYMENT_METHODS = [
@@ -103,6 +104,31 @@ function normalizeHostingDomainForMatch(d: string): string {
         .split('/')[0]
         .trim()
         .toLowerCase();
+}
+
+function buildCpanelUsername(primaryDomain: string, chosenUsername?: string): string {
+    const raw = String(chosenUsername || primaryDomain || '')
+        .replace(/^www\./i, '')
+        .split('/')[0]
+        .split('.')[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
+    let base = raw || 'user';
+    if (!/^[a-z]/.test(base)) {
+        const firstLetter = base.match(/[a-z]/)?.[0];
+        base = firstLetter ? `${firstLetter}${base.replace(/^[^a-z]+/, '')}` : `u${base}`;
+    }
+    base = base.replace(/[^a-z0-9]/g, '').slice(0, 12) || 'user';
+    if (!/^[a-z]/.test(base)) base = `u${base}`.slice(0, 12);
+    if (chosenUsername) return base.slice(0, 16);
+    const suffix = Math.floor(100 + Math.random() * 900).toString();
+    return `${base.slice(0, Math.max(1, 16 - suffix.length))}${suffix}`;
+}
+
+function assertValidCpanelUsername(username: string): void {
+    if (!/^[a-z][a-z0-9]{0,15}$/.test(username)) {
+        throw new Error('cPanel username must start with a letter and contain only lowercase letters/numbers, max 16 characters');
+    }
 }
 
 /**
@@ -1114,7 +1140,7 @@ class OrderService {
      */
     async createHostingAccountForOrderItem(
         orderItem: any,
-        order: any,
+        _order: any,
         clientEmail: string,
         options: {
             serverId?: string;
@@ -1134,7 +1160,6 @@ class OrderService {
             password: chosenPassword,
             primaryDomainOverride,
             updateOrderItemMeta = true,
-            sendWelcomeEmail = false,
             forceCreate = false,
         } = options;
 
@@ -1245,15 +1270,8 @@ class OrderService {
         }
         const whmClient = whmResult.client;
 
-        let username = chosenUsername;
-        if (!username) {
-            const base = primaryDomain.replace(/^www\./, '').split('/')[0].toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'user';
-            username = `${base}${Math.floor(100 + Math.random() * 900)}`.slice(0, 16);
-        }
-        username = String(username).trim().slice(0, 16);
-        if (!username) {
-            throw new Error('Username required');
-        }
+        let username = buildCpanelUsername(primaryDomain, chosenUsername);
+        assertValidCpanelUsername(username);
 
         const password = chosenPassword || generateHostingAccountPassword();
         const email = clientEmail || `admin@${primaryDomain}`;
@@ -1320,13 +1338,6 @@ class OrderService {
             });
         }
 
-        if (sendWelcomeEmail && clientEmail) {
-            try {
-                const clientName = (order as any)?.client?.name || 'Customer';
-                await emailService.sendWelcomeEmail(clientEmail, clientName);
-            } catch (_) { /* optional */ }
-        }
-
         const nameservers: string[] = [];
         let serverLocationForDetails: string | undefined;
         try {
@@ -1377,6 +1388,8 @@ class OrderService {
         registrar?: string;
         runModuleCreate?: boolean;
         sendWelcomeEmail?: boolean;
+        allowUnpaidTrial?: boolean;
+        trialDays?: number;
     }> }, _userId?: string) {
         ensureProvisioningProvidersRegistered();
         const order = await this.getOrderWithItems(orderId);
@@ -1384,13 +1397,10 @@ class OrderService {
 
         const orderDoc = await Order.findById(orderId).select('invoiceId').lean();
         const invoiceId = (order as any).invoiceId ?? orderDoc?.invoiceId;
-        if (!invoiceId) {
-            throw new Error('Order has no invoice; hosting can only be created after an invoice exists and is paid');
-        }
-        const invoice = await Invoice.findById(invoiceId).select('status balanceDue').lean();
-        if (!invoice || invoice.status !== InvoiceStatus.PAID || (invoice.balanceDue ?? 0) > 0) {
-            throw new Error('Invoice must be fully paid before creating hosting accounts');
-        }
+        const invoice = invoiceId
+            ? await Invoice.findById(invoiceId).select('status balanceDue').lean()
+            : null;
+        const invoicePaid = Boolean(invoice && invoice.status === InvoiceStatus.PAID && (invoice.balanceDue ?? 0) <= 0);
 
         const items = await this.getOrderItemsByOrderId(orderId);
         let clientEmail = (order as any).client?.email || '';
@@ -1402,7 +1412,7 @@ class OrderService {
         const results: Array<{ itemIndex: number; success: boolean; orderItemId?: string; serverId?: string; accountUsername?: string; error?: string; created?: boolean }> = [];
 
         for (const spec of body.items || []) {
-            const { itemIndex, orderItemId: specOrderItemId, serverId: chosenServerId, whmPackage: chosenPackage, username: chosenUsername, password: chosenPassword, registrar: chosenRegistrar, runModuleCreate, sendWelcomeEmail } = spec;
+            const { itemIndex, orderItemId: specOrderItemId, serverId: chosenServerId, whmPackage: chosenPackage, username: chosenUsername, password: chosenPassword, registrar: chosenRegistrar, runModuleCreate, sendWelcomeEmail, allowUnpaidTrial, trialDays } = spec;
             const item = specOrderItemId
                 ? items.find((i: any) => String(i._id) === String(specOrderItemId))
                 : items[itemIndex];
@@ -1412,6 +1422,19 @@ class OrderService {
             }
             if (!runModuleCreate) {
                 results.push({ itemIndex, success: true });
+                continue;
+            }
+            const isHostingItem = (item as any).type === ServiceType.HOSTING;
+            const isTrialProvision = !invoicePaid && isHostingItem && allowUnpaidTrial === true;
+            if (!invoicePaid && !isTrialProvision) {
+                results.push({
+                    itemIndex,
+                    orderItemId: String((item as any)._id || ''),
+                    success: false,
+                    error: isHostingItem
+                        ? 'Invoice is unpaid. Enable trial provisioning to create hosting before payment.'
+                        : 'Invoice must be fully paid before domain/module provisioning.',
+                });
                 continue;
             }
 
@@ -1482,6 +1505,15 @@ class OrderService {
                         nextMeta.lastModulePasswordEncrypted = encrypt(created.password);
                         nextMeta.lastModulePasswordUpdatedAt = new Date().toISOString();
                     }
+                    if (isTrialProvision) {
+                        const safeTrialDays = Math.min(Math.max(Number(trialDays) || 7, 1), 60);
+                        const trialEndsAt = new Date(Date.now() + safeTrialDays * 24 * 60 * 60 * 1000);
+                        nextMeta.trialProvisioned = true;
+                        nextMeta.provisionedWithoutPayment = true;
+                        nextMeta.trialProvisionedAt = new Date().toISOString();
+                        nextMeta.trialDays = safeTrialDays;
+                        nextMeta.trialEndsAt = trialEndsAt.toISOString();
+                    }
                     await serviceRepository.updateStatus((service as any)._id.toString(), ServiceStatus.ACTIVE, {
                         suspendedAt: null as any,
                         terminatedAt: null as any,
@@ -1493,6 +1525,9 @@ class OrderService {
                         } as any,
                         meta: nextMeta,
                     } as any);
+                    if (sendWelcomeEmail && created.password) {
+                        sendHostingAccountCreatedEmail((service as any)._id, created.password).catch(() => {});
+                    }
                     const { auditLogSafe } = await import('../activity-log/activity-log.service');
                     auditLogSafe({
                         message: created.actuallyCreated !== false ? `Hosting module created for order ${orderId}: ${created.accountUsername}@${created.primaryDomain}` : `Hosting module linked for order ${orderId}`,

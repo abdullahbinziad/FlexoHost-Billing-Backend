@@ -12,6 +12,7 @@ import provisioningWorker from '../jobs/provisioning.worker';
 import { getDetailPersister } from '../provisioning/detail-persisters';
 import logger from '../../../utils/logger';
 import { encrypt } from '../../../utils/encryption';
+import { sendHostingAccountCreatedEmail } from './hosting-account-email.service';
 
 /**
  * Handles the event when an invoice is fully paid.
@@ -111,6 +112,9 @@ export const handleInvoicePaid = async (invoiceId: string | mongoose.Types.Objec
                         } as any,
                         meta: nextInlineMeta,
                     } as any);
+                    if (created.password) {
+                        sendHostingAccountCreatedEmail(latestService._id as any, created.password).catch(() => {});
+                    }
                 }
                 inlineProvisioned++;
                 logger.info(`[Provisioning] Inline hosting provisioned for orderItem ${orderItemId}.`);

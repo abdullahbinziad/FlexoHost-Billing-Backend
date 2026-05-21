@@ -4,14 +4,14 @@
  */
 
 import config from '../../../config';
-import { getEmailBrandLogoCid } from '../../../utils/brand-assets';
+import { getBrandLogoForDarkBackgroundDataUri } from '../../../utils/brand-assets';
 import type { BrandProps } from './types';
 
 export const DEFAULT_BRAND: BrandProps = {
     companyName: config.app.companyName,
     supportEmail: config.app.supportEmail,
     websiteUrl: config.websiteUrl,
-    logoUrl: getEmailBrandLogoCid(),
+    logoUrl: getBrandLogoForDarkBackgroundDataUri(),
 };
 
 export function mergeBrandProps<T extends Record<string, unknown> = Record<string, unknown>>(

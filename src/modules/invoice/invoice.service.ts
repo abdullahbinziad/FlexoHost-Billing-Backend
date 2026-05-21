@@ -223,6 +223,7 @@ class InvoiceService {
             if (invoice.orderId) {
                 await handleInvoicePaid(invoice._id as any);
             }
+            await serviceLifecycleService.convertTrialServicesForPaidInvoice(invoice._id as any);
             await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
             await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
         }
@@ -424,6 +425,7 @@ class InvoiceService {
                 await handleInvoicePaid(invoice._id as any);
             }
             await affiliateService.processPaidInvoice(invoice._id.toString());
+            await serviceLifecycleService.convertTrialServicesForPaidInvoice(invoice._id as any);
             await serviceLifecycleService.onInvoicePaidUnsuspend(invoice._id as any);
             await serviceLifecycleService.applyRenewalPayment(invoice._id as any);
 
