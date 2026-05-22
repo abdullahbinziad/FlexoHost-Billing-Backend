@@ -7,15 +7,3 @@ export function getBrandLogoForDarkBackgroundDataUri(): string {
     return BRAND_LOGO_DARK_URL;
 }
 
-export function getBrandLogoForLightBackgroundDataUri(): string {
-    return BRAND_LOGO_DARK_URL;
-}
-
-export function getEmailBrandLogoCid(): string {
-    return BRAND_LOGO_DARK_URL;
-}
-
-/** Browser-renderable default for admin previews and sent emails. */
-export function getBrandLogoUrl(): string {
-    return getBrandLogoForDarkBackgroundDataUri();
-}

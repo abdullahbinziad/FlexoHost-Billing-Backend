@@ -7,7 +7,7 @@ import config from '../../../config';
 import type { IInvoiceDocument } from '../invoice.interface';
 import PaymentTransaction from '../../transaction/transaction.model';
 import { buildInvoiceHtml, type InvoicePdfData } from './invoice-pdf-html';
-import { getBrandLogoForLightBackgroundDataUri } from '../../../utils/brand-assets';
+import { getBrandLogoForDarkBackgroundDataUri } from '../../../utils/brand-assets';
 
 export type InvoiceForPdf = IInvoiceDocument;
 
@@ -84,7 +84,7 @@ export async function generateInvoicePdf(
     const inv = invoice as any;
     const transactions = options?.transactions ?? [];
     const data = toPdfData(inv, transactions);
-    const logoSrc = getBrandLogoForLightBackgroundDataUri();
+    const logoSrc = getBrandLogoForDarkBackgroundDataUri();
     const html = buildInvoiceHtml({
         ...data,
         logoSrc,
