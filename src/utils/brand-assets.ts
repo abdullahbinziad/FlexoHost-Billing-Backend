@@ -1,17 +1,7 @@
-import config from "../config";
-
-
-
-const WEBP_MIME = 'image/webp';
-    const baseUrl = config.frontendUrl;
+import config from '../config';
 
 const BRAND_LOGO_DARK_URL =
-`${baseUrl}/_next/image?url=%2Fimg%2Fcompany%2FFlexoHostHorizontalforDark.webp&w=256&q=75`;
-
-
-console.log('Brand logo URL for dark background:', BRAND_LOGO_DARK_URL);
- 
-
+    `${config.frontendUrl}/_next/image?url=%2Fimg%2Fcompany%2FFlexoHostHorizontalforDark.webp&w=256&q=75`;
 
 export function getBrandLogoForDarkBackgroundDataUri(): string {
     return BRAND_LOGO_DARK_URL;
