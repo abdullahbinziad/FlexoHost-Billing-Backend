@@ -22,6 +22,7 @@ import { InvoiceStatus } from '../../invoice/invoice.interface';
 import config from '../../../config';
 import domainService from '../../domain/domain.service';
 import { normalizeDomainFqdn } from '../../domain/utils/domain-display';
+import { adminAlertService } from '../../notification/admin-alert.service';
 
 let providersRegistered = false;
 const PROVISIONING_STEP_TIMEOUT_MS = config.provisioning.stepTimeoutMs;
@@ -264,6 +265,25 @@ export class ProvisioningWorker {
                 orderId: job.orderId?.toString(),
                 meta: { provider: result.providerName },
             });
+            adminAlertService.notify({
+                permission: serviceType === ServiceType.DOMAIN ? 'notifications:domain_alerts' : 'notifications:service_alerts',
+                category: serviceType === ServiceType.DOMAIN ? 'domain' : 'service',
+                severity: 'medium',
+                source: 'cron',
+                title: `${serviceType} provisioned`,
+                message: `${serviceType} provisioning completed for service ${(service as any).serviceNumber || serviceId}.`,
+                linkPath: serviceType === ServiceType.DOMAIN
+                    ? `/admin/clients/${clientIdStr}/domains/${serviceId}`
+                    : `/admin/clients/${clientIdStr}/hosting/${serviceId}`,
+                linkLabel: 'View service',
+                clientId: clientIdStr,
+                serviceId,
+                orderId: job.orderId?.toString(),
+                invoiceId: job.invoiceId?.toString(),
+                meta: { provider: result.providerName, serviceType },
+            }).catch((alertErr: any) => {
+                logger.warn('[Provisioning] Admin success alert failed:', alertErr?.message || alertErr);
+            });
 
             await orderService.finalizeOrderIfProvisioned(job.orderId.toString());
         } catch (provErr: any) {
@@ -287,6 +307,30 @@ export class ProvisioningWorker {
                 };
             }
             await serviceRepository.updateStatus(serviceId, ServiceStatus.FAILED, failedUpdate);
+            adminAlertService.notify({
+                permission: serviceType === ServiceType.DOMAIN ? 'notifications:domain_alerts' : 'notifications:service_alerts',
+                category: serviceType === ServiceType.DOMAIN ? 'domain' : 'service',
+                severity: 'high',
+                source: 'cron',
+                title: `${serviceType} provisioning failed`,
+                message: `${serviceType} provisioning failed for service ${(service as any).serviceNumber || serviceId}: ${errMsg}`,
+                linkPath: serviceType === ServiceType.DOMAIN
+                    ? `/admin/clients/${(job.clientId as any)?.toString?.()}/domains/${serviceId}`
+                    : `/admin/clients/${(job.clientId as any)?.toString?.()}/hosting/${serviceId}`,
+                linkLabel: 'View service',
+                clientId: (job.clientId as any)?.toString?.(),
+                serviceId,
+                orderId: job.orderId?.toString(),
+                invoiceId: job.invoiceId?.toString(),
+                email: {
+                    subject: `[Provisioning Alert] ${serviceType} provisioning failed`,
+                    html: `<p><strong>${serviceType} provisioning failed</strong></p><p>Service: ${(service as any).serviceNumber || serviceId}</p><p>Error: ${errMsg}</p>`,
+                    text: `${serviceType} provisioning failed. Service: ${(service as any).serviceNumber || serviceId}. Error: ${errMsg}`,
+                },
+                meta: { serviceType, error: errMsg },
+            }).catch((alertErr: any) => {
+                logger.warn('[Provisioning] Admin failure alert failed:', alertErr?.message || alertErr);
+            });
             throw provErr;
         }
     }

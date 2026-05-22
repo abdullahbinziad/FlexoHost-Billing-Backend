@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import Service from '../service.model';
 import Invoice from '../../invoice/invoice.model';
-import Client from '../../client/client.model';
 import ServiceActionJob from '../models/service-action-job.model';
 import RenewalLedger from '../models/renewal-ledger.model';
 import ServiceAuditLog from '../models/service-audit-log.model';
@@ -12,9 +11,7 @@ import { InvoiceStatus, InvoiceItemType } from '../../invoice/invoice.interface'
 import { getNextSequence, formatSequenceId } from '../../../models/counter.model';
 import { DEFAULT_CURRENCY } from '../../../config/currency.config';
 import { getBillingSettings } from '../../billing-settings/billing-settings.service';
-import config from '../../../config';
-import * as emailService from '../../email/email.service';
-import { getInvoicePdfBuffer } from '../../invoice/pdf/invoice-pdf.service';
+import { sendInvoiceCreatedEmail } from '../../invoice/invoice-email.service';
 import logger from '../../../utils/logger';
 import { addBillingCycleToDate } from '../utils/billing-cycle.util';
 
@@ -184,48 +181,11 @@ export class ServiceRenewalScheduler {
 
             // Send renewal invoice email to client
             try {
-                const clientDoc = await Client.findById(clientId).select('contactEmail firstName lastName').lean();
-                const clientEmail = (clientDoc as any)?.contactEmail || '';
-                if (clientEmail) {
-                    const customerName = clientDoc
-                        ? `${(clientDoc as any).firstName || ''} ${(clientDoc as any).lastName || ''}`.trim() || 'Customer'
-                        : 'Customer';
-                    const baseUrl = config.frontendUrl;
-                    const lineItems = invoiceItems.map((i: any) => ({ label: i.description || 'Item', amount: String(i.amount ?? 0) }));
-                    let attachments: { filename: string; content: Buffer }[] | undefined;
-                    try {
-                        const invDoc = await Invoice.findById(invoice._id).lean();
-                        if (invDoc) {
-                            const pdfBuffer = await getInvoicePdfBuffer(invDoc as any);
-                            attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
-                        }
-                    } catch (pdfErr: any) {
-                        logger.warn('[Renewal] PDF generation failed, sending email without attachment:', pdfErr?.message);
-                    }
-                    await emailService.sendTemplatedEmail({
-                        to: clientEmail,
-                        templateKey: 'billing.invoice_created',
-                        props: {
-                            customerName,
-                            invoiceNumber: invoice.invoiceNumber,
-                            dueDate: dueDate ? new Date(dueDate).toLocaleDateString() : 'N/A',
-                            amountDue: String(subTotal),
-                            currency: services[0].currency || DEFAULT_CURRENCY,
-                            invoiceUrl: `${baseUrl}/invoices/${invoice._id}`,
-                            billingUrl: `${baseUrl}/client`,
-                            lineItems,
-                        },
-                        attachments,
-                        logContext: {
-                            clientId,
-                            invoiceId: invoice._id?.toString?.(),
-                            source: 'cron',
-                            actorType: 'system',
-                            emailType: 'renewal_invoice_created',
-                            bodyPreview: `Renewal invoice ${invoice.invoiceNumber}`,
-                        },
-                    });
-                }
+                await sendInvoiceCreatedEmail(invoice, {
+                    source: 'cron',
+                    emailType: 'renewal_invoice_created',
+                    bodyPreview: `Renewal invoice ${invoice.invoiceNumber}`,
+                });
             } catch (emailErr: any) {
                 logger.warn('[Renewal] Invoice created email failed:', emailErr?.message || emailErr);
             }

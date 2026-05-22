@@ -12,8 +12,9 @@ import Server from '../server/server.model';
 import { serverService } from '../server/server.service';
 import invoiceService from '../invoice/invoice.service';
 import Invoice from '../invoice/invoice.model';
-import { getInvoicePdfBuffer } from '../invoice/pdf/invoice-pdf.service';
+import { buildInvoicePdfAttachment, sendInvoiceCreatedEmail } from '../invoice/invoice-email.service';
 import notificationService from '../notification/notification.service';
+import { adminAlertService } from '../notification/admin-alert.service';
 import * as emailService from '../email/email.service';
 import { buildCustomEmailHtml } from '../email/build-custom-email';
 import { promotionService } from '../promotion/promotion.service';
@@ -620,6 +621,27 @@ class OrderService {
                 orderId: order._id.toString(),
                 ...(invoice && { invoiceId: invoice._id.toString() }),
             });
+            adminAlertService.notify({
+                permission: 'notifications:order_alerts',
+                category: 'order',
+                severity: 'medium',
+                source: isAdminContext ? 'manual' : 'system',
+                title: `New order ${order.orderNumber}`,
+                message: `A new order was created for ${currency} ${order.total}.`,
+                linkPath: `/admin/orders/${order._id.toString()}`,
+                linkLabel: 'View order',
+                clientId: clientId.toString(),
+                orderId: order._id.toString(),
+                invoiceId: invoice?._id?.toString?.(),
+                meta: {
+                    orderNumber: order.orderNumber,
+                    currency,
+                    total: order.total,
+                    itemCount: orderItemsPayloads.length,
+                },
+            }).catch((error: any) => {
+                logger.warn('[Order] Admin order alert failed:', error?.message || error);
+            });
 
             const trackedReferralCode = typeof payload.referral === 'string' && payload.referral.trim()
                 ? payload.referral
@@ -680,6 +702,7 @@ class OrderService {
                             clientAreaUrl: `${baseUrl}/client`,
                             supportUrl: `${baseUrl}/support`,
                         },
+                        attachments: invoice ? await buildInvoicePdfAttachment(invoice) : undefined,
                     });
                     if (!orderConfirmResult.success) {
                         logger.warn(`[Order] Order confirmation email failed for ${clientEmail}: ${orderConfirmResult.error}`);
@@ -689,32 +712,9 @@ class OrderService {
                 }
                 if (invoice) {
                     try {
-                        const lineItems = (invoice.items || []).map((i: any) => ({
-                            label: i.description || 'Item',
-                            amount: String(i.amount ?? 0),
-                        }));
-                        if (lineItems.length === 0) lineItems.push({ label: 'Total', amount: String(invoice.total ?? 0) });
-                        let attachments: { filename: string; content: Buffer }[] | undefined;
-                        try {
-                            const pdfBuffer = await getInvoicePdfBuffer(invoice);
-                            attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
-                        } catch (pdfErr: any) {
-                            logger.warn('[Order] Invoice PDF generation failed, sending email without attachment:', pdfErr?.message);
-                        }
-                        const invoiceCreatedResult = await emailService.sendTemplatedEmail({
-                            to: clientEmail,
-                            templateKey: 'billing.invoice_created',
-                            props: {
-                                customerName,
-                                invoiceNumber: invoice.invoiceNumber,
-                                dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A',
-                                amountDue: String(invoice.balanceDue ?? invoice.total ?? 0),
-                                currency,
-                                invoiceUrl: `${baseUrl}/invoices/${invoice._id}`,
-                                billingUrl: `${baseUrl}/client`,
-                                lineItems,
-                            },
-                            attachments,
+                        const invoiceCreatedResult = await sendInvoiceCreatedEmail(invoice, {
+                            source: isAdminContext ? 'manual' : 'system',
+                            orderId: order._id.toString(),
                         });
                         if (!invoiceCreatedResult.success) {
                             logger.warn(`[Order] Invoice created email failed for ${clientEmail}: ${invoiceCreatedResult.error}`);

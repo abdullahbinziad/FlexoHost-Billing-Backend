@@ -14,6 +14,7 @@ import * as emailService from '../../email/email.service';
 import config from '../../../config';
 import logger from '../../../utils/logger';
 import crypto from 'crypto';
+import { adminAlertService } from '../../notification/admin-alert.service';
 
 export class ServiceActionWorker {
     async processQueuedJobs() {
@@ -77,6 +78,32 @@ export class ServiceActionWorker {
                 job.lockedAt = undefined;
                 job.lockOwner = undefined;
                 await job.save();
+                if (job.status === ProvisioningJobStatus.FAILED) {
+                    adminAlertService.notify({
+                        permission: 'notifications:service_alerts',
+                        category: 'service',
+                        severity: 'high',
+                        source: 'cron',
+                        title: `Service action failed - ${job.action}`,
+                        message: `${job.action} failed for service ${job.serviceId}: ${job.lastError}`,
+                        linkPath: '/admin/automation',
+                        linkLabel: 'Open automation monitor',
+                        serviceId: job.serviceId?.toString?.(),
+                        invoiceId: job.invoiceId?.toString?.(),
+                        email: {
+                            subject: `[Service Alert] ${job.action} failed`,
+                            html: `<p><strong>Service action failed</strong></p><p>Action: ${job.action}</p><p>Service: ${job.serviceId}</p><p>Error: ${job.lastError}</p>`,
+                            text: `Service action failed. Action: ${job.action}. Service: ${job.serviceId}. Error: ${job.lastError}`,
+                        },
+                        meta: {
+                            action: job.action,
+                            jobId: job._id?.toString?.(),
+                            error: job.lastError,
+                        },
+                    }).catch((alertErr: any) => {
+                        logger.warn('[ServiceAction] Admin failure alert failed:', alertErr?.message || alertErr);
+                    });
+                }
             }
         }
 

@@ -1,6 +1,14 @@
 import { Document, Model, Types } from 'mongoose';
 
-export type NotificationCategory = 'billing' | 'service' | 'support' | 'security';
+export type NotificationCategory =
+    | 'billing'
+    | 'payment'
+    | 'order'
+    | 'service'
+    | 'domain'
+    | 'automation'
+    | 'support'
+    | 'security';
 
 export interface INotification {
     userId: Types.ObjectId;
@@ -18,4 +26,3 @@ export interface INotification {
 export interface INotificationDocument extends INotification, Document {}
 
 export interface INotificationModel extends Model<INotificationDocument> {}
-

@@ -1,5 +1,6 @@
 FROM node:22.12.0-alpine AS base
 WORKDIR /app
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 FROM base AS deps
 COPY package*.json ./
@@ -18,6 +19,15 @@ FROM node:22.12.0-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=5001
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+RUN apk add --no-cache \
+    ca-certificates \
+    chromium \
+    freetype \
+    harfbuzz \
+    nss \
+    ttf-freefont
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist

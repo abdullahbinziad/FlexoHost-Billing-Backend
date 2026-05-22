@@ -12,6 +12,7 @@ import Client from '../../client/client.model';
 import config from '../../../config';
 import * as emailService from '../../email/email.service';
 import notificationService from '../../notification/notification.service';
+import { adminAlertService } from '../../notification/admin-alert.service';
 
 export class DomainRenewalWorker {
     async processQueuedJobs(): Promise<number> {
@@ -150,6 +151,29 @@ export class DomainRenewalWorker {
                 jobId: job._id.toString(),
             },
         });
+        adminAlertService.notify({
+            permission: 'notifications:domain_alerts',
+            category: 'domain',
+            severity: 'medium',
+            source: 'cron',
+            title: `Domain renewed - ${details.domainName}`,
+            message: `${details.domainName} renewed until ${new Date(expirationDate).toLocaleDateString()}.`,
+            linkPath: `/admin/clients/${(job.clientId as any)?.toString?.()}/domains/${job.serviceId.toString()}`,
+            linkLabel: 'View domain',
+            clientId: (job.clientId as any)?.toString?.(),
+            serviceId: job.serviceId.toString(),
+            invoiceId: job.invoiceId.toString(),
+            domainId: job.domainDetailsId?.toString?.(),
+            meta: {
+                domain: details.domainName,
+                years: job.years,
+                registrar: details.registrar,
+                expiresAt: expirationDate,
+                jobId: job._id.toString(),
+            },
+        }).catch((alertErr: any) => {
+            logger.warn('[DomainRenewal] Admin success alert failed:', alertErr?.message || alertErr);
+        });
 
         await this.sendRenewalSuccessEmail(job, invoice, details, expirationDate);
     }
@@ -181,6 +205,28 @@ export class DomainRenewalWorker {
             serviceId: job.serviceId.toString(),
             invoiceId: job.invoiceId.toString(),
             meta: { domain: job.domainName, jobId: job._id.toString() },
+        });
+        adminAlertService.notify({
+            permission: 'notifications:domain_alerts',
+            category: 'domain',
+            severity: 'high',
+            source: 'cron',
+            title: `Domain renewal failed - ${job.domainName}`,
+            message: `Automatic renewal for ${job.domainName} failed: ${reason}`,
+            linkPath: `/admin/clients/${(job.clientId as any)?.toString?.()}/domains/${job.serviceId.toString()}`,
+            linkLabel: 'View domain',
+            clientId: (job.clientId as any)?.toString?.(),
+            serviceId: job.serviceId.toString(),
+            invoiceId: job.invoiceId.toString(),
+            domainId: job.domainDetailsId?.toString?.(),
+            email: {
+                subject: `[Domain Alert] Renewal failed - ${job.domainName}`,
+                html: `<p><strong>Domain renewal failed</strong></p><p>Domain: ${job.domainName}</p><p>Error: ${reason}</p>`,
+                text: `Domain renewal failed. Domain: ${job.domainName}. Error: ${reason}`,
+            },
+            meta: { domain: job.domainName, jobId: job._id.toString(), error: reason },
+        }).catch((alertErr: any) => {
+            logger.warn('[DomainRenewal] Admin failure alert failed:', alertErr?.message || alertErr);
         });
 
         await this.sendRenewalFailedEmail(job);

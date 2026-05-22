@@ -1,22 +1,18 @@
 import Invoice from './invoice.model';
-import Client from '../client/client.model';
 import { IInvoice, IInvoiceDocument, InvoiceStatus, InvoiceItemType } from './invoice.interface';
 import ApiError from '../../utils/apiError';
 import { getNextSequence, formatSequenceId } from '../../models/counter.model';
 import { handleInvoicePaid } from '../services/core';
 import serviceLifecycleService from '../services/core/service-lifecycle.service';
-import { notificationProvider } from '../services/providers/notification.provider';
 import { buildSort, getPagination } from '../../utils/pagination';
 import PaymentTransaction from '../transaction/transaction.model';
 import { TransactionStatus, TransactionType } from '../transaction/transaction.interface';
 import notificationService from '../notification/notification.service';
-import * as emailService from '../email/email.service';
-import { getInvoicePdfBuffer } from './pdf/invoice-pdf.service';
-import config from '../../config';
-import logger from '../../utils/logger';
+import { adminAlertService } from '../notification/admin-alert.service';
 import { BASE_REPORTING_CURRENCY } from '../../config/currency.config';
 import { buildInvoiceFxSnapshot, fallbackToBase, getRateFromBaseToDisplay } from '../exchange-rate/fx.service';
 import { affiliateService } from '../affiliate/affiliate.service';
+import { sendInvoiceCreatedEmail, sendInvoiceReminderEmail, sendPaymentSuccessEmail } from './invoice-email.service';
 import type { ClientSession } from 'mongoose';
 
 interface CreateInvoiceOptions {
@@ -112,48 +108,7 @@ class InvoiceService {
         await this.setInvoiceFxSnapshot(invoice, { session: options.session });
 
         if ((options.sendEmail ?? true) && !invoice.orderId && !options.session) {
-            const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
-            const clientEmail = clientDoc?.contactEmail || '';
-            const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
-            const baseUrl = config.frontendUrl;
-            if (clientEmail) {
-                try {
-                    const lineItems = (invoice.items || []).map((i: any) => ({ label: i.description || 'Item', amount: String(i.amount ?? 0) }));
-                    if (lineItems.length === 0) lineItems.push({ label: 'Total', amount: String(invoice.total ?? 0) });
-                    let attachments: { filename: string; content: Buffer }[] | undefined;
-                    try {
-                        const pdfBuffer = await getInvoicePdfBuffer(invoice);
-                        attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
-                    } catch (pdfErr: any) {
-                        logger.warn('[Invoice] PDF generation failed, sending email without attachment:', pdfErr?.message);
-                    }
-                    await emailService.sendTemplatedEmail({
-                        to: clientEmail,
-                        templateKey: 'billing.invoice_created',
-                        props: {
-                            customerName,
-                            invoiceNumber: invoice.invoiceNumber,
-                            dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A',
-                            amountDue: String(invoice.balanceDue ?? invoice.total ?? 0),
-                            currency: invoice.currency || 'BDT',
-                            invoiceUrl: `${baseUrl}/invoices/${invoice._id}`,
-                            billingUrl: `${baseUrl}/client`,
-                            lineItems,
-                        },
-                        attachments,
-                        logContext: {
-                            clientId: invoice.clientId?.toString?.(),
-                            invoiceId: invoice._id?.toString?.(),
-                            source: 'system',
-                            actorType: 'system',
-                            emailType: 'billing.invoice_created',
-                            bodyPreview: `Invoice ${invoice.invoiceNumber}`,
-                        },
-                    });
-                } catch (e: any) {
-                    logger.warn('[Invoice] Invoice created email failed:', e?.message || e);
-                }
-            }
+            await sendInvoiceCreatedEmail(invoice, { source: 'system' }).catch(() => undefined);
         }
 
         return invoice;
@@ -235,42 +190,13 @@ class InvoiceService {
         }
 
         if (status === InvoiceStatus.PAID) {
-            const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
-            const clientEmail = clientDoc?.contactEmail || '';
-            if (clientEmail) {
-                const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
-                const baseUrl = config.frontendUrl;
-                let attachments: { filename: string; content: Buffer }[] | undefined;
-                try {
-                    const pdfBuffer = await getInvoicePdfBuffer(invoice);
-                    attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
-                } catch (pdfErr: any) {
-                    logger.warn('[Invoice] Payment success email PDF failed (status update):', pdfErr?.message);
-                }
-                emailService.sendTemplatedEmail({
-                    to: clientEmail,
-                    templateKey: 'billing.payment_success',
-                    props: {
-                        customerName,
-                        invoiceNumber: invoice.invoiceNumber,
-                        transactionId: 'N/A',
-                        amountPaid: String(invoice.total ?? 0),
-                        currency: invoice.currency || 'BDT',
-                        paymentDate: new Date().toLocaleDateString(),
-                        paymentMethodLabel: 'Marked as paid',
-                        billingUrl: `${baseUrl}/client`,
-                    },
-                    attachments,
-                    logContext: {
-                        clientId: invoice.clientId?.toString?.(),
-                        invoiceId: invoice._id?.toString?.(),
-                        source: 'system',
-                        actorType: 'system',
-                        emailType: 'billing.payment_success',
-                        bodyPreview: `Payment received for ${invoice.invoiceNumber}`,
-                    },
-                }).catch(() => {});
-            }
+            sendPaymentSuccessEmail(invoice, {
+                transactionId: 'N/A',
+                amountPaid: invoice.total ?? 0,
+                paymentDate: new Date(),
+                paymentMethodLabel: 'Marked as paid',
+                source: 'system',
+            }).catch(() => {});
         }
 
         return invoice;
@@ -343,8 +269,22 @@ class InvoiceService {
             'invoice-payment-confirmation': { subject: `Payment Received - Invoice ${invNum}`, template: 'invoice-payment-confirmation' },
             'invoice-modified': { subject: `Invoice ${invNum} Modified`, template: 'invoice-modified' },
         };
-        const config = templateMap[template || ''] || templateMap['invoice-payment-reminder'];
-        const sent = await notificationProvider.sendEmail(email, config.subject, config.template, { invoice });
+        const selected = templateMap[template || ''] || templateMap['invoice-payment-reminder'];
+        const result = selected.template === 'invoice-created' || selected.template === 'invoice-modified'
+            ? await sendInvoiceCreatedEmail(invoice as any, {
+                source: 'manual',
+                emailType: selected.template,
+                bodyPreview: `Invoice ${invoice.invoiceNumber}`,
+            })
+            : selected.template === 'invoice-payment-confirmation'
+                ? await sendPaymentSuccessEmail(invoice as any, {
+                    source: 'manual',
+                    transactionId: 'N/A',
+                    amountPaid: invoice.total ?? 0,
+                    paymentMethodLabel: invoice.paymentMethod || 'Manual',
+                })
+                : await sendInvoiceReminderEmail(invoice as any, selected.template, { source: 'manual' });
+        const sent = Boolean(result.success);
         return { sent, message: sent ? 'Reminder sent successfully' : 'Failed to send reminder' };
     }
 
@@ -420,6 +360,26 @@ class InvoiceService {
             },
         });
 
+        adminAlertService.notify({
+            permission: 'notifications:payment_alerts',
+            category: 'payment',
+            severity: fullyPaid ? 'medium' : 'low',
+            source: 'manual',
+            title: `Manual payment recorded - ${invoice.invoiceNumber}`,
+            message: `Manual payment of ${amount} ${invoice.currency} was recorded via ${data.paymentMethod}.`,
+            linkPath: `/admin/billing/invoices/${invoice._id.toString()}`,
+            linkLabel: 'View invoice',
+            clientId: invoice.clientId?.toString?.(),
+            invoiceId: invoice._id.toString(),
+            orderId: invoice.orderId?.toString?.(),
+            meta: {
+                amount,
+                paymentMethod: data.paymentMethod,
+                fullyPaid,
+                transactionId: data.transactionId ? '[REDACTED]' : undefined,
+            },
+        }).catch(() => undefined);
+
         if (fullyPaid) {
             if (invoice.orderId) {
                 await handleInvoicePaid(invoice._id as any);
@@ -444,55 +404,26 @@ class InvoiceService {
                 },
             });
 
-            const clientDoc = await Client.findById(invoice.clientId).select('contactEmail firstName lastName').lean();
-            const clientEmail = clientDoc?.contactEmail || '';
-            const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
-            const baseUrl = config.frontendUrl;
-            if (clientEmail && data.sendEmail !== false) {
-                let attachments: { filename: string; content: Buffer }[] | undefined;
-                try {
-                    const pdfBuffer = await getInvoicePdfBuffer(invoice);
-                    attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
-                } catch (pdfErr: any) {
-                    logger.warn('[Invoice] Payment success email PDF failed:', pdfErr?.message);
-                }
-                emailService.sendTemplatedEmail({
-                    to: clientEmail,
-                    templateKey: 'billing.payment_success',
-                    props: {
-                        customerName,
-                        invoiceNumber: invoice.invoiceNumber,
-                        transactionId: data.transactionId || 'N/A',
-                        amountPaid: String(amount),
-                        currency: invoice.currency || 'BDT',
-                        paymentDate: new Date().toLocaleDateString(),
-                        paymentMethodLabel: data.paymentMethod || 'Manual',
-                        billingUrl: `${baseUrl}/client`,
-                    },
-                    attachments,
+            if (data.sendEmail !== false) {
+                sendPaymentSuccessEmail(invoice, {
+                    transactionId: data.transactionId || 'N/A',
+                    amountPaid: amount,
+                    paymentDate,
+                    paymentMethodLabel: data.paymentMethod || 'Manual',
+                    source: 'manual',
                 }).catch(() => {});
             }
         }
 
-        // Only send via notificationProvider when sendEmail requested AND we did not already send (avoids duplicate when fullyPaid)
+        // Only send a separate partial-payment receipt when requested and the invoice is not fully paid.
         if (data.sendEmail && !fullyPaid) {
-            try {
-                const inv = await Invoice.findById(id)
-                    .populate({ path: 'clientId', select: 'contactEmail user', populate: { path: 'user', select: 'email' } })
-                    .lean();
-                const client = (inv as any)?.clientId;
-                const email = client?.contactEmail || client?.user?.email;
-                if (email) {
-                    const emailSubject = `Payment Received - Invoice ${invoice.invoiceNumber}`;
-                    await notificationProvider.sendEmail(email, emailSubject, 'invoice-payment-confirmation', {
-                        invoice: inv,
-                        amount: data.amount,
-                        transactionId: data.transactionId,
-                    });
-                }
-            } catch {
-                // Don't fail the payment if email fails
-            }
+            sendPaymentSuccessEmail(invoice, {
+                transactionId: data.transactionId || 'N/A',
+                amountPaid: amount,
+                paymentDate,
+                paymentMethodLabel: data.paymentMethod || 'Manual',
+                source: 'manual',
+            }).catch(() => {});
         }
 
         return invoice;

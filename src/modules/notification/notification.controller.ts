@@ -25,7 +25,7 @@ class NotificationController {
         const filter: Record<string, any> = { userId };
         if (read === 'true') filter.read = true;
         else if (read === 'false') filter.read = false;
-        if (category && ['billing', 'service', 'support', 'security'].includes(category)) {
+        if (category && ['billing', 'payment', 'order', 'service', 'domain', 'automation', 'support', 'security'].includes(category)) {
             filter.category = category;
         }
 
@@ -120,4 +120,3 @@ class NotificationController {
 }
 
 export default new NotificationController();
-

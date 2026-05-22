@@ -1,7 +1,7 @@
 import Invoice from '../../invoice/invoice.model';
 import InvoiceReminderLog from '../../invoice/invoice-reminder-log.model';
-import { notificationProvider } from '../providers/notification.provider';
 import { InvoiceStatus, InvoiceItemType } from '../../invoice/invoice.interface';
+import { sendInvoiceReminderEmail, sendLateFeeAppliedEmail } from '../../invoice/invoice-email.service';
 import { auditLogSafe } from '../../activity-log/activity-log.service';
 import logger from '../../../utils/logger';
 import { getBillingSettings } from '../../billing-settings/billing-settings.service';
@@ -159,6 +159,18 @@ export class InvoiceReminderScheduler {
                 invoiceId: inv._id.toString(),
                 meta: { lateFeeAmount: feeAmount, overdueExtraChargeDays: extraDays },
             });
+
+            try {
+                const result = await sendLateFeeAppliedEmail(inv, {
+                    lateFeeAmount: feeAmount,
+                    source: 'cron',
+                });
+                if (!result.success) {
+                    logger.warn(`[InvoiceReminder] Late fee email failed for invoice ${inv._id}: ${result.error}`);
+                }
+            } catch (emailErr: any) {
+                logger.warn(`[InvoiceReminder] Late fee email error for invoice ${inv._id}:`, emailErr?.message || emailErr);
+            }
         }
 
         if (applied > 0) {
@@ -197,7 +209,6 @@ export class InvoiceReminderScheduler {
             const reminderConfig = this.resolveReminder(diffDays, settings);
             if (!reminderConfig) continue;
             const reminderTargetType = reminderConfig.reminderType;
-            const emailSubject = `${reminderConfig.emailSubject}: ${invoice.invoiceNumber}`;
             const emailTemplate = reminderConfig.emailTemplate;
 
             const existingLog = await InvoiceReminderLog.findOne({
@@ -207,21 +218,15 @@ export class InvoiceReminderScheduler {
 
             if (!existingLog) {
                 try {
-                    const client = invoice.clientId as any;
-                    const clientEmail = client?.contactEmail || client?.user?.email;
-                    if (!clientEmail) {
-                        logger.warn(`[InvoiceReminder] No email for invoice ${invoice._id}, skipping`);
-                        continue;
-                    }
-                    const sent = await notificationProvider.sendEmail(
-                        clientEmail,
-                        emailSubject,
-                        emailTemplate,
-                        { invoice }
-                    );
+                    const sentResult = await sendInvoiceReminderEmail(invoice as any, emailTemplate, {
+                        source: 'cron',
+                        daysOverdue: diffDays > 0 ? diffDays : 0,
+                    });
+                    const sent = Boolean(sentResult.success);
 
                     if (!sent) {
                         sendFailedCount++;
+                        logger.warn(`[InvoiceReminder] Reminder email failed for invoice ${invoice._id}: ${sentResult.error}`);
                     }
 
                     if (sent) {

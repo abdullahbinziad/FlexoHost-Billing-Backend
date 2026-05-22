@@ -128,7 +128,7 @@ class AutomationRunService {
             alertsEnabled: config.automationAlerts.enabled,
             alertThreshold: config.automationAlerts.failureThreshold,
             alertChannels: {
-                email: config.automationAlerts.emailTo.length > 0,
+                email: true,
                 webhook: Boolean(config.automationAlerts.webhookUrl),
             },
             tasks: summaries,

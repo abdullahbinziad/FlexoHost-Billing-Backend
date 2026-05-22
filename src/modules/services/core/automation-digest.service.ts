@@ -1,7 +1,6 @@
 import config from '../../../config';
 import { escapeHtml } from '../../../utils/string.util';
-import emailService from '../../email/email.service';
-import logger from '../../../utils/logger';
+import { adminAlertService } from '../../notification/admin-alert.service';
 import AutomationDigestLog from '../models/automation-digest-log.model';
 import { automationReportingService } from './automation-reporting.service';
 import { getDailyActionsStatsForRange } from '../../dashboard/dashboard.service';
@@ -28,12 +27,8 @@ export class AutomationDigestService {
     }
 
     async sendLatestDigest(): Promise<Record<string, unknown>> {
-        const recipients = config.automationDigest.emailTo;
         if (!config.automationDigest.enabled) {
             return { skipped: true, reason: 'digest_disabled' };
-        }
-        if (recipients.length === 0) {
-            return { skipped: true, reason: 'no_recipients' };
         }
 
         const { start, end } = this.resolveCompletedWindow();
@@ -137,37 +132,42 @@ export class AutomationDigestService {
             `Dashboard: ${dashboardUrl}`,
         ].join('\n');
 
-        let emailsSent = 0;
-        for (const recipient of recipients) {
-            const result = await emailService.sendEmail({
-                to: recipient,
-                subject,
-                html,
-                text,
-            });
-            if (result.success) {
-                emailsSent += 1;
-            } else {
-                logger.warn(`[AutomationDigest] Failed sending digest to ${recipient}: ${result.error || 'Unknown error'}`);
-            }
-        }
+        const alertResult = await adminAlertService.notify({
+            permission: 'notifications:automation_digest',
+            category: 'automation',
+            severity: failureRuns > 0 ? 'high' : 'low',
+            source: 'cron',
+            title: 'Automation digest ready',
+            message: `Automation digest for ${formatDateTime(start)} to ${formatDateTime(new Date(end.getTime() - 1))}: ${successRuns} success run(s), ${failureRuns} failure run(s).`,
+            linkPath: '/admin/automation',
+            linkLabel: 'Open automation monitor',
+            email: { subject, html, text },
+            meta: {
+                periodStart: start.toISOString(),
+                periodEnd: end.toISOString(),
+                successRuns,
+                failureRuns,
+                invoicesGenerated: dailyStats.invoices.generated,
+                remindersSent: dailyStats.invoiceReminders.sent,
+            },
+        });
 
         await AutomationDigestLog.create({
             taskKey: 'digest-email',
             periodStart: start,
             periodEnd: end,
-            recipientCount: recipients.length,
+            recipientCount: alertResult.recipientCount,
             sentAt: new Date(),
             meta: {
-                emailsSent,
+                emailsSent: alertResult.emailCount,
                 successRuns,
                 failureRuns,
             },
         });
 
         return {
-            emailsSent,
-            recipientCount: recipients.length,
+            emailsSent: alertResult.emailCount,
+            recipientCount: alertResult.recipientCount,
             successRuns,
             failureRuns,
             periodStart: start.toISOString(),

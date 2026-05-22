@@ -20,7 +20,16 @@ const notificationSchema = new Schema<INotificationDocument, INotificationModel>
         },
         category: {
             type: String,
-            enum: ['billing', 'service', 'support', 'security'] satisfies NotificationCategory[],
+            enum: [
+                'billing',
+                'payment',
+                'order',
+                'service',
+                'domain',
+                'automation',
+                'support',
+                'security',
+            ] satisfies NotificationCategory[],
             required: true,
         },
         title: {
@@ -62,4 +71,3 @@ const Notification = mongoose.model<INotificationDocument, INotificationModel>(
 );
 
 export default Notification;
-

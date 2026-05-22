@@ -10,7 +10,8 @@ export type PermissionCategory =
     | 'billing'
     | 'infrastructure'
     | 'support'
-    | 'settings';
+    | 'settings'
+    | 'notifications';
 
 export interface PermissionMeta {
     id: string;
@@ -207,6 +208,17 @@ export const PERMISSION_META: Record<string, PermissionMeta[]> = {
     ],
     payment: [
         { id: 'payment:mock_success', label: 'Mock payment success (testing)', category: 'billing', riskLevel: 'high' },
+    ],
+    notifications: [
+        { id: 'notifications:automation_digest', label: 'Receive automation digest emails', category: 'notifications' },
+        { id: 'notifications:automation_failure', label: 'Receive automation failure/recovery alerts', category: 'notifications', riskLevel: 'high' },
+        { id: 'notifications:order_alerts', label: 'Receive order alerts', category: 'notifications' },
+        { id: 'notifications:invoice_alerts', label: 'Receive invoice alerts', category: 'notifications' },
+        { id: 'notifications:payment_alerts', label: 'Receive payment alerts', category: 'notifications', riskLevel: 'high' },
+        { id: 'notifications:service_alerts', label: 'Receive service/provisioning alerts', category: 'notifications', riskLevel: 'high' },
+        { id: 'notifications:domain_alerts', label: 'Receive domain alerts', category: 'notifications', riskLevel: 'high' },
+        { id: 'notifications:support_alerts', label: 'Receive support alerts', category: 'notifications' },
+        { id: 'notifications:security_alerts', label: 'Receive security alerts', category: 'notifications', riskLevel: 'high' },
     ],
 };
 

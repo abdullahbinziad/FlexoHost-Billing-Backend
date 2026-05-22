@@ -15,12 +15,12 @@ import PaymentTransaction from '../transaction/transaction.model';
 import { TransactionStatus, TransactionType } from '../transaction/transaction.interface';
 import { buildPaymentFxSnapshot } from '../exchange-rate/fx.service';
 import notificationService from '../notification/notification.service';
-import * as emailService from '../email/email.service';
-import { getInvoicePdfBuffer } from '../invoice/pdf/invoice-pdf.service';
 import config from '../../config';
 import logger from '../../utils/logger';
 import { affiliateService } from '../affiliate/affiliate.service';
 import { assertPaymentMatchesInvoice } from './payment-validation.util';
+import { sendPaymentSuccessEmail } from '../invoice/invoice-email.service';
+import { adminAlertService } from '../notification/admin-alert.service';
 
 class PaymentService {
     private gateways: Map<string, IPaymentGateway> = new Map();
@@ -375,36 +375,13 @@ class PaymentService {
                         tran_id: transactionId,
                     },
                 });
-                const clientEmail = clientDoc?.contactEmail || '';
-                const customerName = clientDoc ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim() || 'Customer' : 'Customer';
-                const baseUrl = config.frontendUrl;
-                if (clientEmail) {
-                    let attachments: { filename: string; content: Buffer }[] | undefined;
-                    try {
-                        const paidInvoice = await Invoice.findById(invoice._id).lean();
-                        if (paidInvoice) {
-                            const pdfBuffer = await getInvoicePdfBuffer(paidInvoice as any);
-                            attachments = [{ filename: `Invoice-${invoice.invoiceNumber}.pdf`, content: pdfBuffer }];
-                        }
-                    } catch (pdfErr: any) {
-                        logger.warn('[Payment] Invoice PDF for email failed:', pdfErr?.message);
-                    }
-                    emailService.sendTemplatedEmail({
-                        to: clientEmail,
-                        templateKey: 'billing.payment_success',
-                        props: {
-                            customerName,
-                            invoiceNumber: invoice.invoiceNumber,
-                            transactionId: transactionId || 'N/A',
-                            amountPaid: String(amount),
-                            currency: currency || invoice.currency || 'BDT',
-                            paymentDate: new Date().toLocaleDateString(),
-                            paymentMethodLabel: gatewayId === 'sslcommerz' ? 'Card / Mobile Banking' : gatewayId,
-                            billingUrl: `${baseUrl}/client`,
-                        },
-                        attachments,
-                    }).catch(() => {});
-                }
+                sendPaymentSuccessEmail(invoice._id.toString(), {
+                    transactionId: transactionId || 'N/A',
+                    amountPaid: amount,
+                    paymentDate: new Date(),
+                    paymentMethodLabel: gatewayId === 'sslcommerz' ? 'Card / Mobile Banking' : gatewayId,
+                    source: 'webhook',
+                }).catch(() => {});
 
                 const { auditLogSafe } = await import('../activity-log/activity-log.service');
                 auditLogSafe({
@@ -417,6 +394,27 @@ class PaymentService {
                     invoiceId: invoice._id.toString(),
                     status: 'success',
                     meta: { gateway: gatewayId, transactionId: transactionId ? '[REDACTED]' : undefined },
+                });
+                adminAlertService.notify({
+                    permission: 'notifications:payment_alerts',
+                    category: 'payment',
+                    severity: 'medium',
+                    source: 'webhook',
+                    title: `Payment received - ${invoice.invoiceNumber}`,
+                    message: `Payment of ${amount} ${currency} was received via ${gatewayId}.`,
+                    linkPath: `/admin/billing/invoices/${invoice._id.toString()}`,
+                    linkLabel: 'View invoice',
+                    clientId: (invoice.clientId as any)?.toString(),
+                    invoiceId: invoice._id.toString(),
+                    orderId: invoice.orderId?.toString?.(),
+                    meta: {
+                        gateway: gatewayId,
+                        amount,
+                        currency,
+                        transactionId: transactionId ? '[REDACTED]' : undefined,
+                    },
+                }).catch((alertErr: any) => {
+                    logger.warn('[Payment] Admin payment alert failed:', alertErr?.message || alertErr);
                 });
 
                 return { message: 'Payment successful', invoiceId: invoice._id, tran_id: transactionId };
@@ -452,6 +450,26 @@ class PaymentService {
                 clientId,
                 invoiceId: invoiceId ? String(invoiceId) : undefined,
                 meta: { gateway: gatewayName || this.defaultGateway, validationStatus: result?.status } as Record<string, unknown>,
+            });
+            adminAlertService.notify({
+                permission: 'notifications:payment_alerts',
+                category: 'payment',
+                severity: 'high',
+                source: 'webhook',
+                title: 'Payment failed or invalid',
+                message: `Payment validation failed for invoice ${invoiceId || 'unknown'} via ${gatewayName || this.defaultGateway}.`,
+                linkPath: invoiceId ? `/admin/billing/invoices/${invoiceId}` : '/admin/billing/transactions',
+                linkLabel: invoiceId ? 'View invoice' : 'View transactions',
+                clientId,
+                invoiceId: invoiceId ? String(invoiceId) : undefined,
+                email: {
+                    subject: `[Payment Alert] Payment failed for invoice ${invoiceId || 'unknown'}`,
+                    html: `<p><strong>Payment failed or invalid</strong></p><p>Invoice: ${invoiceId || 'unknown'}</p><p>Gateway: ${gatewayName || this.defaultGateway}</p><p>Status: ${result?.status || 'unknown'}</p>`,
+                    text: `Payment failed or invalid. Invoice: ${invoiceId || 'unknown'}. Gateway: ${gatewayName || this.defaultGateway}. Status: ${result?.status || 'unknown'}.`,
+                },
+                meta: { gateway: gatewayName || this.defaultGateway, validationStatus: result?.status },
+            }).catch((alertErr: any) => {
+                logger.warn('[Payment] Admin payment failure alert failed:', alertErr?.message || alertErr);
             });
             throw new ApiError(400, 'Payment validation failed');
         }
@@ -538,6 +556,13 @@ class PaymentService {
                 await serviceLifecycleService.convertTrialServicesForPaidInvoice(invId);
                 await serviceLifecycleService.onInvoicePaidUnsuspend(invId);
                 await serviceLifecycleService.applyRenewalPayment(invId);
+                sendPaymentSuccessEmail(invId.toString(), {
+                    transactionId: order.meta.transactionId || 'N/A',
+                    amountPaid: updatedInvoice?.total,
+                    paymentDate: new Date(),
+                    paymentMethodLabel: 'Mock payment',
+                    source: 'system',
+                }).catch(() => {});
             }
 
             return { message: 'Payment processed successfully', orderId };

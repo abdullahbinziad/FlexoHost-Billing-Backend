@@ -4,6 +4,7 @@ import ServiceAuditLog from '../models/service-audit-log.model';
 import { ServiceType, ServiceStatus } from '../types/enums';
 import { registrarAudit } from '../../domain/registrar/registrar-audit';
 import { domainRegistrarService } from '../../domain/registrar/domain-registrar.service';
+import { adminAlertService } from '../../notification/admin-alert.service';
 
 export class DomainSyncScheduler {
 
@@ -47,6 +48,20 @@ export class DomainSyncScheduler {
                     if (transferState.expiresAt) updates.expiresAt = transferState.expiresAt;
                     if (transferState.eppStatusCodes) updates.eppStatusCodes = transferState.eppStatusCodes;
                     completedCount++;
+                    adminAlertService.notify({
+                        permission: 'notifications:domain_alerts',
+                        category: 'domain',
+                        severity: 'medium',
+                        source: 'cron',
+                        title: `Domain transfer completed - ${domainRef.domainName}`,
+                        message: `Transfer completed for ${domainRef.domainName}.`,
+                        linkPath: `/admin/clients/${(parentService.clientId as any)?.toString?.()}/domains/${parentService._id.toString()}`,
+                        linkLabel: 'View domain',
+                        clientId: (parentService.clientId as any)?.toString?.(),
+                        serviceId: parentService._id.toString(),
+                        domainId: domainRef._id.toString(),
+                        meta: { domain: domainRef.domainName, registrar: domainRef.registrar },
+                    }).catch(() => undefined);
                 } else if (
                     transferState.status === DomainTransferStatus.REJECTED ||
                     transferState.status === DomainTransferStatus.CANCELLED
@@ -66,6 +81,25 @@ export class DomainSyncScheduler {
                         beforeSnapshot: { transferStatus: DomainTransferStatus.PENDING },
                         afterSnapshot: { transferStatus: transferState.status, reason: transferState.reason || 'Unknown' }
                     });
+                    adminAlertService.notify({
+                        permission: 'notifications:domain_alerts',
+                        category: 'domain',
+                        severity: 'high',
+                        source: 'cron',
+                        title: `Domain transfer ${transferState.status.toLowerCase()} - ${domainRef.domainName}`,
+                        message: `Transfer for ${domainRef.domainName} was ${transferState.status.toLowerCase()}: ${transferState.reason || 'Unknown reason'}`,
+                        linkPath: `/admin/clients/${(parentService.clientId as any)?.toString?.()}/domains/${parentService._id.toString()}`,
+                        linkLabel: 'View domain',
+                        clientId: (parentService.clientId as any)?.toString?.(),
+                        serviceId: parentService._id.toString(),
+                        domainId: domainRef._id.toString(),
+                        email: {
+                            subject: `[Domain Alert] Transfer ${transferState.status.toLowerCase()} - ${domainRef.domainName}`,
+                            html: `<p><strong>Domain transfer ${transferState.status.toLowerCase()}</strong></p><p>Domain: ${domainRef.domainName}</p><p>Reason: ${transferState.reason || 'Unknown'}</p>`,
+                            text: `Domain transfer ${transferState.status.toLowerCase()}. Domain: ${domainRef.domainName}. Reason: ${transferState.reason || 'Unknown'}`,
+                        },
+                        meta: { domain: domainRef.domainName, status: transferState.status, reason: transferState.reason },
+                    }).catch(() => undefined);
                 }
 
                 updates.lastRegistrarSyncAt = new Date();
@@ -155,6 +189,30 @@ export class DomainSyncScheduler {
                             beforeSnapshot: { expiresAt: domainData.expiresAt },
                             afterSnapshot: { expiresAt: liveInfo.expiryDate, diffDays }
                         });
+                        adminAlertService.notify({
+                            permission: 'notifications:domain_alerts',
+                            category: 'domain',
+                            severity: 'high',
+                            source: 'cron',
+                            title: `Domain expiry drift - ${domainData.domainName}`,
+                            message: `${domainData.domainName} expiry differs from registrar by ${diffDays.toFixed(1)} days.`,
+                            linkPath: `/admin/clients/${(parentService.clientId as any)?.toString?.()}/domains/${parentService._id.toString()}`,
+                            linkLabel: 'View domain',
+                            clientId: (parentService.clientId as any)?.toString?.(),
+                            serviceId: parentService._id.toString(),
+                            domainId: domainData._id.toString(),
+                            email: {
+                                subject: `[Domain Alert] Expiry drift - ${domainData.domainName}`,
+                                html: `<p><strong>Domain expiry drift detected</strong></p><p>Domain: ${domainData.domainName}</p><p>Difference: ${diffDays.toFixed(1)} days</p>`,
+                                text: `Domain expiry drift detected. Domain: ${domainData.domainName}. Difference: ${diffDays.toFixed(1)} days.`,
+                            },
+                            meta: {
+                                domain: domainData.domainName,
+                                storedExpiresAt: domainData.expiresAt,
+                                registrarExpiresAt: liveInfo.expiryDate,
+                                diffDays,
+                            },
+                        }).catch(() => undefined);
                     }
                 }
 
