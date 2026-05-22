@@ -1,48 +1,37 @@
-import fs from 'fs';
-import path from 'path';
+import config from "../config";
+
+
 
 const WEBP_MIME = 'image/webp';
+    const baseUrl = config.frontendUrl;
 
-function resolveBrandAsset(filename: string): string {
-    const candidates = [
-        path.resolve(process.cwd(), 'assets/brand', filename),
-        path.resolve(process.cwd(), 'src/assets/brand', filename),
-        path.resolve(__dirname, '../assets/brand', filename),
-    ];
-    const found = candidates.find((candidate) => fs.existsSync(candidate));
-    if (!found) throw new Error(`Brand asset not found: ${filename}`);
-    return found;
-}
+const BRAND_LOGO_DARK_URL =
+`${baseUrl}/_next/image?url=%2Fimg%2Fcompany%2FFlexoHostHorizontalforDark.webp&w=256&q=75`;
 
-function readBrandAsset(filename: string): Buffer {
-    return fs.readFileSync(resolveBrandAsset(filename));
-}
 
-function dataUri(filename: string): string {
-    return `data:${WEBP_MIME};base64,${readBrandAsset(filename).toString('base64')}`;
-}
-
-export function getBrandLogoForDarkBackground(): { filename: string; content: Buffer; contentType: string } {
+console.log('Brand logo URL for dark background:', BRAND_LOGO_DARK_URL);
+ 
+export function getBrandLogoForDarkBackground(): { filename: string; url: string; contentType: string } {
     return {
         filename: 'FlexoHostHorizontalforDark.webp',
-        content: readBrandAsset('FlexoHostHorizontalforDark.webp'),
+        url: BRAND_LOGO_DARK_URL,
         contentType: WEBP_MIME,
     };
 }
 
 export function getBrandLogoForDarkBackgroundDataUri(): string {
-    return dataUri('FlexoHostHorizontalforDark.webp');
+    return BRAND_LOGO_DARK_URL;
 }
 
 export function getBrandLogoForLightBackgroundDataUri(): string {
-    return dataUri('FlexoHostHorizontalforLight.webp');
+    return BRAND_LOGO_DARK_URL;
 }
 
 export function getEmailBrandLogoCid(): string {
-    return 'cid:flexohost-brand-logo';
+    return BRAND_LOGO_DARK_URL;
 }
 
-/** Browser-renderable default for admin previews; actual emails are converted to CID before sending. */
+/** Browser-renderable default for admin previews and sent emails. */
 export function getBrandLogoUrl(): string {
     return getBrandLogoForDarkBackgroundDataUri();
 }
