@@ -3,6 +3,7 @@ import DomainReminderLog from '../../domain/domain-reminder-log.model';
 import { notificationProvider } from '../providers/notification.provider';
 import { getBillingSettings } from '../../billing-settings/billing-settings.service';
 import { auditLogSafe } from '../../activity-log/activity-log.service';
+import notificationService from '../../notification/notification.service';
 import tldService from '../../domain/tld/tld.service';
 import logger from '../../../utils/logger';
 import config from '../../../config';
@@ -95,16 +96,34 @@ export class DomainExpiryReminderScheduler {
                             renewalPrice,
                             currency: DEFAULT_CURRENCY,
                             autoRenewEnabled: service?.autoRenew ?? false,
-                        renewUrl,
-                        customerName,
-                        clientId: (client._id ?? client)?.toString?.(),
-                        serviceId: (service._id ?? service)?.toString?.(),
-                        domainId: domain._id?.toString?.(),
-                        source: 'cron',
-                    }
-                );
+                            renewUrl,
+                            customerName,
+                            clientId: (client._id ?? client)?.toString?.(),
+                            serviceId: (service._id ?? service)?.toString?.(),
+                            domainId: domain._id?.toString?.(),
+                            source: 'cron',
+                        }
+                    );
 
                     if (sent) {
+                        const notificationUserId = client?.user?._id || client?.user;
+                        if (notificationUserId) {
+                            await notificationService.create({
+                                userId: notificationUserId,
+                                clientId: client._id,
+                                category: 'billing',
+                                title: `Domain renewal reminder - ${domain.domainName}`,
+                                message: `${domain.domainName} expires in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}.`,
+                                linkPath: `/domains/${domain.domainName}`,
+                                linkLabel: 'View domain',
+                                meta: {
+                                    domainId: domain._id?.toString?.(),
+                                    serviceId: (service._id ?? service)?.toString?.(),
+                                    reminderType,
+                                    daysRemaining,
+                                },
+                            });
+                        }
                         await DomainReminderLog.create({
                             domainDetailsId: domain._id,
                             reminderType

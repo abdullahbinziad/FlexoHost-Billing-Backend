@@ -24,6 +24,7 @@ import { encrypt, decrypt } from '../../../utils/encryption';
 import Invoice from '../../invoice/invoice.model';
 import { InvoiceStatus } from '../../invoice/invoice.interface';
 import currencyService from '../../currency/currency.service';
+import serviceNotificationService from './service-notification.service';
 
 export class ServiceAdminService {
     private getEncryptedModulePasswordMetaUpdate(extra?: { password?: string }) {
@@ -115,6 +116,7 @@ export class ServiceAdminService {
             whmPackage?: string;
             serverGroup?: string;
             serverLocation?: string;
+            sendNotification?: boolean;
         }
     ) {
         const service = await serviceRepository.findById(serviceId);
@@ -270,7 +272,7 @@ export class ServiceAdminService {
                             password: extra?.password,
                             primaryDomainOverride: hostingDetails?.primaryDomain,
                             updateOrderItemMeta: true,
-                            sendWelcomeEmail: true,
+                            sendWelcomeEmail: false,
                             forceCreate: true,
                         }
                     );
@@ -289,7 +291,28 @@ export class ServiceAdminService {
                         } as any,
                     } as any);
                     const refreshed = await serviceRepository.findById(serviceId);
-                    if (refreshed) return refreshed;
+                    if (refreshed) {
+                        await ServiceAuditLog.create({
+                            actorUserId,
+                            clientId: service.clientId,
+                            serviceId: service._id,
+                            action,
+                            beforeSnapshot,
+                            afterSnapshot: refreshed.toObject(),
+                            ip: actorIp,
+                            userAgent: actorUserAgent
+                        });
+                        await serviceNotificationService.sendTemplateForService({
+                            serviceId,
+                            templateKey: 'service.hosting_account_created',
+                            actorUserId,
+                            source: 'manual',
+                            sendEmail: extra?.sendNotification !== false,
+                            sendPortalNotification: extra?.sendNotification !== false,
+                            password: created.password,
+                        });
+                        return refreshed;
+                    }
                 } catch (err: any) {
                     // Keep previous status unchanged on failed module action.
                     await serviceRepository.updateById(serviceId, {
@@ -382,6 +405,13 @@ export class ServiceAdminService {
             serviceId,
             ipAddress: actorIp,
             userAgent: actorUserAgent,
+        });
+
+        await serviceNotificationService.notifyActionSuccess({
+            serviceId,
+            action,
+            actorUserId,
+            sendNotification: extra?.sendNotification,
         });
 
         return afterService;

@@ -8,6 +8,7 @@ import { ServiceStatus, ServiceActionType, ProvisioningJobStatus } from '../type
 import { getBillingSettings } from '../../billing-settings/billing-settings.service';
 import config from '../../../config';
 import * as emailService from '../../email/email.service';
+import notificationService from '../../notification/notification.service';
 import logger from '../../../utils/logger';
 import { auditLogSafe } from '../../activity-log/activity-log.service';
 
@@ -107,6 +108,24 @@ export class ServiceTerminationScheduler {
                         bodyPreview: `Termination warning for ${serviceIdentifier}`,
                     },
                 });
+                const notificationUserId = client?.user?._id || client?.user;
+                if (notificationUserId) {
+                    await notificationService.create({
+                        userId: notificationUserId,
+                        clientId: client._id,
+                        category: 'service',
+                        title: `${serviceName} termination warning`,
+                        message: `${serviceIdentifier} may be terminated in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}.`,
+                        linkPath: invoice ? `/invoices/${invoice._id.toString()}` : '/all-services',
+                        linkLabel: invoice ? 'View invoice' : 'View services',
+                        meta: {
+                            serviceId: svc._id?.toString?.(),
+                            invoiceId: invoice?._id?.toString?.(),
+                            reminderType,
+                            daysRemaining,
+                        },
+                    });
+                }
 
                 await TerminationWarningLog.create({ serviceId: svc._id, reminderType });
                 warningsSent++;

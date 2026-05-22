@@ -181,6 +181,7 @@ export const PREVIEW_DATA: { [K in TemplateKey]: TemplatePropsMap[K] & { company
         domain: 'example.com',
         cpanelUrl: serverExample,
         cpanelUsername: 'acmecom',
+        cpanelPassword: 'ExampleStrongPass123!',
         setupPasswordUrl: `${base}/hosting/setup-password?token=abc123`,
         serverHostname: 'server123.example.com',
         nameserver1: 'ns1.example.com',

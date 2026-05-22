@@ -1,7 +1,7 @@
 /**
  * Send "New Hosting Account Created" email after successful provisioning.
  * Loads service, hosting details, client, and server from DB.
- * Password may be passed by provisioning, but it is never sent by email.
+ * Sends the generated control panel password with the account details.
  */
 
 import type { SendResult } from '../../email/templates/types';
@@ -22,7 +22,7 @@ function normalizeHostname(host: string): string {
 
 export async function sendHostingAccountCreatedEmail(
     serviceId: string | { toString(): string },
-    _password: string
+    password: string
 ): Promise<SendResult> {
     const id = typeof serviceId === 'string' ? serviceId : (serviceId as any).toString();
 
@@ -82,6 +82,13 @@ export async function sendHostingAccountCreatedEmail(
     }
 
     const domain = details.primaryDomain || '';
+    if (!details.accountUsername) {
+        logger.warn(`[HostingAccountEmail] Hosting username missing for service: ${id}`);
+        return { success: false, error: 'Hosting username not set' };
+    }
+    if (!serverHostname) {
+        serverHostname = normalizeHostname(domain) || domain;
+    }
     if (!cpanelUrl) {
         const { protocol } = config.controlPanel;
         cpanelUrl = domain ? `${protocol}://${domain}/cpanel` : '';
@@ -101,6 +108,7 @@ export async function sendHostingAccountCreatedEmail(
             domain,
             cpanelUrl,
             cpanelUsername: details.accountUsername || '',
+            cpanelPassword: password,
             setupPasswordUrl,
             serverHostname,
             nameserver1,

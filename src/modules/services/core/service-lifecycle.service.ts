@@ -10,6 +10,7 @@ import { ServiceStatus, ServiceActionType, ProvisioningJobStatus, BillingCycle, 
 import { addBillingCycleToDate } from '../utils/billing-cycle.util';
 import { InvoiceStatus } from '../../invoice/invoice.interface';
 import { auditLogSafe } from '../../activity-log/activity-log.service';
+import serviceNotificationService from './service-notification.service';
 
 export class ServiceLifecycleService {
     /**
@@ -250,6 +251,15 @@ export class ServiceLifecycleService {
                 serviceId: svc._id.toString(),
                 invoiceId: invoice._id.toString(),
             });
+
+            serviceNotificationService.sendTemplateForService({
+                serviceId: svc._id.toString(),
+                templateKey: 'service.renewed',
+                source: 'system',
+                previousDueDate: currentDueDate,
+                nextDueDate: nextTargetDate,
+                invoiceNumber: invoice.invoiceNumber,
+            }).catch(() => {});
 
             // Mark ledger as paid
             if (ledger) {

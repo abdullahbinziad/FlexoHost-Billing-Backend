@@ -149,16 +149,19 @@ export const sendClientEmailValidation = [
     ...getClientByIdValidation,
     body('subject')
         .trim()
+        .if(body('templateKey').not().exists())
         .notEmpty()
         .withMessage('Subject is required')
         .isLength({ max: 200 })
         .withMessage('Subject cannot exceed 200 characters'),
     body('message')
         .trim()
+        .if(body('templateKey').not().exists())
         .notEmpty()
         .withMessage('Message is required')
         .isLength({ max: 10000 })
         .withMessage('Message cannot exceed 10000 characters'),
+    body('templateKey').optional().isString().isLength({ max: 100 }).withMessage('templateKey is invalid'),
     body('serviceId').optional().isMongoId().withMessage('serviceId must be a valid MongoDB ObjectId'),
     body('invoiceId').optional().isMongoId().withMessage('invoiceId must be a valid MongoDB ObjectId'),
     body('domainId').optional().isMongoId().withMessage('domainId must be a valid MongoDB ObjectId'),

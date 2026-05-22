@@ -36,7 +36,7 @@ import { registerProvisioningProviders } from '../services/provisioning/provider
 import { computeInitialNextDueDate } from '../services/utils/billing-cycle.util';
 import { encrypt } from '../../utils/encryption';
 import type { WhmApiClient } from '../whm/whm-api-client';
-import { sendHostingAccountCreatedEmail } from '../services/core/hosting-account-email.service';
+import serviceNotificationService from '../services/core/service-notification.service';
 
 /** Default payment methods for admin order creation (extend via settings if needed) */
 const DEFAULT_PAYMENT_METHODS = [
@@ -1525,8 +1525,15 @@ class OrderService {
                         } as any,
                         meta: nextMeta,
                     } as any);
-                    if (sendWelcomeEmail && created.password) {
-                        sendHostingAccountCreatedEmail((service as any)._id, created.password).catch(() => {});
+                    if (sendWelcomeEmail) {
+                        serviceNotificationService.sendTemplateForService({
+                            serviceId: (service as any)._id.toString(),
+                            templateKey: 'service.hosting_account_created',
+                            source: 'manual',
+                            password: created.password,
+                        }).catch((error: any) => {
+                            logger.warn(`[Order] Hosting module notification failed for service ${(service as any)._id}: ${error?.message || error}`);
+                        });
                     }
                     const { auditLogSafe } = await import('../activity-log/activity-log.service');
                     auditLogSafe({

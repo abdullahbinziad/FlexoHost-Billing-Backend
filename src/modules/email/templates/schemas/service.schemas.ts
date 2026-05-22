@@ -42,6 +42,7 @@ export const hostingAccountCreatedSchema = z.object({
     domain: z.string().min(1, 'domain is required'),
     cpanelUrl: z.string().min(1, 'cpanelUrl is required'),
     cpanelUsername: z.string().min(1, 'cpanelUsername is required'),
+    cpanelPassword: z.string().min(1, 'cpanelPassword is required'),
     setupPasswordUrl: z.string().url('setupPasswordUrl must be a valid URL'),
     serverHostname: z.string().min(1, 'serverHostname is required'),
     nameserver1: z.string(),

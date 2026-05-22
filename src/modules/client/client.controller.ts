@@ -10,6 +10,7 @@ import emailService from '../email/email.service';
 import { buildCustomEmailHtml } from '../email/build-custom-email';
 import { auditLogSafe } from '../activity-log/activity-log.service';
 import Service from '../services/service.model';
+import serviceNotificationService from '../services/core/service-notification.service';
 
 const baseCookieOptions = {
     httpOnly: true,
@@ -121,6 +122,7 @@ class ClientController {
         const invoiceId = typeof req.body.invoiceId === 'string' ? req.body.invoiceId : undefined;
         const domainId = typeof req.body.domainId === 'string' ? req.body.domainId : undefined;
         const orderId = typeof req.body.orderId === 'string' ? req.body.orderId : undefined;
+        const templateKey = typeof req.body.templateKey === 'string' ? req.body.templateKey.trim() : '';
         const recipientEmail = client.contactEmail || client.user?.email;
 
         if (!recipientEmail) {
@@ -132,6 +134,51 @@ class ClientController {
             if (!ownsService) {
                 throw ApiError.badRequest('Selected service does not belong to this client');
             }
+        }
+
+        if (templateKey) {
+            if (!serviceId) {
+                throw ApiError.badRequest('serviceId is required when sending a service template');
+            }
+            if (!serviceNotificationService.isServiceTemplateKey(templateKey)) {
+                throw ApiError.badRequest('Unsupported service email template');
+            }
+
+            const templateResult = await serviceNotificationService.sendTemplateForService({
+                serviceId,
+                templateKey,
+                actorUserId: req.user?._id?.toString?.(),
+                source: 'manual',
+                sendPortalNotification: false,
+            });
+
+            auditLogSafe({
+                message: templateResult.email?.success ? `Service template email sent to ${client.fullName || 'client'}` : `Failed to send service template email`,
+                type: templateResult.email?.success ? 'email_sent' : 'email_failed',
+                category: 'email',
+                actorType: 'user',
+                actorId: req.user?._id?.toString?.(),
+                source: 'manual',
+                status: templateResult.email?.success ? 'success' : 'failure',
+                clientId: req.params.id,
+                targetType: 'service',
+                targetId: serviceId,
+                meta: {
+                    emailType: templateKey,
+                    templateKey,
+                    serviceId,
+                    error: templateResult.email?.success ? undefined : templateResult.email?.error,
+                },
+            });
+
+            if (!templateResult.email?.success) {
+                return ApiResponse.badRequest(res, templateResult.email?.error || 'Failed to send email');
+            }
+
+            return ApiResponse.ok(res, 'Service template email sent successfully', {
+                to: recipientEmail,
+                templateKey,
+            });
         }
 
         const clientName = [client.firstName, client.lastName].filter(Boolean).join(' ').trim() || 'Client';

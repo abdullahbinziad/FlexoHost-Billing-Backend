@@ -15,12 +15,14 @@ export const performServiceAction = async (req: Request, res: Response, action: 
         const ip = req.ip || req.connection.remoteAddress;
         const userAgent = req.headers['user-agent'];
 
+        const sendNotification = (req.body as any)?.sendNotification !== false;
         const extra = action === 'CHANGE_PACKAGE'
-            ? { plan: (req.body as any)?.plan }
+            ? { plan: (req.body as any)?.plan, sendNotification }
             : action === 'CHANGE_PASSWORD'
                 ? {
                     password: (req.body as any)?.password,
                     username: (req.body as any)?.username,
+                    sendNotification,
                 }
             : action === 'RETRY_PROVISION'
                 ? {
@@ -31,8 +33,9 @@ export const performServiceAction = async (req: Request, res: Response, action: 
                     whmPackage: (req.body as any)?.whmPackage,
                     serverGroup: (req.body as any)?.serverGroup,
                     serverLocation: (req.body as any)?.serverLocation,
+                    sendNotification,
                 }
-                : undefined;
+                : { sendNotification };
         const data = await serviceAdminService.performAction(serviceId, action, user._id, ip, userAgent, extra);
 
         res.status(200).json({ success: true, data, message: `Action ${action} performed successfully.` });

@@ -11,6 +11,7 @@ import logger from '../../../utils/logger';
 import Client from '../../client/client.model';
 import config from '../../../config';
 import * as emailService from '../../email/email.service';
+import notificationService from '../../notification/notification.service';
 
 export class DomainRenewalWorker {
     async processQueuedJobs(): Promise<number> {
@@ -186,7 +187,7 @@ export class DomainRenewalWorker {
     }
 
     private async getClientForEmail(clientId: any) {
-        return Client.findById(clientId).select('contactEmail firstName lastName').lean();
+        return Client.findById(clientId).select('contactEmail firstName lastName user').lean();
     }
 
     private async sendRenewalSuccessEmail(job: any, invoice: any, details: any, expirationDate: Date): Promise<void> {
@@ -219,6 +220,22 @@ export class DomainRenewalWorker {
                     bodyPreview: `Domain ${details.domainName} renewed from invoice ${invoice.invoiceNumber}`,
                 },
             });
+            if ((client as any)?.user) {
+                await notificationService.create({
+                    userId: (client as any).user,
+                    clientId: job.clientId,
+                    category: 'billing',
+                    title: `Domain renewed - ${details.domainName}`,
+                    message: `${details.domainName} has been renewed until ${new Date(expirationDate).toLocaleDateString()}.`,
+                    linkPath: `/domains/${encodeURIComponent(details.domainName)}`,
+                    linkLabel: 'View domain',
+                    meta: {
+                        domainId: job.domainDetailsId?.toString?.(),
+                        serviceId: job.serviceId?.toString?.(),
+                        invoiceId: job.invoiceId?.toString?.(),
+                    },
+                });
+            }
         } catch (err: any) {
             logger.warn('[DomainRenewal] Success email failed:', err?.message || err);
         }
@@ -255,6 +272,23 @@ export class DomainRenewalWorker {
                     bodyPreview: `Domain renewal failed for ${job.domainName}`,
                 },
             });
+            if ((client as any)?.user) {
+                await notificationService.create({
+                    userId: (client as any).user,
+                    clientId: job.clientId,
+                    category: 'billing',
+                    title: `Domain renewal needs attention - ${job.domainName}`,
+                    message: `Automatic renewal for ${job.domainName} could not be completed.`,
+                    linkPath: `/domains/${encodeURIComponent(job.domainName)}`,
+                    linkLabel: 'View domain',
+                    meta: {
+                        domainId: job.domainDetailsId?.toString?.(),
+                        serviceId: job.serviceId?.toString?.(),
+                        invoiceId: job.invoiceId?.toString?.(),
+                        error: job.lastError,
+                    },
+                });
+            }
         } catch (err: any) {
             logger.warn('[DomainRenewal] Failure email failed:', err?.message || err);
         }

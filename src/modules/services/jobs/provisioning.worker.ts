@@ -7,7 +7,7 @@ import Order from '../../order/order.model';
 import Client from '../../client/client.model';
 import { orderService } from '../../order/order.service';
 import * as emailService from '../../email/email.service';
-import { sendHostingAccountCreatedEmail } from '../core/hosting-account-email.service';
+import serviceNotificationService from '../core/service-notification.service';
 import { ProvisioningJobStatus, ServiceStatus, ServiceType, normalizeBillingCycle } from '../types/enums';
 import { getNextSequence, formatSequenceId } from '../../../models/counter.model';
 import { DEFAULT_CURRENCY } from '../../../config/currency.config';
@@ -217,8 +217,15 @@ export class ProvisioningWorker {
             const clientEmail = (client as any)?.contactEmail || '';
             const customerName = client ? `${(client as any).firstName || ''} ${(client as any).lastName || ''}`.trim() || 'Customer' : 'Customer';
 
-            if (serviceType === ServiceType.HOSTING && clientEmail && result.password) {
-                sendHostingAccountCreatedEmail(service._id, result.password).catch(() => {});
+            if (serviceType === ServiceType.HOSTING) {
+                serviceNotificationService.sendTemplateForService({
+                    serviceId,
+                    templateKey: 'service.hosting_account_created',
+                    source: 'system',
+                    password: result.password,
+                }).catch((error: any) => {
+                    logger.warn(`[Provisioning] Hosting account notification failed for service ${serviceId}: ${error?.message || error}`);
+                });
             }
 
             if (serviceType === ServiceType.DOMAIN && result.details && clientEmail) {
