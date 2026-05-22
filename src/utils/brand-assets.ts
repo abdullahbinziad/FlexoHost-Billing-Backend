@@ -11,13 +11,7 @@ const BRAND_LOGO_DARK_URL =
 
 console.log('Brand logo URL for dark background:', BRAND_LOGO_DARK_URL);
  
-export function getBrandLogoForDarkBackground(): { filename: string; url: string; contentType: string } {
-    return {
-        filename: 'FlexoHostHorizontalforDark.webp',
-        url: BRAND_LOGO_DARK_URL,
-        contentType: WEBP_MIME,
-    };
-}
+
 
 export function getBrandLogoForDarkBackgroundDataUri(): string {
     return BRAND_LOGO_DARK_URL;
